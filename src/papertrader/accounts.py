@@ -20,6 +20,7 @@ from .models import Instrument, Leg, Order, OrderType
 class DataMode(str, Enum):
     OWN_KEYS = "own_keys"                # the user's own broker credentials
     SHARED_DELAYED = "shared_delayed"    # operator's feed, delayed; needs sign-off
+    DEMO = "demo"                        # simulated prices, no real data involved
 
 
 @dataclass

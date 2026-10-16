@@ -6,7 +6,8 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest"]
+web = ["fastapi", "uvicorn"]
+dev = ["pytest", "httpx", "fastapi", "uvicorn"]
 
 [build-system]
 requires = ["setuptools>=68"]

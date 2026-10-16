@@ -302,6 +302,9 @@ class Engine:
         elif (pos.net_qty > 0) != (direction > 0):  # flipped through zero
             pos.avg_price = price
 
+    def margin_used(self) -> Decimal:
+        return self._margin_required(self.positions)
+
     def _margin_required(self, positions: Mapping[str, Position]) -> Decimal:
         """Flat per-lot estimate on short legs, reduced for defined-risk
         vertical spreads to the spread's max loss. Not SPAN."""
