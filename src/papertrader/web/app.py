@@ -5,10 +5,13 @@ Real auth and broker-backed data sources come later; accounts live in memory.
 from __future__ import annotations
 
 import asyncio
+import hmac
+import logging
+import os
 import re
-import secrets
+import time
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, time as dtime
 from decimal import Decimal
 from pathlib import Path
 
@@ -19,10 +22,14 @@ from pydantic import BaseModel, Field
 from ..accounts import Accounts, DataMode
 from ..data import QuoteSource
 from ..engine import EngineConfig
+from ..journal import Journal
+from ..store import Store
 from ..models import D, Leg, Order, OrderStatus, OrderType, Side
 from ..sim import UNDERLYINGS, SimFeed, build_instruments, next_expiries
 
+log = logging.getLogger("papertrader")
 STATIC = Path(__file__).parent / "static"
+MAX_FAILS, LOCK_SECONDS = 5, 60
 NAME_RE = re.compile(r"^[A-Za-z0-9_ .-]{2,24}$")
 
 
@@ -44,32 +51,85 @@ class OrderIn(BaseModel):
 
 
 class LoginIn(BaseModel):
-    name: str
+    name: str = Field(max_length=64)
+    password: str = Field(max_length=128)
 
 
-def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0) -> FastAPI:
-    instruments = build_instruments(date.today())
+class SignupIn(LoginIn):
+    invite: str = Field(default="", max_length=128)
+
+
+def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_path: str = ":memory:",
+               invite_code: str | None = None, secure_cookies: bool = False) -> FastAPI:
+    store = Store(db_path)
+    journal = Journal(conn=store.db, lock=store.lock)
+    instruments = {**store.load_instruments(), **build_instruments(date.today())}
+    store.save_instruments(instruments)
     feed = feed or SimFeed(instruments)
-    accounts = Accounts(instruments)
-    tokens: dict[str, str] = {}  # session token -> account id
+    accounts = Accounts(instruments, journal)
+    names: dict[str, str] = {}
+    for u in store.users():
+        names[u.id] = u.name
+        state = store.load_state(u.id)
+        if state:
+            accounts.restore(u.id, state, feed, DataMode.DEMO, EngineConfig())
+        else:
+            accounts.create(u.id, feed, DataMode.DEMO, EngineConfig())
+    fails: dict[str, list[float]] = {}  # name -> [count, locked_until]
+
+    def persist(uid: str) -> None:
+        store.save_state(uid, accounts.get(uid).engine.to_state())
+
+    def demo_settle(now: datetime) -> None:
+        """Demo only: cash-settle expired contracts at the simulated spot. Real
+        data must settle at the exchange's official price (bhavcopy)."""
+        close = dtime(15, 30)
+        due = [d for d in {i.expiry for i in instruments.values() if i.expiry}
+               if datetime.combine(d, close) <= now]
+        if not due:
+            return
+        prices = {u: SimFeed.spot(u, now) for u in UNDERLYINGS}
+        for uid in accounts.ids():
+            eng = accounts.get(uid).engine
+            if eng.settle_expiry(max(due), prices, now):
+                persist(uid)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         async def loop():
             while True:
                 await asyncio.sleep(tick_seconds)
-                accounts.tick(datetime.now())
+                try:
+                    now = datetime.now()
+                    for uid in accounts.tick(now):
+                        persist(uid)
+                    demo_settle(now)
+                except Exception:  # keep the loop alive; one bad tick must not stop fills
+                    log.exception("tick failed")
         task = asyncio.create_task(loop())
         yield
         task.cancel()
 
     app = FastAPI(title="Paper Trader", lifespan=lifespan)
     app.state.accounts = accounts
+    app.state.store = store
+
+    @app.middleware("http")
+    async def security_headers(request, call_next):
+        resp = await call_next(request)
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["Referrer-Policy"] = "no-referrer"
+        resp.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+            " frame-ancestors 'none'")
+        return resp
 
     def me(pt_session: str | None = Cookie(default=None)) -> str:
-        if not pt_session or pt_session not in tokens:
+        user = store.user_for_session(pt_session) if pt_session else None
+        if not user:
             raise HTTPException(401, "not signed in")
-        return tokens[pt_session]
+        return user.id
 
     # ---- helpers -------------------------------------------------------------
     def order_json(o: Order) -> dict:
@@ -87,30 +147,57 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0) -> Fa
         clock, quotes = a.source.quotes_at(datetime.now())
         return a, clock, quotes
 
+    def start_session(response: Response, user) -> None:
+        response.set_cookie("pt_session", store.new_session(user), httponly=True, samesite="lax",
+                            secure=secure_cookies, max_age=30 * 24 * 3600)
+
     # ---- auth ------------------------------------------------------------------
-    @app.post("/api/login")
-    async def login(body: LoginIn, response: Response, pt_session: str | None = Cookie(default=None)):
+    @app.post("/api/signup")
+    async def signup(body: SignupIn, response: Response):
         name = body.name.strip()
         if not NAME_RE.match(name):
             raise HTTPException(422, "name must be 2-24 letters, digits, space, . _ -")
-        existing = tokens.get(pt_session) if pt_session else None
-        if existing == name:
-            return {"name": name}
+        if len(body.password) < 8:
+            raise HTTPException(422, "password must be at least 8 characters")
+        if invite_code and not hmac.compare_digest(body.invite.encode(), invite_code.encode()):
+            raise HTTPException(403, "invalid invite code")
         try:
-            accounts.get(name)
-            raise HTTPException(409, "that name is taken")
-        except KeyError:
-            pass
-        accounts.create(name, feed, DataMode.DEMO, EngineConfig())
-        token = secrets.token_urlsafe(24)
-        tokens[token] = name
-        response.set_cookie("pt_session", token, httponly=True, samesite="lax",
-                            max_age=60 * 60 * 24 * 30)
-        return {"name": name}
+            user = await asyncio.to_thread(store.create_user, name, body.password)
+        except ValueError:
+            raise HTTPException(409, "that name is taken") from None
+        names[user.id] = user.name
+        accounts.create(user.id, feed, DataMode.DEMO, EngineConfig())
+        persist(user.id)
+        start_session(response, user)
+        return {"name": user.name}
+
+    @app.post("/api/login")
+    async def login(body: LoginIn, response: Response):
+        key = body.name.strip().lower()
+        rec = fails.get(key)
+        if rec and rec[1] > time.time():
+            raise HTTPException(429, "too many attempts; try again in a minute")
+        user = await asyncio.to_thread(store.check_password, body.name.strip(), body.password)
+        if not user:
+            rec = fails.setdefault(key, [0, 0.0])
+            rec[0] += 1
+            if rec[0] >= MAX_FAILS:
+                rec[0], rec[1] = 0, time.time() + LOCK_SECONDS
+            raise HTTPException(401, "wrong name or password")
+        fails.pop(key, None)
+        start_session(response, user)
+        return {"name": user.name}
+
+    @app.post("/api/logout")
+    async def logout(response: Response, pt_session: str | None = Cookie(default=None)):
+        if pt_session:
+            store.end_session(pt_session)
+        response.delete_cookie("pt_session")
+        return {}
 
     @app.get("/api/me")
     async def whoami(acct: str = Depends(me)):
-        return {"name": acct}
+        return {"name": names[acct]}
 
     # ---- market data -----------------------------------------------------------
     @app.get("/api/indices")
@@ -148,6 +235,7 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0) -> Fa
     async def place(body: OrderIn, acct: str = Depends(me)):
         legs = [Leg(l.symbol, l.side, l.lots, l.limit_price) for l in body.legs]
         order = accounts.submit(acct, legs, body.order_type, datetime.now(), body.strategy.strip())
+        persist(acct)
         return order_json(order)
 
     @app.get("/api/orders")
@@ -160,7 +248,9 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0) -> Fa
         a = accounts.get(acct)
         if order_id not in a.engine.orders:
             raise HTTPException(404, "no such order")
-        return order_json(a.engine.cancel(order_id, datetime.now()))
+        out = order_json(a.engine.cancel(order_id, datetime.now()))
+        persist(acct)
+        return out
 
     @app.get("/api/positions")
     async def positions(acct: str = Depends(me)):
@@ -199,7 +289,7 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0) -> Fa
 
     @app.get("/api/leaderboard")
     async def leaderboard(acct: str = Depends(me)):
-        return [{"name": n, "net_pnl": f(s.net_pnl), "equity": f(s.equity)}
+        return [{"name": names[n], "net_pnl": f(s.net_pnl), "equity": f(s.equity)}
                 for n, s in accounts.leaderboard(datetime.now())]
 
     @app.get("/")
@@ -211,7 +301,14 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0) -> Fa
 
 def main() -> None:  # python -m papertrader.web.app
     import uvicorn
-    uvicorn.run(create_app(), host="127.0.0.1", port=8000)
+    invite = os.environ.get("PT_INVITE_CODE") or None
+    host = os.environ.get("PT_HOST", "127.0.0.1")
+    if host not in ("127.0.0.1", "localhost") and not invite:
+        raise SystemExit("Refusing to listen publicly without PT_INVITE_CODE (anyone could sign up).")
+    app = create_app(db_path=os.environ.get("PT_DB", "papertrader.db"),
+                     invite_code=invite,
+                     secure_cookies=os.environ.get("PT_SECURE_COOKIES") == "1")
+    uvicorn.run(app, host=host, port=int(os.environ.get("PT_PORT", "8000")))
 
 
 if __name__ == "__main__":

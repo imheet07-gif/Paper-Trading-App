@@ -74,6 +74,47 @@ class Engine:
         self.strategy_charges: dict[str, Decimal] = {}
         self._next_id = 1
 
+    # ---- persistence --------------------------------------------------------
+
+    def to_state(self) -> dict:
+        """JSON-safe snapshot of everything needed to resume this account."""
+        pos = lambda p: {"symbol": p.symbol, "net_qty": p.net_qty,  # noqa: E731
+                         "avg_price": str(p.avg_price), "realized_pnl": str(p.realized_pnl)}
+        return {
+            "cash": str(self.cash), "charges_paid": str(self.charges_paid), "next_id": self._next_id,
+            "positions": [pos(p) for p in self.positions.values()],
+            "strategy_positions": [{"strategy": t, **pos(p)}
+                                   for (t, _), p in self.strategy_positions.items()],
+            "strategy_charges": {t: str(c) for t, c in self.strategy_charges.items()},
+            "orders": [{
+                "id": o.id, "type": o.order_type.value, "created": o.created.isoformat(),
+                "strategy": o.strategy, "status": o.status.value, "reason": o.reason,
+                "legs": [{"symbol": l.symbol, "side": l.side.value, "lots": l.lots,
+                          "limit_price": None if l.limit_price is None else str(l.limit_price)}
+                         for l in o.legs],
+                "fills": [{"symbol": x.symbol, "side": x.side.value, "qty": x.qty,
+                           "price": str(x.price), "ts": x.ts.isoformat(), "charges": str(x.charges)}
+                          for x in o.fills],
+            } for o in self.orders.values()],
+        }
+
+    def load_state(self, st: dict) -> None:
+        pos = lambda d: Position(d["symbol"], d["net_qty"], D(d["avg_price"]), D(d["realized_pnl"]))  # noqa: E731
+        self.cash, self.charges_paid, self._next_id = D(st["cash"]), D(st["charges_paid"]), st["next_id"]
+        self.positions = {d["symbol"]: pos(d) for d in st["positions"]}
+        self.strategy_positions = {(d["strategy"], d["symbol"]): pos(d) for d in st["strategy_positions"]}
+        self.strategy_charges = {t: D(c) for t, c in st["strategy_charges"].items()}
+        self.orders = {}
+        for d in st["orders"]:
+            o = Order(d["id"], tuple(Leg(l["symbol"], Side(l["side"]), l["lots"],
+                                         None if l["limit_price"] is None else D(l["limit_price"]))
+                                     for l in d["legs"]),
+                      OrderType(d["type"]), datetime.fromisoformat(d["created"]), d["strategy"],
+                      OrderStatus(d["status"]), d["reason"])
+            o.fills = [Fill(o.id, x["symbol"], Side(x["side"]), x["qty"], D(x["price"]),
+                            datetime.fromisoformat(x["ts"]), D(x["charges"])) for x in d["fills"]]
+            self.orders[o.id] = o
+
     # ---- orders -----------------------------------------------------------
 
     def submit(self, legs: list[Leg], order_type: OrderType, now: datetime,

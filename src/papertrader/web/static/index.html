@@ -37,7 +37,7 @@ tr.atm td{background:var(--hl)} td.strike{text-align:center;font-weight:600} th.
 .up{color:var(--up)}.down{color:var(--down)}.mute{color:var(--mute)}
 .px{position:relative;cursor:default}
 .px .act{display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);gap:4px}
-.px:hover .act{display:flex} .px:hover .v{visibility:hidden}
+@media (hover:hover){.px:hover .act{display:flex} .px:hover .v{visibility:hidden}}
 .px.l .act{right:auto;left:6px}
 .b,.s,.go{border:0;border-radius:4px;color:#fff;padding:3px 9px;font-weight:600;cursor:pointer;font:inherit;font-weight:600}
 .b{background:var(--buy)}.s{background:var(--sell)}.go{background:var(--brand)}
@@ -69,7 +69,7 @@ dialog::backdrop{background:#0006}
   <div id="idx" class="tick"></div>
   <span class="spacer"></span>
   <span id="hdrpnl" class="pill"></span>
-  <span id="who" class="pill"></span>
+  <span id="who" class="pill" style="cursor:pointer" title="Click to sign out"></span>
 </header>
 <nav id="tabs">
   <button data-t="chain" class="on">Option chain</button>
@@ -85,15 +85,21 @@ dialog::backdrop{background:#0006}
 <div id="toast"></div>
 
 <dialog id="login"><form method="dialog" id="lf">
-  <div class="dh BUY"><b>Welcome</b><div class="sub">Pick a name to start paper trading &mdash; no real money involved.</div></div>
-  <div class="db"><label>Your name<input id="nm" maxlength="24" autocomplete="off" required></label>
-  <div id="lerr" class="down"></div></div>
-  <div class="df"><button class="go" id="lgo">Start trading</button></div>
+  <div class="dh BUY"><b id="ltitle">Sign in</b><div class="sub">Paper trading only &mdash; no real money involved.</div></div>
+  <div class="db">
+    <label>Name<input id="nm" maxlength="24" autocomplete="username" required></label>
+    <label>Password<input id="pw" type="password" maxlength="128" autocomplete="current-password" required></label>
+    <label id="invl" style="display:none">Invite code<input id="inv" maxlength="128" autocomplete="off"></label>
+    <div id="lerr" class="down"></div>
+    <a href="#" id="lswitch">New here? Create an account</a>
+  </div>
+  <div class="df"><button class="go" id="lgo">Sign in</button></div>
 </form></dialog>
 
 <dialog id="ow"><form method="dialog" id="of">
   <div class="dh" id="oh"><b id="osym"></b><div class="sub" id="osub"></div></div>
   <div class="db">
+    <label>Side<select id="oside"><option>BUY</option><option>SELL</option></select></label>
     <div class="row">
       <label>Lots <span id="qtyhint"></span><input type="number" id="olots" min="1" value="1"></label>
       <label>Order type<select id="otype"><option>MARKET</option><option>LIMIT</option></select></label>
@@ -117,6 +123,7 @@ const money = n => n == null ? '–' : (n < 0 ? '-' : '') + '₹' + inr.format(M
 const cls = n => n > 0 ? 'up' : n < 0 ? 'down' : 'mute';
 const pnl = n => `<span class="${cls(n)}">${n > 0 ? '+' : ''}${money(n)}</span>`;
 
+const touch = matchMedia('(hover: none)').matches;
 let tab = 'chain', underlying = 'NIFTY', expiry = null, expiries = [], basket = [], tags = new Set();
 let posView = 'strategy', pending = null, busy = false;
 
@@ -129,25 +136,39 @@ async function api(path, opts = {}) {
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
 
 // ---- login
+let signup = false;
 function showLogin() { if (!$('#login').open) $('#login').showModal(); }
+function setMode(on) { signup = on; $('#ltitle').textContent = on ? 'Create account' : 'Sign in';
+  $('#lgo').textContent = on ? 'Create account' : 'Sign in'; $('#invl').style.display = on ? 'grid' : 'none';
+  $('#pw').autocomplete = on ? 'new-password' : 'current-password';
+  $('#lswitch').textContent = on ? 'Have an account? Sign in' : 'New here? Create an account'; $('#lerr').textContent = ''; }
+$('#lswitch').addEventListener('click', e => { e.preventDefault(); setMode(!signup); });
 $('#lf').addEventListener('submit', async e => {
   e.preventDefault();
-  try { await api('/api/login', {method:'POST', body: JSON.stringify({name: $('#nm').value})}); $('#login').close(); start(); }
+  const body = {name: $('#nm').value, password: $('#pw').value};
+  if (signup) body.invite = $('#inv').value;
+  try { await api(signup ? '/api/signup' : '/api/login', {method:'POST', body: JSON.stringify(body)});
+    $('#pw').value = ''; $('#login').close(); start(); }
   catch (err) { $('#lerr').textContent = err.message; }
 });
+$('#who').addEventListener('click', async () => { if (confirm('Sign out?')) { await fetch('/api/logout', {method:'POST'}); location.reload(); } });
 
 // ---- order window
 function openOrder(symbol, side, ltp, lot) {
   pending = {symbol, side, lot};
-  $('#oh').className = 'dh ' + side;
-  $('#osym').textContent = side + ' ' + symbol;
+  $('#osym').textContent = symbol; $('#oside').value = side;
   $('#osub').textContent = 'LTP ' + (ltp != null ? inr.format(ltp) : '–') + ' · lot size ' + lot;
   $('#olots').value = 1; $('#otype').value = 'MARKET'; $('#pxl').style.display = 'none';
   $('#opx').value = ltp != null ? ltp.toFixed(2) : ''; $('#ostrat').value = localStorage.getItem('lastTag') || '';
-  $('#ogo').textContent = side === 'BUY' ? 'Buy' : 'Sell'; $('#ogo').style.background = side === 'BUY' ? 'var(--buy)' : 'var(--sell)';
+  setSide(side);
   $('#stlist').innerHTML = [...tags].map(t => `<option value="${esc(t)}">`).join('');
   updQty(); $('#ow').showModal();
 }
+function setSide(side) {
+  pending.side = side; $('#oh').className = 'dh ' + side;
+  $('#ogo').textContent = side === 'BUY' ? 'Buy' : 'Sell'; $('#ogo').style.background = side === 'BUY' ? 'var(--buy)' : 'var(--sell)';
+}
+$('#oside').addEventListener('change', e => setSide(e.target.value));
 const updQty = () => $('#qtyhint').textContent = pending ? '(' + (+$('#olots').value * pending.lot) + ' qty)' : '';
 $('#olots').addEventListener('input', updQty);
 $('#otype').addEventListener('change', () => $('#pxl').style.display = $('#otype').value === 'LIMIT' ? 'grid' : 'none');
@@ -200,11 +221,11 @@ const views = {
     if (!expiries.length) { expiries = await api('/api/expiries'); expiry = expiry || expiries[0]; }
     const c = await api(`/api/chain?underlying=${underlying}&expiry=${expiry}`);
     const atm = c.rows.reduce((a, r) => Math.abs(r.strike - c.spot) < Math.abs(a.strike - c.spot) ? r : a).strike;
-    const cell = (o, side, left) => !o ? '<td></td>' : `<td class="px ${left ? 'l' : ''}"><span class="v">${o.ltp != null ? inr.format(o.ltp) : '–'}</span>
+    const cell = (o, side, left) => !o ? '<td></td>' : `<td class="px ${left ? 'l' : ''}" data-c="${o.symbol}|${o.ltp}"><span class="v">${o.ltp != null ? inr.format(o.ltp) : '–'}</span>
       <span class="act"><button class="b" data-o="${o.symbol}|BUY|${o.ltp}">B</button><button class="s" data-o="${o.symbol}|SELL|${o.ltp}">S</button></span></td>`;
     return `<div class="bar"><select id="u">${['NIFTY','BANKNIFTY'].map(u => `<option ${u === underlying ? 'selected' : ''}>${u}</option>`).join('')}</select>
       <select id="e">${expiries.map(x => `<option ${x === expiry ? 'selected' : ''}>${x}</option>`).join('')}</select>
-      <span class="mute">Spot <b>${inr.format(c.spot)}</b> · lot ${c.lot_size} · hover a price to buy/sell</span></div>
+      <span class="mute">Spot <b>${inr.format(c.spot)}</b> · lot ${c.lot_size} · ${touch ? 'tap' : 'hover'} a price to trade</span></div>
       <div class="card scroll"><table><tr><th>Call LTP</th><th class="strike">Strike</th><th>Put LTP</th></tr>
       ${c.rows.map(r => `<tr class="${r.strike === atm ? 'atm' : ''}" data-lot="${c.lot_size}">${cell(r.ce, 'CE', true)}<td class="strike">${r.strike}</td>${cell(r.pe, 'PE', false)}</tr>`).join('')}
       </table></div>`;
@@ -270,7 +291,10 @@ $('#main').addEventListener('change', e => {
   if (e.target.id === 'u') underlying = e.target.value; if (e.target.id === 'e') expiry = e.target.value;
   if (e.target.id === 'pv') posView = e.target.value; refresh(); });
 $('#main').addEventListener('click', async e => {
-  const b = e.target.closest('button'); if (!b) return;
+  const b = e.target.closest('button');
+  const cellEl = e.target.closest('td.px');
+  if (!b && cellEl && touch) { const [sym, ltp] = cellEl.dataset.c.split('|'); return openOrder(sym, 'BUY', ltp === 'null' ? null : +ltp, +cellEl.closest('tr').dataset.lot); }
+  if (!b) return;
   if (b.dataset.o) { const [sym, side, ltp] = b.dataset.o.split('|'); openOrder(sym, side, ltp === 'null' ? null : +ltp, +b.closest('tr').dataset.lot); }
   if (b.dataset.cx) { await api('/api/orders/' + b.dataset.cx, {method:'DELETE'}); refresh(); }
   if (b.dataset.x) { const [symbol, lots, strategy] = b.dataset.x.split('|');

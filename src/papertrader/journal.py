@@ -21,10 +21,11 @@ CREATE INDEX IF NOT EXISTS events_kind ON events(account_id, kind, ts);
 
 
 class Journal:
-    def __init__(self, path: str = ":memory:"):
+    def __init__(self, path: str = ":memory:", *, conn: sqlite3.Connection | None = None,
+                 lock: threading.Lock | None = None):
         # One connection shared across threads (e.g. server loop vs. setup), guarded by a lock.
-        self.db = sqlite3.connect(path, check_same_thread=False)
-        self._lock = threading.Lock()
+        self.db = conn or sqlite3.connect(path, check_same_thread=False)
+        self._lock = lock or threading.Lock()
         self.db.executescript(SCHEMA)
 
     def record(self, ts: datetime, kind: str, payload: dict, order_id: int | None = None,

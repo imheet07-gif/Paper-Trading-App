@@ -51,6 +51,15 @@ class Accounts:
         acct = self._accounts[account_id] = Account(account_id, engine, source, mode)
         return acct
 
+    def restore(self, account_id: str, state: dict, source: QuoteSource, mode: DataMode,
+                config: EngineConfig | None = None) -> Account:
+        acct = self.create(account_id, source, mode, config)
+        acct.engine.load_state(state)
+        return acct
+
+    def ids(self) -> list[str]:
+        return list(self._accounts)
+
     def get(self, account_id: str) -> Account:
         return self._accounts[account_id]
 
