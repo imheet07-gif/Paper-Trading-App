@@ -197,3 +197,33 @@ def test_journal_records_everything_for_replay():
     e.mark(NOW, {})
     kinds = [ev["kind"] for ev in e.journal.events()]
     assert kinds == ["order", "fill", "status", "mark"]
+
+
+def test_strategy_pnl_attribution_sums_to_account_even_when_strategies_offset():
+    e = make(charges=ChargeSchedule())
+    q0 = {CE24000.symbol: q(CE24000, "100", "100")}
+    e.submit([buy(CE24000)], OrderType.MARKET, NOW, q0, strategy="momentum")
+    e.submit([sell(CE24000)], OrderType.MARKET, NOW, {CE24000.symbol: q(CE24000, "110", "110")},
+             strategy="fade")  # nets the account flat, but each book is still open
+    e.submit([buy(CE24100)], OrderType.MARKET, NOW, {CE24100.symbol: q(CE24100, "50", "50")})
+    marks = {CE24000.symbol: q(CE24000, "105", "105"), CE24100.symbol: q(CE24100, "52", "52")}
+    rep = e.strategy_report(marks)
+    assert rep["momentum"].unrealized_pnl == D(5) * 75
+    assert rep["fade"].unrealized_pnl == D(5) * 75
+    assert rep["untagged"].unrealized_pnl == D(2) * 75
+    assert sum(r.net_pnl for r in rep.values()) == e.mark(NOW, marks).net_pnl
+
+
+def test_strategy_realized_and_settlement_attribution():
+    e = make()
+    e.submit([buy(CE24000)], OrderType.MARKET, NOW, {CE24000.symbol: q(CE24000, "100", "100")},
+             strategy="a")
+    e.submit([buy(CE24100)], OrderType.MARKET, NOW, {CE24100.symbol: q(CE24100, "50", "50")},
+             strategy="b")
+    e.submit([sell(CE24100)], OrderType.MARKET, NOW, {CE24100.symbol: q(CE24100, "60", "60")},
+             strategy="b")
+    e.settle_expiry(EXPIRY, {"NIFTY": D(24040)}, NOW + timedelta(days=7))
+    rep = e.strategy_report({})
+    assert rep["a"].realized_pnl == D(-60) * 75 and rep["a"].open_positions == 0
+    assert rep["b"].realized_pnl == D(10) * 75
+    assert sum(r.net_pnl for r in rep.values()) == e.mark(NOW, {}).net_pnl

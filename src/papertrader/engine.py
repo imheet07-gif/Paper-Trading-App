@@ -30,6 +30,19 @@ class EngineConfig:
     default_margin_per_lot: Decimal = Decimal("150000")
 
 
+UNTAGGED = "untagged"
+
+
+@dataclass(frozen=True)
+class StrategyStats:
+    strategy: str
+    realized_pnl: Decimal    # gross of charges
+    unrealized_pnl: Decimal
+    charges: Decimal
+    net_pnl: Decimal         # realized + unrealized - charges
+    open_positions: int
+
+
 @dataclass(frozen=True)
 class Snapshot:
     ts: datetime
@@ -54,6 +67,11 @@ class Engine:
         self.positions: dict[str, Position] = {}
         self.orders: dict[int, Order] = {}
         self.charges_paid = Decimal(0)
+        # Per-strategy virtual books. Margin and cash stay account-level; these
+        # only attribute P&L, so strategies that offset each other still sum to
+        # the account's total.
+        self.strategy_positions: dict[tuple[str, str], Position] = {}
+        self.strategy_charges: dict[str, Decimal] = {}
         self._next_id = 1
 
     # ---- orders -----------------------------------------------------------
@@ -62,7 +80,7 @@ class Engine:
                quotes: Mapping[str, Quote], strategy: str = "") -> Order:
         """Place a basket. All legs fill together or not at all. `strategy` is a
         free-text tag stored with the order and journal for later comparison."""
-        order = Order(self._next_id, tuple(legs), order_type, now, strategy)
+        order = Order(self._next_id, tuple(legs), order_type, now, strategy or UNTAGGED)
         self._next_id += 1
         self.orders[order.id] = order
         self._log(now, "order", {
@@ -121,6 +139,27 @@ class Engine:
         })
         return snap
 
+    def strategy_report(self, quotes: Mapping[str, Quote]) -> dict[str, StrategyStats]:
+        """P&L attributed to each strategy tag, marked at mid."""
+        tags = {t for t, _ in self.strategy_positions} | set(self.strategy_charges)
+        out = {}
+        for tag in sorted(tags):
+            realized = unrealized = Decimal(0)
+            open_count = 0
+            for (t, symbol), sp in self.strategy_positions.items():
+                if t != tag:
+                    continue
+                realized += sp.realized_pnl
+                if sp.net_qty:
+                    open_count += 1
+                    price = self._mark_price(symbol, quotes)
+                    if price is not None:
+                        unrealized += sp.net_qty * (price - sp.avg_price)
+            charges = self.strategy_charges.get(tag, Decimal(0))
+            out[tag] = StrategyStats(tag, realized, unrealized, charges,
+                                     realized + unrealized - charges, open_count)
+        return out
+
     def settle_expiry(self, on_date: date, settlement_prices: Mapping[str, Decimal],
                       now: datetime) -> list[str]:
         """Cash-settle expired options at the official settlement price (e.g. from
@@ -130,25 +169,40 @@ class Engine:
             if any((i := self.instruments[l.symbol]).expiry and i.expiry <= on_date
                    for l in order.legs):
                 self._finish(order, OrderStatus.CANCELLED, "contract expired", now)
+        expired = lambda i: i.is_option and i.expiry is not None and i.expiry <= on_date  # noqa: E731
+
+        def intrinsic(inst: Instrument) -> tuple[Decimal, Decimal]:
+            spot = D(settlement_prices[inst.underlying])
+            value = max(spot - inst.strike, Decimal(0)) if inst.kind == "CE" \
+                else max(inst.strike - spot, Decimal(0))
+            return spot, value
+
+        total_charge = Decimal(0)
+        for (tag, symbol), sp in self.strategy_positions.items():
+            inst = self.instruments[symbol]
+            if sp.net_qty == 0 or not expired(inst):
+                continue
+            _, value = intrinsic(inst)
+            charge = Decimal(0)
+            if sp.net_qty > 0 and value > 0:
+                charge = self.config.charges.exercise(value * sp.net_qty).total
+            self.strategy_charges[tag] = self.strategy_charges.get(tag, Decimal(0)) + charge
+            total_charge += charge
+            self._reduce(sp, -sp.net_qty, value)
         for pos in self.positions.values():
             inst = self.instruments[pos.symbol]
-            if pos.net_qty == 0 or not inst.is_option or inst.expiry is None or inst.expiry > on_date:
+            if pos.net_qty == 0 or not expired(inst):
                 continue
-            spot = D(settlement_prices[inst.underlying])
-            intrinsic = max(spot - inst.strike, Decimal(0)) if inst.kind == "CE" \
-                else max(inst.strike - spot, Decimal(0))
+            spot, value = intrinsic(inst)
             qty = pos.net_qty
-            charge = Charges()
-            if qty > 0 and intrinsic > 0:
-                charge = self.config.charges.exercise(intrinsic * qty)
-            self.cash += qty * intrinsic - charge.total
-            self.charges_paid += charge.total
-            self._reduce(pos, -qty, intrinsic)
+            self.cash += qty * value
+            self._reduce(pos, -qty, value)
             self._log(now, "settle", {
-                "symbol": pos.symbol, "qty": qty, "settlement": spot,
-                "intrinsic": intrinsic, "charges": charge.total,
+                "symbol": pos.symbol, "qty": qty, "settlement": spot, "intrinsic": value,
             })
             settled.append(pos.symbol)
+        self.cash -= total_charge
+        self.charges_paid += total_charge
         return settled
 
     # ---- internals ----------------------------------------------------------
@@ -200,6 +254,8 @@ class Engine:
     def _execute(self, order: Order, prices: dict[str, Decimal], now: datetime) -> None:
         cash = self.cash
         positions = copy.deepcopy(self.positions)
+        strat_pos = copy.deepcopy(self.strategy_positions)
+        strat_charges = dict(self.strategy_charges)
         fills, total_charges = [], Decimal(0)
         for leg in order.legs:
             inst = self.instruments[leg.symbol]
@@ -210,12 +266,16 @@ class Engine:
             total_charges += charge
             pos = positions.setdefault(leg.symbol, Position(leg.symbol))
             self._reduce(pos, leg.side.sign * qty, price)
+            sp = strat_pos.setdefault((order.strategy, leg.symbol), Position(leg.symbol))
+            self._reduce(sp, leg.side.sign * qty, price)
+            strat_charges[order.strategy] = strat_charges.get(order.strategy, Decimal(0)) + charge
             fills.append(Fill(order.id, leg.symbol, leg.side, qty, price, now, charge))
         margin = self._margin_required(positions)
         if cash < margin:
             return self._finish(order, OrderStatus.REJECTED,
                                 f"insufficient funds: need {margin}, have {cash}", now)
         self.cash, self.positions = cash, positions
+        self.strategy_positions, self.strategy_charges = strat_pos, strat_charges
         self.charges_paid += total_charges
         order.fills.extend(fills)
         for f in fills:
