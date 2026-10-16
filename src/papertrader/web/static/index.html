@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Paper Trader</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#ff5722">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PaperTrader">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
 :root{
   --bg:#f5f6f8; --card:#fff; --ink:#1f2430; --mute:#7b8394; --line:#e6e8ee;
@@ -58,6 +64,10 @@ dialog::backdrop{background:#0006}
   padding:10px 16px;display:none;gap:10px;align-items:center;flex-wrap:wrap;z-index:6}
 #toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);
   padding:8px 14px;border-radius:6px;display:none;z-index:20;max-width:90vw}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--mute)}
+.dot.live{background:var(--up)}.dot.stale,.dot.starting{background:#e0a100}.dot.down{background:var(--down)}
+#banner{display:none;padding:10px 16px;background:var(--hl);border-bottom:1px solid var(--line);text-align:center}
+#banner.bad{background:var(--down);color:#fff}
 .empty{padding:32px;text-align:center;color:var(--mute)}
 .scroll{overflow-x:auto}
 </style>
@@ -68,9 +78,11 @@ dialog::backdrop{background:#0006}
   <span class="pill paper">Simulated prices &middot; paper money</span>
   <div id="idx" class="tick"></div>
   <span class="spacer"></span>
+  <span id="feed" class="pill"></span>
   <span id="hdrpnl" class="pill"></span>
   <span id="who" class="pill" style="cursor:pointer" title="Click to sign out"></span>
 </header>
+<div id="banner"></div>
 <nav id="tabs">
   <button data-t="chain" class="on">Option chain</button>
   <button data-t="orders">Orders</button>
@@ -220,12 +232,12 @@ const views = {
   async chain() {
     if (!expiries.length) { expiries = await api('/api/expiries'); expiry = expiry || expiries[0]; }
     const c = await api(`/api/chain?underlying=${underlying}&expiry=${expiry}`);
-    const atm = c.rows.reduce((a, r) => Math.abs(r.strike - c.spot) < Math.abs(a.strike - c.spot) ? r : a).strike;
+    const atm = c.spot == null ? null : c.rows.reduce((a, r) => Math.abs(r.strike - c.spot) < Math.abs(a.strike - c.spot) ? r : a).strike;
     const cell = (o, side, left) => !o ? '<td></td>' : `<td class="px ${left ? 'l' : ''}" data-c="${o.symbol}|${o.ltp}"><span class="v">${o.ltp != null ? inr.format(o.ltp) : '–'}</span>
       <span class="act"><button class="b" data-o="${o.symbol}|BUY|${o.ltp}">B</button><button class="s" data-o="${o.symbol}|SELL|${o.ltp}">S</button></span></td>`;
     return `<div class="bar"><select id="u">${['NIFTY','BANKNIFTY'].map(u => `<option ${u === underlying ? 'selected' : ''}>${u}</option>`).join('')}</select>
       <select id="e">${expiries.map(x => `<option ${x === expiry ? 'selected' : ''}>${x}</option>`).join('')}</select>
-      <span class="mute">Spot <b>${inr.format(c.spot)}</b> · lot ${c.lot_size} · ${touch ? 'tap' : 'hover'} a price to trade</span></div>
+      <span class="mute">Spot <b>${c.spot == null ? '–' : inr.format(c.spot)}</b> · lot ${c.lot_size} · ${touch ? 'tap' : 'hover'} a price to trade</span></div>
       <div class="card scroll"><table><tr><th>Call LTP</th><th class="strike">Strike</th><th>Put LTP</th></tr>
       ${c.rows.map(r => `<tr class="${r.strike === atm ? 'atm' : ''}" data-lot="${c.lot_size}">${cell(r.ce, 'CE', true)}<td class="strike">${r.strike}</td>${cell(r.pe, 'PE', false)}</tr>`).join('')}
       </table></div>`;
@@ -274,13 +286,32 @@ const views = {
   },
 };
 
+const FEED = {live: 'Live', demo: 'Simulated', stale: 'Stale', down: 'Feed down', starting: 'Connecting', closed: 'Market closed'};
+function renderLive(d) {
+  $('#idx').innerHTML = d.indices.map(i => `<span><b>${i.name}</b> ${i.spot == null ? '–' : inr.format(i.spot)}
+    ${i.change_pct == null ? '' : `<span class="${cls(i.change_pct)}">${i.change_pct.toFixed(2)}%</span>`}</span>`).join(' ');
+  $('#hdrpnl').innerHTML = 'P&L ' + pnl(d.net_pnl);
+  const f = d.feed;
+  $('#feed').innerHTML = `<span class="dot ${f.state}"></span>${FEED[f.state] || f.state}`;
+  $('#feed').title = f.message || '';
+  const b = $('#banner'), bad = f.state === 'stale' || f.state === 'down';
+  b.style.display = bad || f.state === 'closed' ? 'block' : 'none';
+  b.className = bad ? 'bad' : '';
+  b.textContent = bad ? `Prices are not updating (${f.message}). Orders will be rejected until the feed recovers.`
+                      : 'Market is closed. Prices shown are the last available.';
+}
+let es = null;
+function openStream() {
+  if (es) return;
+  es = new EventSource('/api/stream');
+  es.onmessage = e => renderLive(JSON.parse(e.data));
+  es.onerror = () => api('/api/me').catch(() => {});  // a 401 shows the login box; otherwise EventSource retries
+}
+
 async function refresh() {
   if (busy) return; busy = true;
   try {
     const keep = document.activeElement?.id;
-    const [idx, f] = await Promise.all([api('/api/indices'), api('/api/funds')]);
-    $('#idx').innerHTML = idx.map(i => `<span><b>${i.name}</b> ${inr.format(i.spot)} <span class="${cls(i.change_pct)}">${i.change_pct.toFixed(2)}%</span></span>`).join(' ');
-    $('#hdrpnl').innerHTML = 'P&L ' + pnl(f.net_pnl);
     if (!$('#ow').open && !['u','e','pv'].includes(keep) && !document.querySelector('.px:hover')) { const html = await views[tab](); if (!$('#ow').open) $('#main').innerHTML = html; }
   } catch (e) { if (e.message !== 'login') console.error(e); }
   busy = false;
@@ -303,9 +334,10 @@ $('#main').addEventListener('click', async e => {
 
 async function start() {
   try { const me = await api('/api/me'); $('#who').textContent = me.name; } catch { return; }
-  refresh(); if (!window._t) window._t = setInterval(refresh, 1500);
+  openStream(); refresh(); if (!window._t) window._t = setInterval(refresh, 1500);
 }
 start();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>

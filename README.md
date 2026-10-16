@@ -27,6 +27,30 @@ Account state is saved to SQLite, so restarts keep everyone's trades. Settings:
 Serve it behind an HTTPS reverse proxy before exposing it. Repeated failed logins
 lock that name for a minute. Passwords cannot be recovered; there is no reset flow yet.
 
+## Live feed
+
+`feed.py` provides `PolledSource`: give it a `fetch() -> {symbol: Quote}` function (a broker
+adapter) and it polls on a background thread, backs off on errors, and reports
+`live / stale / down / closed` in the UI. Stale quotes are refused by the engine, so a dead
+feed can never fill an order at an old price. Index spots come from quotes keyed by the
+underlying's name (`"NIFTY"`, `"BANKNIFTY"`). Market hours are by clock only (no holiday calendar).
+
+## Phone access (running on your own laptop)
+
+The app only needs to be reachable from your phone; it does not need public hosting.
+The laptop must stay on, awake and online, or prices and limit orders pause.
+
+1. **Same Wi-Fi (simplest):** `PT_HOST=0.0.0.0 PT_INVITE_CODE=<code> python -m papertrader.web.app`,
+   then open `http://<laptop-ip>:8000` on the phone. Plain HTTP on your home network only; don't
+   do this on shared or public Wi-Fi. Browsers may not offer "install" without HTTPS.
+2. **Anywhere, privately (recommended):** keep the app on `127.0.0.1` and reach it through a
+   private network or tunnel such as Tailscale, which can also give you HTTPS. Follow that
+   tool's own instructions; set `PT_SECURE_COOKIES=1` when you use HTTPS.
+
+After creating your account, set `PT_ALLOW_SIGNUP=0` so nobody else can register.
+Then use "Add to Home Screen" in the phone browser for an app-style icon (a minimal service
+worker makes it installable; it caches nothing).
+
 ## Layout
 
 - `engine.py`, `fills.py`, `charges.py`: pure paper-trading logic (no network, no clock)

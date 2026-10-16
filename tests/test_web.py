@@ -129,3 +129,55 @@ def test_state_survives_restart(tmp_path):
         assert c2.get("/api/funds").json()["cash"] == before
         assert c2.get("/api/positions").json()["by_strategy"][0]["strategy"] == "alpha"
         assert [o["strategy"] for o in c2.get("/api/orders").json()] == ["alpha"]
+
+
+def test_pwa_files_are_served(client):
+    m = client.get("/manifest.webmanifest")
+    assert m.status_code == 200 and m.json()["display"] == "standalone"
+    assert client.get("/sw.js").status_code == 200
+    assert client.get("/icon-192.png").headers["content-type"] == "image/png"
+    assert "caches." not in client.get("/sw.js").text  # must never cache prices or balances
+
+
+def test_signups_can_be_closed():
+    with client_for(allow_signup=False) as c:
+        assert c.post("/api/signup", json={"name": "amy", "password": PW}).status_code == 403
+
+
+def test_live_snapshot_and_stream(client):
+    signed_in(client)
+    d = client.get("/api/live").json()
+    assert d["feed"]["state"] == "demo" and [i["name"] for i in d["indices"]] == ["NIFTY", "BANKNIFTY"]
+    with client.stream("GET", "/api/stream", params={"limit": 2}) as r:
+        assert r.headers["content-type"].startswith("text/event-stream")
+        events = [l for l in r.iter_lines() if l.startswith("data: ")]
+    assert len(events) == 2
+    assert client.get("/api/stream", params={"limit": 1}).status_code == 200
+
+
+def test_stream_requires_login(client):
+    assert client.get("/api/stream", params={"limit": 1}).status_code == 401
+
+
+def test_live_feed_status_spot_and_stale_quotes_are_refused():
+    from datetime import date, datetime, timedelta
+    from decimal import Decimal as D
+    from papertrader.feed import PolledSource
+    from papertrader.models import Quote
+    from papertrader.sim import build_instruments
+
+    sym = next(s for s, i in build_instruments(date.today()).items()
+               if i.underlying == "NIFTY" and i.kind == "CE")
+    old = datetime.now() - timedelta(minutes=5)
+    src = PolledSource(lambda: {"NIFTY": Quote("NIFTY", old, D(24000), D(24000), D(24000)),
+                                sym: Quote(sym, old, D(100), D("100.5"), D(100))},
+                       is_open=lambda now: True)
+    src.poll_once()  # poll by hand; the background thread would do this
+    with client_for(feed=src) as c:
+        signed_in(c)
+        live = c.get("/api/live").json()
+        assert live["feed"]["state"] == "live"
+        assert live["indices"][0]["spot"] == 24000.0 and live["indices"][1]["spot"] is None
+        o = c.post("/api/orders", json={"legs": [{"symbol": sym, "side": "BUY", "lots": 1}],
+                                        "order_type": "MARKET"}).json()
+        assert o["status"] == "REJECTED" and "stale" in o["reason"]  # quote is 5 minutes old

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import os
 import re
@@ -15,8 +16,10 @@ from datetime import date, datetime, time as dtime
 from decimal import Decimal
 from pathlib import Path
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
-from fastapi.responses import FileResponse
+from dataclasses import asdict
+
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..accounts import Accounts, DataMode
@@ -60,7 +63,8 @@ class SignupIn(LoginIn):
 
 
 def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_path: str = ":memory:",
-               invite_code: str | None = None, secure_cookies: bool = False) -> FastAPI:
+               invite_code: str | None = None, secure_cookies: bool = False,
+               allow_signup: bool = True) -> FastAPI:
     store = Store(db_path)
     journal = Journal(conn=store.db, lock=store.lock)
     instruments = {**store.load_instruments(), **build_instruments(date.today())}
@@ -83,6 +87,8 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_pa
     def demo_settle(now: datetime) -> None:
         """Demo only: cash-settle expired contracts at the simulated spot. Real
         data must settle at the exchange's official price (bhavcopy)."""
+        if not isinstance(feed, SimFeed):
+            return  # real data: settle at the official price, which this app doesn't fetch yet
         close = dtime(15, 30)
         due = [d for d in {i.expiry for i in instruments.values() if i.expiry}
                if datetime.combine(d, close) <= now]
@@ -106,9 +112,13 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_pa
                     demo_settle(now)
                 except Exception:  # keep the loop alive; one bad tick must not stop fills
                     log.exception("tick failed")
+        if hasattr(feed, "start"):
+            feed.start()
         task = asyncio.create_task(loop())
         yield
         task.cancel()
+        if hasattr(feed, "stop"):
+            feed.stop()
 
     app = FastAPI(title="Paper Trader", lifespan=lifespan)
     app.state.accounts = accounts
@@ -154,6 +164,8 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_pa
     # ---- auth ------------------------------------------------------------------
     @app.post("/api/signup")
     async def signup(body: SignupIn, response: Response):
+        if not allow_signup:
+            raise HTTPException(403, "sign-ups are closed")
         name = body.name.strip()
         if not NAME_RE.match(name):
             raise HTTPException(422, "name must be 2-24 letters, digits, space, . _ -")
@@ -200,12 +212,55 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_pa
         return {"name": names[acct]}
 
     # ---- market data -----------------------------------------------------------
+    def spot_of(underlying: str, now: datetime) -> Decimal | None:
+        fn = getattr(feed, "spot", None)
+        return fn(underlying, now) if fn else None
+
+    def feed_status() -> dict:
+        st = getattr(feed, "status", None)
+        return asdict(st()) if st else {"state": "demo", "message": "simulated prices",
+                                        "last_ok_age": None, "failures": 0}
+
+    def indices_json() -> list[dict]:
+        now = datetime.now()
+        out = []
+        for n, (base, *_rest) in UNDERLYINGS.items():
+            spot = spot_of(n, now)
+            out.append({"name": n, "spot": f(spot),
+                        "change_pct": f((spot / base - 1) * 100) if spot else None})
+        return out
+
+    def live_json(acct: str) -> dict:
+        a, clock, quotes = view(acct)
+        snap = a.engine.mark(clock, quotes)
+        return {"indices": indices_json(), "feed": feed_status(),
+                "net_pnl": f(snap.net_pnl), "equity": f(snap.equity)}
+
+    @app.get("/api/live")
+    async def live(acct: str = Depends(me)):
+        return live_json(acct)
+
+    @app.get("/api/stream")
+    async def stream(request: Request, acct: str = Depends(me), limit: int | None = None):
+        """Server-sent events: one `live` snapshot per second (`limit` is for tests)."""
+        async def events():
+            n = 0
+            while not await request.is_disconnected():
+                yield f"data: {json.dumps(live_json(acct))}\n\n"
+                n += 1
+                if limit and n >= limit:
+                    return
+                await asyncio.sleep(1)
+        return StreamingResponse(events(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.get("/api/feed")
+    async def feed_route(acct: str = Depends(me)):
+        return feed_status()
+
     @app.get("/api/indices")
     async def indices(acct: str = Depends(me)):
-        now = datetime.now()
-        return [{"name": n, "spot": f(SimFeed.spot(n, now)),
-                 "change_pct": f((SimFeed.spot(n, now) / UNDERLYINGS[n][0] - 1) * 100)}
-                for n in UNDERLYINGS]
+        return indices_json()
 
     @app.get("/api/expiries")
     async def expiries(acct: str = Depends(me)):
@@ -226,7 +281,7 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_pa
                 "symbol": inst.symbol,
                 "bid": f(q.bid) if q else None, "ask": f(q.ask) if q else None,
                 "ltp": f(q.mid) if q else None}
-        spot = SimFeed.spot(underlying, datetime.now())
+        spot = spot_of(underlying, datetime.now())
         return {"underlying": underlying, "spot": f(spot), "lot_size": lot,
                 "rows": [rows[k] for k in sorted(rows)]}
 
@@ -296,6 +351,12 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_pa
     async def index():
         return FileResponse(STATIC / "index.html")
 
+    for name, mime in (("manifest.webmanifest", "application/manifest+json"),
+                       ("sw.js", "text/javascript"), ("icon-192.png", "image/png"),
+                       ("icon-512.png", "image/png"), ("apple-touch-icon.png", "image/png")):
+        app.add_api_route("/" + name, (lambda n=name, m=mime: FileResponse(STATIC / n, media_type=m)),
+                          include_in_schema=False)
+
     return app
 
 
@@ -307,6 +368,7 @@ def main() -> None:  # python -m papertrader.web.app
         raise SystemExit("Refusing to listen publicly without PT_INVITE_CODE (anyone could sign up).")
     app = create_app(db_path=os.environ.get("PT_DB", "papertrader.db"),
                      invite_code=invite,
+                     allow_signup=os.environ.get("PT_ALLOW_SIGNUP", "1") != "0",
                      secure_cookies=os.environ.get("PT_SECURE_COOKIES") == "1")
     uvicorn.run(app, host=host, port=int(os.environ.get("PT_PORT", "8000")))
 
