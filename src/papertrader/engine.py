@@ -45,7 +45,8 @@ class Snapshot:
 
 class Engine:
     def __init__(self, instruments: Mapping[str, Instrument], config: EngineConfig | None = None,
-                 journal: Journal | None = None):
+                 journal: Journal | None = None, account_id: str = "default"):
+        self.account_id = account_id
         self.instruments = dict(instruments)
         self.config = config or EngineConfig()
         self.journal = journal or Journal()
@@ -58,12 +59,13 @@ class Engine:
     # ---- orders -----------------------------------------------------------
 
     def submit(self, legs: list[Leg], order_type: OrderType, now: datetime,
-               quotes: Mapping[str, Quote]) -> Order:
-        """Place a basket. All legs fill together or not at all."""
-        order = Order(self._next_id, tuple(legs), order_type, now)
+               quotes: Mapping[str, Quote], strategy: str = "") -> Order:
+        """Place a basket. All legs fill together or not at all. `strategy` is a
+        free-text tag stored with the order and journal for later comparison."""
+        order = Order(self._next_id, tuple(legs), order_type, now, strategy)
         self._next_id += 1
         self.orders[order.id] = order
-        self.journal.record(now, "order", {
+        self._log(now, "order", {
             "type": order_type.value,
             "legs": [(l.symbol, l.side.value, l.lots, l.limit_price) for l in legs],
         }, order.id)
@@ -113,7 +115,7 @@ class Engine:
         equity = self.cash + value
         snap = Snapshot(now, self.cash, value, equity, unrealized, realized,
                         self.charges_paid, equity - self.config.starting_cash, tuple(unpriced))
-        self.journal.record(now, "mark", {
+        self._log(now, "mark", {
             "equity": equity, "unrealized": unrealized, "realized": realized,
             "charges": self.charges_paid, "unpriced": unpriced,
         })
@@ -142,7 +144,7 @@ class Engine:
             self.cash += qty * intrinsic - charge.total
             self.charges_paid += charge.total
             self._reduce(pos, -qty, intrinsic)
-            self.journal.record(now, "settle", {
+            self._log(now, "settle", {
                 "symbol": pos.symbol, "qty": qty, "settlement": spot,
                 "intrinsic": intrinsic, "charges": charge.total,
             })
@@ -217,7 +219,7 @@ class Engine:
         self.charges_paid += total_charges
         order.fills.extend(fills)
         for f in fills:
-            self.journal.record(now, "fill", {
+            self._log(now, "fill", {
                 "symbol": f.symbol, "side": f.side.value, "qty": f.qty,
                 "price": f.price, "charges": f.charges,
             }, order.id)
@@ -281,7 +283,12 @@ class Engine:
             return q.mid
         return q.ltp
 
+    def _log(self, ts: datetime, kind: str, payload: dict, order_id: int | None = None) -> None:
+        order = self.orders.get(order_id) if order_id is not None else None
+        self.journal.record(ts, kind, payload, order_id, self.account_id,
+                            order.strategy if order else "")
+
     def _finish(self, order: Order, status: OrderStatus, reason: str, now: datetime) -> Order:
         order.status, order.reason = status, reason
-        self.journal.record(now, "status", {"status": status.value, "reason": reason}, order.id)
+        self._log(now, "status", {"status": status.value, "reason": reason}, order.id)
         return order

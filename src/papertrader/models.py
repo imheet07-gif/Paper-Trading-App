@@ -76,6 +76,7 @@ class Order:
     legs: tuple[Leg, ...]
     order_type: OrderType
     created: datetime
+    strategy: str = ""
     status: OrderStatus = OrderStatus.OPEN
     reason: str = ""
     fills: list["Fill"] = field(default_factory=list)
