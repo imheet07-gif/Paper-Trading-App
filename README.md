@@ -51,6 +51,20 @@ After creating your account, set `PT_ALLOW_SIGNUP=0` so nobody else can register
 Then use "Add to Home Screen" in the phone browser for an app-style icon (a minimal service
 worker makes it installable; it caches nothing).
 
+## iOS home-screen widget (Scriptable)
+
+`widgets/scriptable/PaperTrader.js` shows net P&L, index prices, feed status and your top
+strategies. It needs the app to be reachable from the phone over HTTPS (see above).
+
+1. Install the free Scriptable app, create a new script and paste in `PaperTrader.js`.
+2. In PaperTrader: Funds, "Home-screen widget token". Copy the token (shown once).
+3. Run the script in Scriptable; enter the app URL and token (stored in the iOS Keychain).
+4. Add a Scriptable widget to the home screen and pick the script.
+
+The token is read-only (it opens `/api/widget` and nothing else, so it cannot trade), only its
+hash is stored, and you can revoke or rotate it from the same place. iOS decides when widgets
+refresh (often 15+ minutes), so treat it as a glance, not live tracking. Scriptable is iOS-only.
+
 ## Layout
 
 - `engine.py`, `fills.py`, `charges.py`: pure paper-trading logic (no network, no clock)

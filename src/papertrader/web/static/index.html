@@ -277,6 +277,9 @@ const views = {
     const st = (k, v) => `<div class="card stat"><div class="k">${k}</div><div class="n">${v}</div></div>`;
     return `<div class="grid">${st('Available to trade', money(f.available))}${st('Cash balance', money(f.cash))}${st('Margin used (estimate)', money(f.margin_used))}
       ${st('Account value', money(f.equity))}${st('Net P&L', pnl(f.net_pnl))}${st('Charges paid', money(f.charges))}</div>
+      <div class="bar" style="margin-top:12px"><button class="ghost" data-wt="new">Home-screen widget token</button>
+      <button class="ghost" data-wt="revoke">Revoke token</button>
+      <span class="mute">For the Scriptable iOS widget (read-only: P&amp;L and prices only).</span></div>
       <p class="mute">Starting balance ${money(f.starting_cash)}. Margin is a flat estimate, not exchange SPAN. Charge rates are placeholders until verified.</p>`;
   },
   async board() {
@@ -327,6 +330,12 @@ $('#main').addEventListener('click', async e => {
   if (!b && cellEl && touch) { const [sym, ltp] = cellEl.dataset.c.split('|'); return openOrder(sym, 'BUY', ltp === 'null' ? null : +ltp, +cellEl.closest('tr').dataset.lot); }
   if (!b) return;
   if (b.dataset.o) { const [sym, side, ltp] = b.dataset.o.split('|'); openOrder(sym, side, ltp === 'null' ? null : +ltp, +b.closest('tr').dataset.lot); }
+  if (b.dataset.wt === 'new') {
+    if (!confirm('Create a new widget token? Any existing one stops working.')) return;
+    const t = await api('/api/widget/token', {method:'POST'});
+    prompt('Widget URL: ' + location.origin + '\nCopy this token now; it is shown only once:', t.token);
+  }
+  if (b.dataset.wt === 'revoke') { await api('/api/widget/token', {method:'DELETE'}); toast('Widget token revoked'); }
   if (b.dataset.cx) { await api('/api/orders/' + b.dataset.cx, {method:'DELETE'}); refresh(); }
   if (b.dataset.x) { const [symbol, lots, strategy] = b.dataset.x.split('|');
     await place([{symbol, side: +lots > 0 ? 'SELL' : 'BUY', lots: Math.abs(+lots)}], 'MARKET', strategy); }

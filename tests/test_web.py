@@ -181,3 +181,48 @@ def test_live_feed_status_spot_and_stale_quotes_are_refused():
         o = c.post("/api/orders", json={"legs": [{"symbol": sym, "side": "BUY", "lots": 1}],
                                         "order_type": "MARKET"}).json()
         assert o["status"] == "REJECTED" and "stale" in o["reason"]  # quote is 5 minutes old
+
+
+def widget_token(client):
+    return client.post("/api/widget/token").json()["token"]
+
+
+def test_widget_token_is_read_only_revocable_and_rotates(client):
+    signed_in(client)
+    _, sym = first_call(client)
+    client.post("/api/orders", json={"legs": [{"symbol": sym, "side": "BUY", "lots": 1}],
+                                     "order_type": "MARKET", "strategy": "alpha"})
+    tok = widget_token(client)
+    with TestClient(client.app) as phone:  # no session cookie, only the bearer token
+        auth = {"Authorization": f"Bearer {tok}"}
+        d = phone.get("/api/widget", headers=auth).json()
+        assert d["name"] == "heet" and d["open_positions"] == 1 and d["strategies"][0]["strategy"] == "alpha"
+        assert d["feed"]["state"] == "demo" and len(d["indices"]) == 2
+        # the token opens nothing else
+        for path in ("/api/funds", "/api/orders", "/api/positions"):
+            assert phone.get(path, headers=auth).status_code == 401
+        assert phone.post("/api/orders", headers=auth, json={"legs": [{"symbol": sym, "side": "SELL", "lots": 1}],
+                                                             "order_type": "MARKET"}).status_code == 401
+        assert phone.post("/api/widget/token", headers=auth).status_code == 401  # can't mint tokens
+        assert phone.get("/api/widget").status_code == 401
+        assert phone.get("/api/widget", headers={"Authorization": "Bearer nope"}).status_code == 401
+        new = widget_token(client)  # rotating invalidates the old token
+        assert phone.get("/api/widget", headers=auth).status_code == 401
+        assert phone.get("/api/widget", headers={"Authorization": f"Bearer {new}"}).status_code == 200
+        client.delete("/api/widget/token")
+        assert phone.get("/api/widget", headers={"Authorization": f"Bearer {new}"}).status_code == 401
+
+
+def test_session_cookie_cannot_be_used_as_widget_token_and_vice_versa(client):
+    signed_in(client)
+    assert client.get("/api/widget").status_code == 401  # cookie alone is not enough
+    tok = widget_token(client)
+    with TestClient(client.app) as phone:
+        assert phone.get("/api/me", headers={"Authorization": f"Bearer {tok}"}).status_code == 401
+
+
+def test_widget_token_stored_hashed(client):
+    signed_in(client)
+    tok = widget_token(client)
+    rows = client.app.state.store.db.execute("SELECT token_hash FROM widget_tokens").fetchall()
+    assert rows and tok not in rows[0][0]

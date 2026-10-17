@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id TEXT NOT NULL REFERENCES users(id),
     expires REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS widget_tokens (
+    user_id TEXT PRIMARY KEY REFERENCES users(id),
+    token_hash TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS account_state (
     user_id TEXT PRIMARY KEY REFERENCES users(id),
     state TEXT NOT NULL
@@ -115,6 +119,27 @@ class Store:
         with self.lock:
             self.db.execute("DELETE FROM sessions WHERE token_hash = ?", (self._th(token),))
             self.db.commit()
+
+    # ---- widget tokens: read-only, one per user, rotating replaces the old one ----
+    def new_widget_token(self, user_id: str) -> str:
+        token = "pw_" + secrets.token_urlsafe(32)
+        with self.lock:
+            self.db.execute("INSERT INTO widget_tokens VALUES (?, ?) ON CONFLICT(user_id)"
+                            " DO UPDATE SET token_hash = excluded.token_hash", (user_id, self._th(token)))
+            self.db.commit()
+        return token
+
+    def revoke_widget_token(self, user_id: str) -> None:
+        with self.lock:
+            self.db.execute("DELETE FROM widget_tokens WHERE user_id = ?", (user_id,))
+            self.db.commit()
+
+    def user_for_widget_token(self, token: str) -> User | None:
+        with self.lock:
+            row = self.db.execute(
+                "SELECT u.id, u.name FROM widget_tokens w JOIN users u ON u.id = w.user_id"
+                " WHERE w.token_hash = ?", (self._th(token),)).fetchone()
+        return User(row[0], row[1]) if row else None
 
     # ---- account state -------------------------------------------------------
     def save_state(self, user_id: str, state: dict) -> None:

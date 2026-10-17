@@ -18,7 +18,7 @@ from pathlib import Path
 
 from dataclasses import asdict
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -141,6 +141,14 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_pa
             raise HTTPException(401, "not signed in")
         return user.id
 
+    def widget_user(authorization: str | None = Header(default=None)) -> str:
+        """Bearer widget token: grants access to /api/widget only."""
+        token = authorization[7:] if authorization and authorization.lower().startswith("bearer ") else ""
+        user = store.user_for_widget_token(token) if token else None
+        if not user:
+            raise HTTPException(401, "invalid widget token")
+        return user.id
+
     # ---- helpers -------------------------------------------------------------
     def order_json(o: Order) -> dict:
         return {
@@ -253,6 +261,29 @@ def create_app(feed: QuoteSource | None = None, tick_seconds: float = 1.0, db_pa
                 await asyncio.sleep(1)
         return StreamingResponse(events(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.post("/api/widget/token")
+    async def widget_token(acct: str = Depends(me)):
+        """Create (or rotate) this user's widget token. Shown once; only a hash is stored."""
+        return {"token": store.new_widget_token(acct)}
+
+    @app.delete("/api/widget/token")
+    async def widget_token_revoke(acct: str = Depends(me)):
+        store.revoke_widget_token(acct)
+        return {}
+
+    @app.get("/api/widget")
+    async def widget(acct: str = Depends(widget_user)):
+        """Compact read-only summary for home-screen widgets."""
+        a, clock, quotes = view(acct)
+        snap = a.engine.mark(clock, quotes)
+        report = sorted(a.engine.strategy_report(quotes).values(), key=lambda r: -abs(r.net_pnl))[:3]
+        return {"name": names[acct], "as_of": datetime.now().isoformat(timespec="seconds"),
+                "feed": {k: feed_status()[k] for k in ("state", "message")},
+                "indices": indices_json(), "net_pnl": f(snap.net_pnl), "equity": f(snap.equity),
+                "unrealized": f(snap.unrealized_pnl),
+                "open_positions": sum(1 for p in a.engine.positions.values() if p.net_qty),
+                "strategies": [{"strategy": r.strategy, "net_pnl": f(r.net_pnl)} for r in report]}
 
     @app.get("/api/feed")
     async def feed_route(acct: str = Depends(me)):
