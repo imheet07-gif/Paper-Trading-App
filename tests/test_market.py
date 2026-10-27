@@ -58,6 +58,12 @@ class Parsing(unittest.TestCase):
         self.assertEqual((r["date"], r["isin"], r["close"], r["prev_close"], r["volume"], r["trades"]),
                          ("2015-01-01", "INE144J01027", 3040, 3060, 37604, 200))
 
+    def test_old_format_two_digit_year(self):
+        self.assertEqual(bc.old_date("13-Jul-20"), "2020-07-13")
+        self.assertEqual(bc.old_date("01-JAN-2015"), "2015-01-01")
+        with self.assertRaises(ValueError):
+            bc.old_date("2020-07-13")
+
     def test_old_format_without_isin_gives_nothing(self):
         self.assertEqual(bc.parse_old(read("old_20050103_no_isin.csv")), [])
 

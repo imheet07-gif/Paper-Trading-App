@@ -86,6 +86,16 @@ def _clean(row):
     return {(k or "").strip(): (v or "").strip() for k, v in row.items()}
 
 
+def old_date(s):
+    """'13-JUL-2020' or, in some 2020 files, '13-Jul-20' -> '2020-07-13'."""
+    for fmt in ("%d-%b-%Y", "%d-%b-%y"):
+        try:
+            return dt.datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            pass
+    raise ValueError("unreadable bhavcopy date %r" % s)
+
+
 def parse_old(text):
     """Old-format bhavcopy -> rows. Files before late 2011 have no ISIN and give no rows."""
     out = []
@@ -95,7 +105,7 @@ def parse_old(text):
         if not isin:
             continue
         out.append({
-            "date": dt.datetime.strptime(r["TIMESTAMP"], "%d-%b-%Y").date().isoformat(),
+            "date": old_date(r["TIMESTAMP"]),
             "isin": isin, "symbol": r["SYMBOL"], "series": r["SERIES"],
             "open": paise(r["OPEN"]), "high": paise(r["HIGH"]), "low": paise(r["LOW"]),
             "close": paise(r["CLOSE"]), "last": paise(r["LAST"]), "prev_close": paise(r["PREVCLOSE"]),
