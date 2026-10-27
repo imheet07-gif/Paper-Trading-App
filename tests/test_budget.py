@@ -4,16 +4,25 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
+from decimal import Decimal
 
 from _load import load, ROOT, FIX
 
 size = load("trader-budget", "size")
+inst = load("core", "instruments")
+
+
+def registry():
+    """A registry built from the real NSE equity list sample (tests/fixtures/core)."""
+    with open(os.path.join(FIX, "core", "EQUITY_L.sample.csv"), encoding="utf-8-sig") as fh:
+        return inst.build(fh.read())
 
 CFG = os.path.join(ROOT, "trader-budget", "config.example.json")
 TARGETS = os.path.join(ROOT, "trader-budget", "targets.example.json")
-TOP5 = os.path.join(FIX, "trader-budget", "berkshire-q2-2026-top5.json")
-REEL = {"AAPL": 1250, "AXP": 1119, "GOOGL": 823, "KO": 708, "BAC": 600}
-PRICES = {"AAPL": 341.27, "AXP": 309.84, "GOOGL": 353.78, "KO": 90.11, "BAC": 53.96}
+# illustrative round prices, not quotes
+PRICES = {"RELIANCE": Decimal("1400"), "TCS": Decimal("3000"), "HDFCBANK": Decimal("950"),
+          "ITC": Decimal("410"), "INFY": Decimal("1500")}
+SHARES = {"RELIANCE": 17, "TCS": 8, "HDFCBANK": 20, "ITC": 34, "INFY": 6}
 
 
 def cfg(**over):
@@ -23,13 +32,13 @@ def cfg(**over):
     return c
 
 
-def rows(path):
+def rows(path=TARGETS):
     with open(path) as fh:
         return size.parse_weights(json.load(fh))
 
 
-def dollars(result):
-    return {p["ticker"]: p["dollars"] for p in result["positions"]}
+def shares(result):
+    return {p["symbol"]: p["shares"] for p in result["positions"]}
 
 
 def run(argv):
@@ -39,138 +48,168 @@ def run(argv):
     return code, out.getvalue(), err.getvalue()
 
 
-class TheReel(unittest.TestCase):
-    """$5,000, 10% cash, 25% cap: AAPL 1250 (capped), AXP 1119, GOOGL 823, KO 708, BAC 600, cash 500, idle 0."""
+class TheExample(unittest.TestCase):
+    """Rs 1,00,000, 10% cash, 25% cap, the example targets at round prices."""
 
-    def check_reel(self, r):
-        self.assertEqual(dollars(r), REEL)
-        self.assertEqual(r["cash_buffer"], 500)
-        self.assertEqual(r["invested"], 4500)
-        self.assertEqual(r["idle"], 0)
-        self.assertEqual(r["cap"], 1250)
-        self.assertEqual([p["ticker"] for p in r["positions"] if p["capped"]], ["AAPL"])
+    def test_without_charges(self):
+        r = size.size(rows(), cfg(broker=None), prices=PRICES)
+        self.assertEqual(shares(r), SHARES)
+        self.assertEqual(r["cash_buffer"], Decimal("10000.00"))
+        self.assertEqual(r["cap"], Decimal("25000.00"))
+        self.assertEqual(r["invested"], Decimal("89740"))
+        self.assertEqual(r["idle"], Decimal("260"))
+        self.assertIsNone(r["charges"])
+        self.assertEqual([p["symbol"] for p in r["positions"] if p["capped"]], ["RELIANCE"])
 
-    def test_from_the_raw_13f_weights(self):
-        self.check_reel(size.size(rows(TOP5), cfg()))
+    def test_with_zerodha_charges_kept_inside_the_money(self):
+        r = size.size(rows(), cfg(), prices=PRICES)
+        self.assertEqual(shares(r), SHARES)
+        self.assertEqual(r["charges"], Decimal("106.56"))
+        self.assertEqual(r["idle"], Decimal("153.44"))
+        self.assertEqual(r["invested"] + r["charges"] + r["idle"], r["investable"])
 
-    def test_from_the_renormalised_targets_file(self):
-        self.check_reel(size.size(rows(TARGETS), cfg()))
+    def test_charges_that_do_not_fit_take_a_share_off(self):
+        # Rs 10,000 exactly in one stock at Rs 1,000: ten shares plus charges would overspend
+        r = size.size([{"symbol": "ABC", "isin": "", "name": "", "weight": Decimal(1)}],
+                      cfg(cash_buffer_pct=0, max_position_pct=100, min_order_inr=0),
+                      budget=10000, prices={"ABC": Decimal("1000")})
+        self.assertEqual(shares(r), {"ABC": 9})
+        self.assertLessEqual(r["invested"] + r["charges"], Decimal("10000"))
+        self.assertGreaterEqual(r["idle"], 0)
 
-    def test_from_inline_weights(self):
-        w = size.parse_weights(size.weights_from_arg("AAPL=22.04,AXP=17.14,GOOGL=12.62,KO=10.86,BAC=9.20"))
-        self.check_reel(size.size(w, cfg()))
+    def test_inline_weights_match_the_file(self):
+        w = size.parse_weights(size.weights_from_arg("RELIANCE=30,TCS=25,HDFCBANK=20,ITC=15,INFY=10"))
+        self.assertEqual(shares(size.size(w, cfg(), prices=PRICES)), SHARES)
 
-    def test_renormalised_weights_match_the_reel_labels(self):
-        r = size.size(rows(TOP5), cfg())
-        shown = {p["ticker"]: round(p["weight"], 1) for p in r["positions"]}
-        self.assertEqual(shown, {"AAPL": 30.7, "AXP": 23.9, "GOOGL": 17.6, "KO": 15.1, "BAC": 12.8})
-
-    def test_one_decimal_weights_stay_within_a_dollar(self):
-        w = size.parse_weights({"AAPL": 30.7, "AXP": 23.9, "GOOGL": 17.6, "KO": 15.1, "BAC": 12.8})
-        r = size.size(w, cfg())
-        self.assertEqual(r["invested"], 4500)
-        self.assertEqual(dollars(r)["AAPL"], 1250)
-        for t, v in dollars(r).items():
-            self.assertLessEqual(abs(v - REEL[t]), 1.0, t)
-
-    def test_orders_are_place_stock_order_shaped(self):
-        r = size.size(rows(TOP5), cfg())
-        orders = size.orders_from(r, "Berkshire 13F")
-        self.assertEqual(orders[0], {"symbol": "AAPL", "side": "buy", "notional": "1250", "type": "market",
-                                     "time_in_force": "day", "why": orders[0]["why"]})
-        self.assertIn("capped at 25%", orders[0]["why"])
-        for o in orders:
-            self.assertIsInstance(o["notional"], str)
-            self.assertNotIn("qty", o)
-        self.assertEqual([o["notional"] for o in orders], ["1250", "1119", "823", "708", "600"])
-
-    def test_cents_mode_keeps_the_total(self):
-        r = size.size(rows(TOP5), cfg(), cents=True)
-        d = dollars(r)
-        self.assertEqual(d["AAPL"], 1250)
-        self.assertAlmostEqual(sum(d.values()), 4500, places=2)
-        self.assertAlmostEqual(d["AXP"], 1118.13, places=2)
-        self.assertEqual(size.orders_from(r)[1]["notional"], "1118.13")
+    def test_no_position_crosses_the_cap(self):
+        r = size.size(rows(), cfg(), prices=PRICES)
+        for p in r["positions"]:
+            self.assertLessEqual(p["value"], r["cap"], p["symbol"])
 
 
 class Rules(unittest.TestCase):
-    def test_cap_redistributes_until_nobody_is_over(self):
-        w = size.parse_weights({"A": 60, "B": 30, "C": 10})
-        r = size.size(w, {"budget": 1000, "cash_buffer_pct": 0, "max_position_pct": 40, "min_order_usd": 1})
-        self.assertEqual(dollars(r), {"A": 400, "B": 400, "C": 200})
-        self.assertEqual(sorted(p["ticker"] for p in r["positions"] if p["capped"]), ["A", "B"])
+    def test_blocked_symbols_are_dropped_and_shared_out(self):
+        r = size.size(rows(), cfg(blocked=["ITC"]), prices=PRICES)
+        self.assertNotIn("ITC", shares(r))
+        self.assertEqual(r["dropped"], [{"symbol": "ITC", "reason": "on your blocked list"}])
 
-    def test_everything_capped_leaves_money_idle(self):
-        w = size.parse_weights({"AAPL": 50, "KO": 50})
-        r = size.size(w, cfg())
-        self.assertEqual(dollars(r), {"AAPL": 1250, "KO": 1250})
-        self.assertEqual(r["idle"], 2000)
-        self.assertIn("every stock is at its cap", size.report(r, size.orders_from(r)))
+    def test_a_share_dearer_than_its_slice_is_dropped(self):
+        prices = dict(PRICES, INFY=Decimal("30000"))
+        r = size.size(rows(), cfg(), prices=prices)
+        self.assertNotIn("INFY", shares(r))
+        self.assertIn("one share costs", r["dropped"][0]["reason"])
 
-    def test_slices_under_the_minimum_are_dropped_and_shared_out(self):
-        w = size.parse_weights({"A": 90, "B": 7, "C": 3})
-        r = size.size(w, {"budget": 100, "cash_buffer_pct": 10, "max_position_pct": 100, "min_order_usd": 5})
-        self.assertNotIn("C", dollars(r))
-        self.assertEqual(sum(dollars(r).values()), 90)
-        self.assertTrue(all(v >= 5 for v in dollars(r).values()))
-        self.assertEqual(r["dropped"][0]["ticker"], "C")
-
-    def test_blocked_tickers_are_dropped_first(self):
-        r = size.size(rows(TOP5), cfg(blocked=["ko"]))
-        self.assertNotIn("KO", dollars(r))
-        self.assertEqual(r["invested"], 4500)
-        self.assertIn("blocked", r["dropped"][0]["reason"])
+    def test_under_the_minimum_order_is_dropped(self):
+        r = size.size(rows(), cfg(min_order_inr=10000), prices=PRICES)
+        self.assertNotIn("INFY", shares(r))
+        self.assertIn("minimum order", r["dropped"][0]["reason"])
 
     def test_top_n(self):
-        r = size.size(rows(TOP5), cfg(max_position_pct=100), top=2)
-        self.assertEqual(sorted(dollars(r)), ["AAPL", "AXP"])
+        r = size.size(rows(), cfg(), prices=PRICES, top=2)
+        self.assertEqual(sorted(shares(r)), ["RELIANCE", "TCS"])
 
-    def test_whole_shares_need_prices(self):
-        with self.assertRaises(size.SizeError):
-            size.size(rows(TOP5), cfg(fractional=False))
+    def test_prices_are_never_guessed(self):
+        with self.assertRaisesRegex(size.SizeError, "need a price for: INFY"):
+            size.size(rows(), cfg(), prices={k: v for k, v in PRICES.items() if k != "INFY"})
 
-    def test_whole_shares_with_prices(self):
-        r = size.size(rows(TOP5), cfg(fractional=False), prices=PRICES)
-        self.assertTrue(r["whole_shares"])
-        for p in r["positions"]:
-            self.assertEqual(p["shares"], int(p["shares"]))
-            self.assertAlmostEqual(p["dollars"], p["shares"] * PRICES[p["ticker"]], places=2)
-            self.assertLessEqual(p["dollars"], 1250)
-        self.assertAlmostEqual(r["invested"] + r["idle"], 4500, places=2)
-        self.assertLess(r["idle"], min(PRICES.values()) * 2)
-        orders = size.orders_from(r)
-        self.assertTrue(all("qty" in o and "notional" not in o for o in orders))
+    def test_unknown_broker_is_an_error_not_a_default(self):
+        with self.assertRaisesRegex(size.SizeError, "no rates for broker"):
+            size.size(rows(), cfg(broker="nobody"), prices=PRICES)
 
-    def test_no_budget_is_an_error(self):
-        with self.assertRaises(size.SizeError):
-            size.size(rows(TOP5), {"cash_buffer_pct": 10})
+    def test_duplicates(self):
+        with self.assertRaisesRegex(size.SizeError, "listed twice"):
+            size.size(size.parse_weights([{"symbol": "TCS", "weight": 1}, {"symbol": "tcs", "weight": 2}]),
+                      cfg(), prices=PRICES)
+        same_isin = [{"symbol": "AAA", "isin": "INE000A01011", "weight": 1},
+                     {"symbol": "BBB", "isin": "INE000A01011", "weight": 1}]
+        with self.assertRaisesRegex(size.SizeError, "share the ISIN"):
+            size.size(size.parse_weights(same_isin), cfg(), prices={"AAA": 1, "BBB": 1})
 
-    def test_duplicate_tickers_are_an_error(self):
-        with self.assertRaises(size.SizeError):
-            size.size([{"ticker": "KO", "name": "", "weight": 1}, {"ticker": "KO", "name": "", "weight": 2}], cfg())
+    def test_bad_inputs(self):
+        with self.assertRaisesRegex(size.SizeError, "no budget"):
+            size.size(rows(), cfg(budget=None), prices=PRICES)
+        with self.assertRaisesRegex(size.SizeError, "not a number"):
+            size.parse_weights({"TCS": "lots"})
+        with self.assertRaisesRegex(size.SizeError, "cash_buffer_pct"):
+            size.size(rows(), cfg(cash_buffer_pct=100), prices=PRICES)
+
+
+class OrderSheet(unittest.TestCase):
+    def test_lines_are_whole_share_delivery_market_buys(self):
+        r = size.size(rows(), cfg(), prices=PRICES)
+        orders = size.orders_from(r, "example")
+        first = orders[0]
+        self.assertEqual({k: first[k] for k in ("symbol", "exchange", "side", "qty", "product", "order_type")},
+                         {"symbol": "RELIANCE", "exchange": "NSE", "side": "buy", "qty": 17,
+                          "product": "delivery", "order_type": "market"})
+        self.assertEqual(first["value"], "23800.00")
+        self.assertIn("est_charges", first)
+        self.assertIn("cap", first["reason"])
+        for o in orders:
+            self.assertIsInstance(o["qty"], int)
+            self.assertNotIn("notional", o)
+
+    def test_isin_is_carried_through(self):
+        w = size.parse_weights([{"symbol": "TCS", "isin": "ine467b01029", "weight": 1}])
+        r = size.size(w, cfg(max_position_pct=100), prices=PRICES)
+        self.assertEqual(size.orders_from(r)[0]["isin"], "INE467B01029")
+
+
+class Isins(unittest.TestCase):
+    def test_registry_fills_isins_and_notes_what_it_does_not_know(self):
+        r = size.size(rows(), cfg(), prices=PRICES, registry=registry())
+        isins = {p["symbol"]: p["isin"] for p in r["positions"]}
+        self.assertEqual(isins["TCS"], "INE467B01029")
+        self.assertEqual(isins["RELIANCE"], "INE002A01018")
+        self.assertEqual(isins["ITC"], "")  # not in the sample list
+        self.assertEqual(len(r["isin_notes"]), 1)
+        self.assertIn("ITC is not in the instrument registry", r["isin_notes"][0])
+        self.assertEqual(size.orders_from(r)[0]["isin"], "INE002A01018")
+
+    def test_a_wrong_isin_is_refused(self):
+        w = size.parse_weights([{"symbol": "TCS", "isin": "INE002A01018", "weight": 1}])
+        with self.assertRaisesRegex(size.SizeError, "TCS is listed on NSE with ISIN INE467B01029"):
+            size.size(w, cfg(max_position_pct=100), prices=PRICES, registry=registry())
+
+    def test_blocking_by_isin_works_on_a_symbol(self):
+        r = size.size(rows(), cfg(blocked=["INE467B01029"]), prices=PRICES, registry=registry())
+        self.assertNotIn("TCS", shares(r))
+
+    def test_without_a_registry_it_says_so(self):
+        r = size.size(rows(), cfg(), prices=PRICES)
+        self.assertIsNone(r["registry"])
+        self.assertIn("ISINs not checked", size.report(r, size.orders_from(r)))
 
 
 class Cli(unittest.TestCase):
-    def test_write_orders_file(self):
+    def test_write_and_report(self):
         with tempfile.TemporaryDirectory() as d:
-            out = os.path.join(d, "trader", "orders.json")
-            code, text, _ = run(["--targets", TARGETS, "--config", CFG, "--write", out])
+            prices = os.path.join(d, "prices.json")
+            with open(prices, "w") as fh:
+                json.dump({"as_of": "2026-10-27", "prices": {k: str(v) for k, v in PRICES.items()}}, fh)
+            out = os.path.join(d, "orders.json")
+            code, text, _ = run(["--instruments", "/nonexistent/instruments.json", "--targets", TARGETS, "--config", CFG, "--prices", prices, "--write", out])
             self.assertEqual(code, 0)
-            self.assertIn("left idle", text)
+            self.assertIn("₹1,00,000", text)
+            self.assertIn("BUY 17 RELIANCE on NSE", text)
+            self.assertIn("tick sizes, price bands and circuit limits", text)
             self.assertIn("not financial advice", text)
-            with open(out) as fh:
+            with open(out, encoding="utf-8") as fh:
                 doc = json.load(fh)
-            self.assertEqual(doc["status"], "proposed")
+            self.assertEqual(doc["created_by"], "trader-budget")
+            self.assertEqual(doc["currency"], "INR")
             self.assertIs(doc["paper"], True)
-            self.assertEqual([o["symbol"] for o in doc["orders"]], ["AAPL", "AXP", "GOOGL", "KO", "BAC"])
+            self.assertEqual(doc["prices_as_of"], "2026-10-27")
+            self.assertEqual([o["qty"] for o in doc["orders"]], [17, 8, 20, 34, 6])
 
-    def test_json_output_and_missing_targets(self):
-        code, text, _ = run(["--targets", TARGETS, "--config", CFG, "--json"])
-        self.assertEqual(code, 0)
-        self.assertEqual(json.loads(text)["result"]["idle"], 0)
-        code, _, err = run(["--targets", "/nonexistent/targets.json", "--config", CFG])
+            code, text, _ = run(["--instruments", "/nonexistent/instruments.json", "--weights", "TCS=1", "--config", CFG, "--prices", prices, "--json"])
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(text)["orders"][0]["qty"], 8)
+
+    def test_missing_prices_file(self):
+        code, _, err = run(["--instruments", "/nonexistent/instruments.json", "--weights", "TCS=1", "--config", CFG, "--prices", "/nonexistent.json"])
         self.assertEqual(code, 1)
-        self.assertIn("no targets file", err)
+        self.assertIn("no prices", err)
 
 
 if __name__ == "__main__":

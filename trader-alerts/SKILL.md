@@ -1,113 +1,105 @@
 ---
 name: trader-alerts
 description: >-
-  Price Alerts. Rings when a price target, a stop or the opening bell hits:
-  above / below / stop rules, percent moves from the previous close, and the
-  NYSE opening bell, each ringing once so you are not spammed. Knows NYSE
-  hours with the 2026 and 2027 holidays and 1:00 p.m. early closes, fetches
-  free delayed quotes (Yahoo chart JSON, Stooq CSV) one ticker at a time, and
-  writes trader/prices.json for the other skills. Use when the user says
-  "alert me when", "tell me if AAPL hits", "set a stop", "price target",
-  "watch my stocks", "is the market open", "when does the market open",
-  "get me prices", or to refresh prices before sizing, risk or tax.
-argument-hint: "[ticker] [price]"
+  Price Alerts, India edition. Rings when a price target, a stop or the NSE
+  opening bell hits: above / below / stop rules in rupees, percent moves from
+  the previous close, and the 09:15 IST opening bell, each ringing once so
+  you are not spammed. Knows the NSE day (pre-open, normal market, closing
+  session) and holidays from core/nse_calendar.py, reads last prices from
+  your own market store or a prices file you supply (it never fetches a
+  quote), and writes trader/prices.json for the other skills. Use when the
+  user says "alert me when", "tell me if TCS hits", "set a stop", "price
+  target", "watch my stocks", "is the market open", "when does the market
+  open", "get me prices", or to refresh prices before sizing or a risk check.
+argument-hint: "[symbol] [price]"
 ---
 
 # trader-alerts
 
 Price Alerts watches the numbers so the user does not have to. An alert is
 information, never an order: when a stop rings, nothing is sold. If the user
-wants to act, the normal path runs (size, risk, their yes).
+wants to act, the normal path runs: size it (trader-budget or
+trader-rebalance), check it (trader-risk), and the user enters it by hand in
+their broker. Nothing in this project places an order.
 
 `${CLAUDE_SKILL_DIR}` below is this skill's folder (where this SKILL.md lives).
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" clock                         # NYSE open or closed, next open
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" quote AAPL KO --write         # -> trader/prices.json
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" quote --holdings --write      # portfolio + targets tickers
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol AAPL --above 350
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol BAC --stop 50 --note "my stop"
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol KO --pct 3
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" clock                         # NSE phase now, next open (IST)
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" quote TCS ITC --write         # last prices -> trader/prices.json
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" quote --holdings --write      # portfolio and target symbols
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol TCS --above 3200
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol ITC --stop 380 --note "my stop"
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --symbol INFY --pct 3 --direction down
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" add --opening-bell
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" check                         # exit 0 = something rang
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" check                         # exit 0 when something rang
 python3 "${CLAUDE_SKILL_DIR}/alerts.py" list
-python3 "${CLAUDE_SKILL_DIR}/alerts.py" reset aapl-above-350
+python3 "${CLAUDE_SKILL_DIR}/alerts.py" reset tcs-above-3200
 ```
 
 ## What it reads and writes
 
 | file | what |
 | --- | --- |
-| `trader/alerts.json` | the rules (`alerts.example.json` in this folder) |
-| `trader/state/alerts.json` | which rules rang and when, so each rings once |
-| `trader/prices.json` | the latest quotes, merged in, for trader-budget, trader-risk, trader-tax and trader-rebalance |
+| `data/market.db` | the default price source: your own market store (core/bhavcopy.py), last close per symbol |
+| a prices JSON | with `--source file --prices-file PATH`: `{"as_of": "...", "prices": {"TCS": "3210.25"}}`, for example from your broker's read-only quote tool |
+| `trader/alerts.json` | the rules (start from `alerts.example.json` in this folder) |
+| `trader/state/alerts.json` | which rules rang and when |
+| `trader/prices.json` | what `quote --write` and `check` save for trader-budget, trader-risk and trader-rebalance, prices as rupee strings |
 
-## Rule types
+## The clock
 
-| type | rings when | rings again |
-| --- | --- | --- |
-| `above` | price at or above `price` | after `reset`, or on its own if `"rearm": true` and the price fell back |
-| `below` / `stop` | price at or below `price` | same |
-| `pct_move` | moved `pct` percent from the previous close (or `ref`), optional `direction` up or down | once per day at most |
-| `opening_bell` | the NYSE is open | once per trading day |
+The NSE cash market in IST (UTC+05:30, no daylight saving): pre-open order
+entry 09:00 to 09:08, order matching to 09:15, the normal market 09:15 to
+15:30, the closing session 15:40 to 16:00. Holidays come from
+`core/nse_holidays.json`, read from NSE's own holiday master. A year with no
+list is an error, never a guess: refresh it with `core/nse_calendar.py
+update-holidays`. Special sessions (Muhurat trading) are added to
+`core/nse_calendar.py` when NSE publishes their timings.
 
-## Quotes
+## The rules
 
-- `yahoo` (default): `query1.finance.yahoo.com/v8/finance/chart/<TICKER>`, an
-  unofficial free JSON endpoint, one request per ticker, half a second apart.
-- `stooq`: `stooq.com/q/l/?s=aapl.us&f=sd2t2ohlcv&h&e=csv`, Stooq's free CSV.
-  It answered 404 when this was written (2026-10-13); the parser stays for
-  when it is back. Use `--source stooq` to try it.
-- Free quotes are delayed. They are fine for alerts and for checking sizes,
-  not for timing an order. The broker's price is the one that fills.
-- If both are down, read prices from the broker connector (Alpaca
-  `get_stock_snapshot`, IBKR `get_price_snapshot`) and write them into
-  `trader/prices.json` as `{"as_of": "...", "prices": {"AAPL": 341.27}}`.
+- **above** / **target**: rings when the price is at or above the level.
+- **below** / **stop**: rings when the price is at or below the level.
+- **pct_move**: rings when the price moved `pct` percent or more from the
+  previous close (or from `ref`), optionally only `up` or `down`.
+- **opening_bell**: rings once a trading day once the normal market is open.
 
-## The NYSE clock
-
-Regular session 9:30 a.m. to 4:00 p.m. New York time, closed on weekends and
-on these holidays, from nyse.com/markets/hours-calendars (read 2026-10-13):
-
-- 2026: Jan 1, Jan 19, Feb 16, Apr 3 (Good Friday), May 25, Jun 19, Jul 3
-  (Independence Day observed), Sep 7, Nov 26, Dec 25. Early close 1:00 p.m. on
-  Nov 27 and Dec 24.
-- 2027: Jan 1, Jan 18, Feb 15, Mar 26 (Good Friday), May 31, Jun 18
-  (Juneteenth observed), Jul 5 (Independence Day observed), Sep 6, Nov 25,
-  Dec 24 (Christmas observed). Early close 1:00 p.m. on Nov 26.
-
-Daylight saving time is worked out in the tool, so it needs no time zone
-files. For any other year it says the holiday list is unknown.
+An above, below or stop rule rings once and stays quiet until `reset`, or
+re-arms by itself with `"rearm": true` when the price crosses back. A
+pct_move or the bell rings at most once a day. Prices are rupees, kept as
+exact decimals.
 
 ## Steps
 
-1. Ask what to watch, in the user's words ("tell me if Apple drops under
-   $320"), and add the rule. Confirm it back: ticker, type, level.
-2. Run `check` now, and on a schedule if the user wants (a Claude scheduled
-   task or cron, every 15 minutes in market hours is plenty). Each run fetches
-   only the tickers in the rules and rings each alert once.
-3. Tell the user what rang in one line each. If they want to act, send them
-   to sizing and `/trader-risk`. Never act for them.
+1. `clock` when the user asks whether the market is open.
+2. Make sure the prices are as fresh as the user needs: the store has the
+   last close (end of day). For anything during the day, the user brings a
+   prices file from their broker's read-only quote tool.
+3. `add` the rules the user describes, then `check`. Say which rules rang,
+   the price and its date, and what was missing.
 
-## Example: the reel's portfolio
+## Left out on purpose
 
-After the copy portfolio is bought, `add --opening-bell`, `add --symbol AAPL
---above 350`, and `add --symbol BAC --stop 50`. On 2026-10-13 AAPL closed at
-$341.27 and BAC at $53.96, so `check` that evening prints "Nothing hit" and
-exits 1. At 9:30 the next morning the opening bell rings once.
+- **Live quotes.** This tool never fetches a price. The store gives the last
+  close; intraday prices come from a file the user supplies. A read-only
+  broker quote source can be added later as an importer.
+- **Price bands and circuit limits.** Not yet in `core/` data read from
+  NSE's own file, so an alert does not say whether a stock is locked.
+- **Ex-dates.** NSE's previous close is not adjusted on an ex-date, so a
+  pct_move that day can be the dividend, split or bonus, not the market. The
+  message says so.
 
 ## What it never does
 
-It never places, cancels or changes an order, never claims a quote is
-real time, and never predicts where a price is going.
+It never places, modifies or cancels an order, never treats an alert as a
+decision, and never fetches anything from the network.
 
 ## Safety
 
-- Education and tooling, not financial advice. An alert is a fact about a price, not a signal to trade.
-- Paper trading by default (`"paper": true`). Going live is the user's own decision, in their own config.
-- Nothing in this pack places an order except trader-broker, and only when all three hold: trader-risk
-  passed that exact order today, the user typed an explicit yes for that one order in the chat, and the
-  user clicked Allow once on Claude's own card because the order tool is set to "Needs approval"
-  (Customize > Connectors > tool permissions). Never set an order tool to "Always allow".
-- No options, margin, short selling or leverage unless the config allows it and the user confirms.
-- Broker keys live in environment variables or the Claude Desktop config, never in the chat.
+- Education and tooling, not financial advice. An alert is information, not a recommendation.
+- Paper trading by default. Going live is the user's own decision, in their own config.
+- Nothing in this project places, modifies or cancels an order. The user enters each order by hand in
+  their broker only after they say yes to it themselves. Broker order tools are denied in
+  `.claude/settings.json` and stay denied.
+- Broker keys live in environment variables or the MCP client config, never in the chat or a file here.

@@ -4,11 +4,13 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
+from decimal import Decimal
 
 from _load import load, FIX
 
 rebalance = load("trader-rebalance", "rebalance")
 check = load("trader-risk", "check")
+inst = load("core", "instruments")
 
 D = os.path.join(FIX, "trader-rebalance")
 
@@ -20,94 +22,124 @@ def read(name):
 
 def setup(cash_add=0, prices=None, **cfg_over):
     pf = read("portfolio.json")
-    pf["cash"] += cash_add
-    px = dict(read("prices.json")["prices"])
-    px.update(prices or {})
+    pf["cash"] = str(Decimal(pf["cash"]) + cash_add)
+    px = rebalance.parse_prices(read("prices.json"))
+    px.update({k: Decimal(str(v)) for k, v in (prices or {}).items()})
     cfg = read("config.json")
     cfg.update(cfg_over)
     return pf, px, rebalance.parse_targets(read("targets.json"), cfg.get("blocked")), cfg
 
 
 def orders(res):
-    return [(o["side"], o["symbol"], o.get("notional") or o.get("qty")) for o in res["orders"]]
+    return [(o["side"], o["symbol"], o["qty"]) for o in res["orders"]]
 
 
-class TheReel(unittest.TestCase):
-    def test_on_the_day_it_was_bought_nothing_trades(self):
+class TheExample(unittest.TestCase):
+    """The account trader-budget's example would hold once its sheet filled."""
+
+    def test_just_after_buying_nothing_trades(self):
         res = rebalance.plan(*setup())
         self.assertEqual(res["orders"], [])
-        self.assertEqual([r["ticker"] for r in res["rows"]], ["AAPL", "AXP", "GOOGL", "KO", "BAC"])
+        self.assertEqual([r["symbol"] for r in res["rows"]], ["RELIANCE", "TCS", "HDFCBANK", "ITC", "INFY"])
         for r in res["rows"]:
-            self.assertLess(abs(r["drift"]), 0.1, r["ticker"])
-        self.assertEqual(res["rows"][0]["target_pct"], 25.0)
+            self.assertLess(abs(r["drift"]), 5, r["symbol"])
+        self.assertEqual(res["rows"][0]["target_pct"], Decimal("25.00"))
 
     def test_new_cash_buys_only_what_left_the_band(self):
-        res = rebalance.plan(*setup(cash_add=2000))
-        self.assertEqual(res["cap"], 1750)
-        self.assertEqual(orders(res), [("buy", "AAPL", "499"), ("buy", "AXP", "446")])
-        hold = [r["ticker"] for r in res["rows"] if r["action"] == "hold"]
-        self.assertEqual(hold, ["GOOGL", "KO", "BAC"])
+        res = rebalance.plan(*setup(cash_add=20000))
+        self.assertEqual(orders(res), [("buy", "RELIANCE", 4)])
+        hold = [r["symbol"] for r in res["rows"] if r["action"] == "hold"]
+        self.assertEqual(hold, ["TCS", "HDFCBANK", "ITC", "INFY"])
+        self.assertEqual(res["charges"], Decimal("6.65"))
+        self.assertEqual(res["cash_after"], Decimal("24546.79"))
 
-    def test_bigger_deposit_buys_everything_and_keeps_the_buffer(self):
-        pf, px, w, cfg = setup(cash_add=5000)
+    def test_bigger_deposit_buys_everything_keeps_the_buffer_and_passes_risk(self):
+        pf, px, w, cfg = setup(cash_add=150000)
         res = rebalance.plan(pf, px, w, cfg)
-        self.assertEqual([o[1] for o in orders(res)], ["AAPL", "AXP", "GOOGL", "KO", "BAC"])
+        self.assertEqual([o[1] for o in orders(res)], ["RELIANCE", "TCS", "HDFCBANK", "ITC", "INFY"])
         self.assertGreaterEqual(res["cash_after"], res["cash_buffer"])
-        risk = check.check(rebalance.clean(res["orders"]), cfg, portfolio=pf, prices=px, today="2026-10-13")
+        risk = check.check(res["orders"], dict(cfg, max_order_inr=100000), portfolio=pf, prices=px, today="2026-10-27")
         self.assertEqual(risk["block"], 0, risk["results"])
 
 
 class Drift(unittest.TestCase):
-    def test_sells_come_before_buys(self):
-        res = rebalance.plan(*setup(prices={"AAPL": 341.27 * 1.6}))
+    def test_sells_come_before_buys_in_whole_shares(self):
+        res = rebalance.plan(*setup(prices={"RELIANCE": 2400}))
         sides = [o["side"] for o in res["orders"]]
         self.assertEqual(sides[0], "sell")
-        self.assertEqual(res["orders"][0]["symbol"], "AAPL")
+        self.assertEqual(res["orders"][0]["symbol"], "RELIANCE")
         self.assertEqual(sides, sorted(sides, key=lambda s: s != "sell"))
-        held = read("portfolio.json")["positions"][0]["shares"]
-        self.assertLessEqual(float(res["orders"][0]["qty"]), held)
-        self.assertIn("drifted", res["orders"][0]["why"])
+        self.assertLessEqual(res["orders"][0]["qty"], 17)
+        self.assertIn("drifted", res["orders"][0]["reason"])
+        for o in res["orders"]:
+            self.assertIsInstance(o["qty"], int)
+            self.assertEqual((o["product"], o["order_type"], o["exchange"]), ("delivery", "market", "NSE"))
+
+    def test_sell_charges_include_the_dp_charge(self):
+        res = rebalance.plan(*setup(prices={"RELIANCE": 2400}))
+        sell = res["orders"][0]
+        self.assertGreater(Decimal(sell["est_charges"]), Decimal("15.34"))
 
     def test_band(self):
-        res = rebalance.plan(*setup(cash_add=2000), band=8)
-        self.assertEqual(res["orders"], [])
-        res = rebalance.plan(*setup(cash_add=2000), band=3)
-        self.assertEqual(len(res["orders"]), 5)
+        self.assertEqual(rebalance.plan(*setup(cash_add=20000), band=8)["orders"], [])
+        self.assertEqual(len(rebalance.plan(*setup(cash_add=20000), band=1)["orders"]), 5)
 
     def test_untracked_holdings_are_left_alone_unless_asked(self):
         pf, px, w, cfg = setup()
-        pf["positions"].append({"ticker": "DHI", "shares": 2})
-        px["DHI"] = 150.0
+        pf["positions"].append({"symbol": "M&M", "qty": 2})
+        px["M&M"] = Decimal("3000")
         res = rebalance.plan(pf, px, w, cfg)
-        dhi = [r for r in res["rows"] if r["ticker"] == "DHI"][0]
-        self.assertEqual(dhi["action"], "untracked, left alone")
-        self.assertNotIn("DHI", [o["symbol"] for o in res["orders"]])
+        mm = [r for r in res["rows"] if r["symbol"] == "M&M"][0]
+        self.assertEqual(mm["action"], "untracked, left alone")
+        self.assertNotIn("M&M", [o["symbol"] for o in res["orders"]])
         res = rebalance.plan(pf, px, w, cfg, sell_untracked=True)
-        self.assertIn(("sell", "DHI", "2"), orders(res))
+        self.assertIn(("sell", "M&M", 2), orders(res))
 
     def test_missing_price_is_an_error(self):
         pf, px, w, cfg = setup()
-        del px["KO"]
-        with self.assertRaises(rebalance.RebalanceError):
+        del px["ITC"]
+        with self.assertRaisesRegex(rebalance.RebalanceError, "no price for ITC"):
             rebalance.plan(pf, px, w, cfg)
 
-    def test_whole_shares(self):
-        res = rebalance.plan(*setup(cash_add=5000, fractional=False))
-        for o in res["orders"]:
-            self.assertEqual(o["qty"], str(int(o["qty"])))
-            self.assertNotIn("notional", o)
+    def test_fractional_holdings_are_an_error(self):
+        pf, px, w, cfg = setup()
+        pf["positions"][0]["qty"] = "17.5"
+        with self.assertRaisesRegex(rebalance.RebalanceError, "whole shares"):
+            rebalance.plan(pf, px, w, cfg)
+
+    def test_without_a_broker_charges_are_not_counted(self):
+        res = rebalance.plan(*setup(cash_add=20000, broker=None))
+        self.assertIsNone(res["charges"])
+        self.assertNotIn("est_charges", res["orders"][0])
 
     def test_max_order_and_scaling(self):
-        res = rebalance.plan(*setup(cash_add=20000))
-        self.assertTrue(all(o["_usd"] <= 2000 for o in res["orders"]))
+        res = rebalance.plan(*setup(cash_add=200000))
+        self.assertTrue(all(Decimal(o["value"]) <= 50000 for o in res["orders"]))
         self.assertTrue(any("max order" in n for n in res["notes"]))
-        pf, px, w, cfg = setup(cash_add=5000)
-        pf["positions"].append({"ticker": "DHI", "shares": 10})
-        px["DHI"] = 150.0
+        pf, px, w, cfg = setup(cash_add=60000)
+        pf["positions"].append({"symbol": "M&M", "qty": 10})
+        px["M&M"] = Decimal("3000")
         res = rebalance.plan(pf, px, w, cfg)
         self.assertTrue(any("buys scaled" in n for n in res["notes"]), res["notes"])
-        self.assertEqual(len(res["orders"]), 5)
-        self.assertGreaterEqual(res["cash_after"], res["cash_buffer"] - 1)
+        self.assertGreaterEqual(res["cash_after"], res["cash_buffer"])
+
+
+class Isins(unittest.TestCase):
+    def reg(self):
+        with open(os.path.join(FIX, "core", "EQUITY_L.sample.csv"), encoding="utf-8-sig") as fh:
+            return inst.build(fh.read())
+
+    def test_lines_carry_the_registry_isin(self):
+        pf, px, w, cfg = setup(cash_add=20000)
+        res = rebalance.plan(pf, px, w, cfg, registry=self.reg())
+        self.assertEqual(res["orders"][0]["isin"], "INE002A01018")
+        self.assertEqual(len(res["isin_notes"]), 1)  # ITC is not in the sample list
+
+    def test_a_wrong_isin_in_the_portfolio_is_refused(self):
+        pf, px, w, cfg = setup()
+        pf["positions"][1]["isin"] = "INE002A01018"  # TCS with Reliance's ISIN
+        with self.assertRaisesRegex(rebalance.RebalanceError, "TCS is listed on NSE"):
+            rebalance.plan(pf, px, w, cfg, registry=self.reg())
 
 
 class Cli(unittest.TestCase):
@@ -115,21 +147,23 @@ class Cli(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             pf = os.path.join(d, "portfolio.json")
             doc = read("portfolio.json")
-            doc["cash"] += 2000
+            doc["cash"] = "30153.44"
             with open(pf, "w") as fh:
                 json.dump(doc, fh)
             out = os.path.join(d, "orders.json")
-            base = ["--prices", os.path.join(D, "prices.json"), "--targets", os.path.join(D, "targets.json"),
+            base = ["--instruments", "/nonexistent/instruments.json", "--prices", os.path.join(D, "prices.json"), "--targets", os.path.join(D, "targets.json"),
                     "--config", os.path.join(D, "config.json")]
             buf = io.StringIO()
             with redirect_stdout(buf):
                 code = rebalance.main(["--portfolio", pf, "--write", out] + base)
             self.assertEqual(code, 0)
+            self.assertIn("BUY 4 RELIANCE on NSE", buf.getvalue())
+            self.assertIn("price bands and circuit limits", buf.getvalue())
             self.assertIn("not financial advice", buf.getvalue())
-            with open(out) as fh:
+            with open(out, encoding="utf-8") as fh:
                 written = json.load(fh)
             self.assertEqual(written["created_by"], "trader-rebalance")
-            self.assertTrue(all(not k.startswith("_") for o in written["orders"] for k in o))
+            self.assertEqual(written["currency"], "INR")
             with redirect_stdout(io.StringIO()):
                 code = rebalance.main(["--portfolio", os.path.join(D, "portfolio.json")] + base)
             self.assertEqual(code, 1)

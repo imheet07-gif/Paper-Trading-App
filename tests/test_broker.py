@@ -9,10 +9,11 @@ from contextlib import redirect_stdout, redirect_stderr
 from _load import load, ROOT, FIX
 
 ticket = load("trader-broker", "ticket")
-check = load("trader-risk", "check")
 
-CFG_PATH = os.path.join(ROOT, "trader-budget", "config.example.json")
-ORDERS_PATH = os.path.join(FIX, "trader-risk", "orders-reel.json")
+# trader-broker is still the US original; trader-risk is ported to India and no
+# longer checks Alpaca orders, so these tests write the verdict file it reads.
+CFG_PATH = os.path.join(FIX, "trader-broker", "config-us.json")
+ORDERS_PATH = os.path.join(FIX, "trader-broker", "orders-reel.json")
 TODAY = "2026-10-13"
 AAPL = {"symbol": "AAPL", "side": "buy", "notional": "1250", "type": "market", "time_in_force": "day"}
 BATCH = ["AAPL", "AXP", "GOOGL", "KO", "BAC"]
@@ -92,10 +93,19 @@ class Flow(unittest.TestCase):
                               "--state", self.state, "--today", TODAY]
 
     def run_risk(self, today=TODAY):
-        with redirect_stdout(io.StringIO()):
-            return check.main(["--orders", self.orders, "--config", self.cfg, "--portfolio", self.pf,
-                               "--prices", os.path.join(self.d, "none"), "--state", self.state,
-                               "--today", today, "--out", self.risk])
+        """A risk verdict file in the shape trader-broker reads: PASS unless blocked."""
+        with open(self.orders) as fh:
+            orders = json.load(fh)["orders"]
+        with open(self.cfg) as fh:
+            blocked = set(json.load(fh).get("blocked", []))
+        results = [{"index": i, "symbol": o["symbol"], "side": o["side"], "fingerprint": ticket.fingerprint(o),
+                    "verdict": "BLOCK" if o["symbol"] in blocked else "PASS",
+                    "reasons": ["blocked: %s is on your blocked list" % o["symbol"]] if o["symbol"] in blocked else []}
+                   for i, o in enumerate(orders, 1)]
+        os.makedirs(os.path.dirname(self.risk), exist_ok=True)
+        with open(self.risk, "w") as fh:
+            json.dump({"date": today, "results": results}, fh)
+        return 1 if blocked & {o["symbol"] for o in orders} else 0
 
     def test_nothing_is_ready_before_the_risk_check(self):
         code, text, _ = run(self.args("show"))
@@ -144,10 +154,6 @@ class Flow(unittest.TestCase):
         self.assertIn("DONE: placed", text)
         code, text, _ = run(["log", "--state", self.state, "--today", TODAY])
         self.assertIn("1 placed today", text)
-
-        # trader-risk now counts it: a second AAPL buy today is a duplicate
-        res = check.check([AAPL], {"budget": 5000, "max_position_pct": 100}, state=st, today=TODAY)
-        self.assertIn("already placed today", res["results"][0]["reasons"][-1])
 
     def test_an_edited_order_is_not_ready(self):
         self.run_risk()

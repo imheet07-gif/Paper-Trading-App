@@ -1,5 +1,5 @@
 {
-  "name": "Growing, profitable, not priced for perfection",
+  "name": "Growing, profitable, not priced for perfection (an example; the thresholds are yours to set)",
   "rules": [
     {"metric": "revenue_growth_yoy", "op": ">=", "value": 10},
     {"metric": "operating_margin", "op": ">=", "value": 25},
