@@ -17,6 +17,7 @@ EVF = os.path.join(FIX, "events")
 if HAVE_PANDAS:
     sys.path.insert(0, os.path.join(ROOT, "research"))
     import event_signals  # noqa: E402
+    import signals  # noqa: E402
     import panel  # noqa: E402
     from test_research import market, weekdays  # noqa: E402
 
@@ -188,6 +189,16 @@ class Signals(unittest.TestCase):
         db.execute("INSERT INTO results VALUES (?,?,?,?,?,?,?,?,?)",
                    ("9", "FLAT", "INE001T01010", "2013-10-01", "2013-12-31", "Third Quarter", "Consolidated",
                     "Un-Audited", d300.isoformat() + "T18:00:00"))
+        # SAST: a promoter open-market buy of 0.5% disclosed after the close on day 300, and rows that must not count
+        sast = [("S1", "UPUP", isin, "A", 1, "Open market", "Acquisition", "29(2)", 100, None, 1000, "0.5", None, "40",
+                 d300.isoformat(), d300.isoformat(), d300.isoformat() + "T18:05:00"),
+                ("S2", "UPUP", isin, "B", 0, "Open market", "Acquisition", "29(2)", 100, None, 1000, "3", None, "9",
+                 d300.isoformat(), d300.isoformat(), d300.isoformat() + "T18:05:00"),
+                ("S3", "UPUP", isin, "C", 1, "Inter-se transfer", "Acquisition", "29(2)", 100, None, 1000, "10", None, "50",
+                 d300.isoformat(), d300.isoformat(), d300.isoformat() + "T18:05:00"),
+                ("S4", "UPUP", isin, "D", 1, "Open market", "Sale", "29(2)", None, 100, 900, None, "1", "39",
+                 d300.isoformat(), d300.isoformat(), d300.isoformat() + "T18:05:00")]
+        db.executemany("INSERT INTO sast VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", sast)
         db.commit()
         db.close()
         cls.p = panel.load(cls.path)
@@ -205,6 +216,15 @@ class Signals(unittest.TestCase):
         self.assertFalse(s.iloc[301 + 62:301 + 63].isna().any())
         self.assertTrue(s.iloc[301 + 63:].isna().all())  # out of the 63-day window
         self.assertTrue(event_signals.insider_buying(self.p).drop(columns=["INE000T01010"]).isna().all().all())
+
+    def test_promoter_buying_counts_only_promoter_open_market_buys_from_the_next_session(self):
+        s = event_signals.promoter_buying(self.p)["INE000T01010"]
+        self.assertTrue(s.iloc[:301].isna().all())  # disclosed the evening of day 300: usable from day 301
+        self.assertAlmostEqual(s.iloc[301], 0.5)  # non-promoter, inter-se transfer and sale rows ignored
+        self.assertFalse(s.iloc[301:301 + 63].isna().any())
+        self.assertTrue(s.iloc[301 + 63:].isna().all())
+        self.assertTrue(event_signals.promoter_buying(self.p).drop(columns=["INE000T01010"]).isna().all().all())
+        self.assertIn("promoter_buying", signals.SIGNALS)
 
     def test_results_reaction_known_at_the_close_of_the_second_session(self):
         s = event_signals.results_reaction(self.p)["INE001T01010"]
