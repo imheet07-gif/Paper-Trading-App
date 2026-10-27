@@ -73,6 +73,15 @@ class Values(unittest.TestCase):
         self.assertIsNone(zc.num("-"))
         self.assertEqual(zc.num("-0.0"), Decimal(0))
 
+    def test_dates_as_text_or_excel_serials(self):
+        self.assertEqual(zc.when("2026-08-06"), "2026-08-06")
+        self.assertEqual(zc.when("2026-08-06 09:43:11"), "2026-08-06T09:43:11")
+        self.assertEqual(zc.when("46240"), "2026-08-06")
+        self.assertEqual(zc.when("46240.405"), "2026-08-06T09:43:12")
+        for bad in ("06/08/2026", "12", ""):
+            with self.assertRaises(ValueError):
+                zc.when(bad)
+
     def test_header_keys_match_across_xlsx_and_csv(self):
         self.assertEqual(zc.key("Quantity Pledged (Margin)"), "quantity_pledged_margin")
         self.assertEqual(zc.key("quantity_pledged_margin"), "quantity_pledged_margin")
@@ -112,7 +121,7 @@ class Holdings(unittest.TestCase):
         self.assertNotIn("INFY", w)
 
     def test_numbers_file_is_refused_with_a_way_out(self):
-        with self.assertRaisesRegex(ValueError, "download the .xlsx or .csv"):
+        with self.assertRaisesRegex(ValueError, "Export To > Excel"):
             zc.read_any("holdings.numbers")
 
     def test_not_a_holdings_file(self):
@@ -155,6 +164,19 @@ class Tradebook(unittest.TestCase):
         self.assertEqual(dp, Decimal("30.68"))  # RELIANCE and TCS: 2 x 15.34
         bse = [x for x in r["rows"] if x["exchange"] == "BSE"][0]
         self.assertEqual(bse["charges"]["exchange_txn"], Decimal("0.38"))  # 10,006 x 0.00375%
+
+    def test_numbers_export_with_serial_dates_reads_the_same(self):
+        with open(os.path.join(CORE, "console_tradebook.json")) as fh:
+            sheets = json.load(fh)["sheets"]
+        rows = sheets["Equity"]
+        for r in rows:
+            if r[3] == "2026-08-06":
+                r[3], r[13] = 46240, 46240.405
+        path = os.path.join(self.tmp.name, "exported.xlsx")
+        make_xlsx(path, sheets)
+        got = zc.parse_tradebook(zc.read_any(path))["trades"]
+        self.assertEqual([t["date"] for t in got], ["2026-04-10", "2026-08-06", "2026-08-06", "2026-08-06"])
+        self.assertEqual(got[-1]["time"], "2026-08-06T09:43:12")
 
     def test_fractional_quantity_refused(self):
         sheets = zc.read_any(os.path.join(CORE, "console_tradebook.sample.csv"))

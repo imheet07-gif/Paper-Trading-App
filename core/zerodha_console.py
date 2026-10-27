@@ -7,8 +7,9 @@ Statement as on 2026-10-27", a summary) and then a table whose first column
 is Symbol. Sections are found by their title row, not by sheet name, so a
 one-sheet CSV and a three-sheet XLSX read the same way.
 
-Apple Numbers files are not read: download the original .xlsx or .csv from
-Console instead (Numbers re-saves in a format the standard library cannot open).
+Apple Numbers files are not read. To redact a client ID, edit the download
+in Numbers and use File > Export To > Excel (or CSV); that file reads fine,
+including dates the export turns into spreadsheet serial numbers.
 
   python3 core/zerodha_console.py holdings holdings.xlsx
   python3 core/zerodha_console.py tradebook tradebook-EQ.xlsx
@@ -21,6 +22,7 @@ whose cost was not split yet), discrepant or pledged quantities.
 
 import argparse
 import csv
+import datetime as dt
 import io
 import json
 import os
@@ -96,7 +98,7 @@ def read_any(path):
         with open(path, encoding="utf-8-sig", newline="") as fh:
             return {os.path.basename(path): list(csv.reader(fh))}
     if low.endswith(".numbers"):
-        raise ValueError("Apple Numbers files are not supported: download the .xlsx or .csv from Console")
+        raise ValueError("Apple Numbers files are not supported: in Numbers use File > Export To > Excel (or CSV)")
     raise ValueError("expected a Console .xlsx or .csv export: %s" % path)
 
 
@@ -115,6 +117,25 @@ def num(v):
 
 def _text(v):
     return "" if v is None else str(v).strip()
+
+
+EXCEL_EPOCH = dt.datetime(1899, 12, 30)
+
+
+def when(v, what="date"):
+    """An ISO date or datetime cell, or an Excel serial number (what a
+    spreadsheet re-export may write), as ISO text. Anything else is an error."""
+    s = _text(v)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?)?", s):
+        return s.replace(" ", "T")
+    try:
+        serial = Decimal(s)
+    except Exception:
+        raise ValueError("unreadable %s %r" % (what, s))
+    if not 20000 < serial < 80000:  # 1954 to 2119
+        raise ValueError("unreadable %s %r" % (what, s))
+    t = EXCEL_EPOCH + dt.timedelta(seconds=int((serial * 86400).to_integral_value()))
+    return t.date().isoformat() if serial == serial.to_integral_value() else t.isoformat()
 
 
 def key(header):
@@ -263,8 +284,8 @@ def parse_tradebook(sheets):
             if qty != qty.to_integral_value():
                 raise ValueError("fractional equity quantity %s for %s" % (qty, r.get("symbol")))
             trades.append({
-                "date": _text(r.get("trade_date"))[:10],
-                "time": _text(r.get("order_execution_time")),
+                "date": when(r.get("trade_date"))[:10],
+                "time": when(r.get("order_execution_time"), "execution time") if _text(r.get("order_execution_time")) else "",
                 "symbol": _text(r.get("symbol")),
                 "isin": _text(r.get("isin")),
                 "exchange": _text(r.get("exchange")),
