@@ -32,12 +32,16 @@ python3 -m unittest discover -s tests
 
 - Standard library only in `core/` and the skills, with one exception:
   `core/cas.py` imports casparser (MIT, offline) lazily, only when a PDF is
-  read. numpy/pandas are allowed only in `research/`. Any new dependency needs the same justification.
+  read. numpy/pandas are allowed only in `research/`. Any new dependency
+  needs the same justification.
 - Personal details in imported statements (name, PAN, email, address,
   phone, owners) are dropped at read time; account and folio numbers are
   masked. Passwords come from a prompt or an environment variable, never
   the command line, and are never stored or printed.
-- Money is `Decimal`, never float. Quantities are whole shares.
+- Money is `Decimal`, never float, in everything that touches accounts,
+  charges, tax and order sheets; the market store keeps integer paise.
+  `research/` panels use float64 for speed: their numbers are estimates,
+  never written back into accounting. Quantities are whole shares.
 - Rates, holidays and anything else published by an exchange, regulator or
   broker live in data (`core/charges.json`, `core/nse_holidays.json`) with a
   source line, read from the publisher's own page or file, never invented.
