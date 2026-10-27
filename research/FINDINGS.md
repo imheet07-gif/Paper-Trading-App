@@ -224,3 +224,27 @@ Verdict: none beats the baseline on dev Sharpe, so none gets the
 validation look and the strategy stays equal weight, unless the printed
 drawdowns show a variant cutting the baseline's -38.5% by a wide margin,
 in which case this section gets a dated follow-up, not an edit.
+
+## 2026-10-27: promoter buying under SAST Regulation 29, settings fixed before testing (second agent; no runs yet)
+
+`promoter_buying` (research/event_signals.py): for each stock, the percent
+of the company that promoters acquired in the open market, summed over
+SAST Regulation 29 disclosures made public in the last 63 trading days
+(about 90 calendar days). Only rows with `promoter = 1`, mode `Open
+market` and side `Acquisition` count; inter-se transfers, non-promoters
+and sales do not. A disclosure counts from the first trading day after
+the calendar day NSE published it (most are stamped in the evening).
+Stocks without such a disclosure have no score, as with insider_buying.
+
+Fixed before any run: the 63-day window, the percent-of-company measure
+(not rupees: promoters of small companies buy small rupee amounts), and
+the test, one run only:
+
+    python3 research/evaluate.py --period dev_2016 --signals promoter_buying --note "promoter_buying: SAST Reg 29 promoter open-market buys, 63 days, settings fixed in FINDINGS.md"
+
+dev_2016 because SAST data starts in 2015 and so it sits beside the
+logged insider_buying and momentum_quality runs on the same years
+(momentum_quality there: Sharpe 0.60, IC 0.032, t 1.56). It is a
+candidate only if the IC is positive with t of 2 or more, the top decile
+beats the bottom, and the backtest Sharpe beats the equal-weight
+universe's. Otherwise it is recorded as failed, like insider_buying.

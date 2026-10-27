@@ -1,9 +1,11 @@
-"""Event signals: insider buying and the reaction to quarterly results.
+"""Event signals: insider buying, promoter buying under SAST Regulation 29,
+and the reaction to quarterly results.
 
 Both key on when the event became public, never on when it happened:
 
-  * an insider disclosure counts from the trading day after the calendar
-    day NSE published it (conservative even for a morning disclosure);
+  * an insider or SAST disclosure counts from the trading day after the
+    calendar day NSE published it (conservative even for a morning
+    disclosure);
   * results count from the close of the second session of the reaction
     (the release day, or the next session when released after the close,
     and the session after it).
@@ -27,6 +29,7 @@ INSIDERS = ("Promoters", "Promoter Group", "Director", "Key Managerial Personnel
 MODES = {"Market Purchase": 1, "Market Sale": -1}
 INSIDER_WINDOW = 63  # trading days, about 90 calendar days
 RESULTS_WINDOW = 63  # trading days a results reaction stays live, about one quarter
+SAST_WINDOW = 63  # trading days a promoter purchase stays live, about 90 calendar days
 MARKET_CLOSE = "15:30"
 
 
@@ -85,6 +88,45 @@ def insider_buying(p, window=INSIDER_WINDOW):
     count = seen.rolling(window, min_periods=1).sum()
     typical = p.value.rolling(60, min_periods=40).median()
     return (net / typical).where(count > 0)
+
+
+def sast_events(p):
+    """Promoter open-market acquisitions under SAST Regulation 29:
+    [(row index when usable, sid, percent of the company acquired)]."""
+    db = sqlite3.connect(p.db_path)
+    rows = db.execute(
+        "SELECT isin, pct_acquired, disclosed_at FROM sast WHERE isin IS NOT NULL AND promoter = 1 "
+        "AND mode = 'Open market' AND side = 'Acquisition' AND pct_acquired IS NOT NULL").fetchall()
+    db.close()
+    sid = _sid_map(p)
+    out = []
+    for isin, pct, at in rows:
+        try:
+            v = float(pct)
+        except (TypeError, ValueError):
+            continue
+        i = _row_after(p.dates, at[:10])
+        if i is not None and v > 0:
+            out.append((i, sid(isin), v))
+    return out
+
+
+def promoter_buying(p, window=SAST_WINDOW):
+    """Percent of the company that promoters bought in the open market, from
+    SAST Regulation 29 disclosures made public over the last `window`
+    trading days. NaN without any such disclosure."""
+    shape = p.close.shape
+    F = np.zeros(shape)
+    seen = np.zeros(shape)
+    col = {s: k for k, s in enumerate(p.close.columns)}
+    for i, s, v in sast_events(p):
+        k = col.get(s)
+        if k is not None:
+            F[i, k] += v
+            seen[i, k] += 1
+    total = pd.DataFrame(F, index=p.dates, columns=p.close.columns).rolling(window, min_periods=1).sum()
+    count = pd.DataFrame(seen, index=p.dates, columns=p.close.columns).rolling(window, min_periods=1).sum()
+    return total.where(count > 0)
 
 
 def reaction_session(dates, released_at):

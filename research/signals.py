@@ -78,8 +78,14 @@ def results_reaction(p):
     return event_signals.results_reaction(p)
 
 
+def promoter_buying(p):
+    import event_signals
+    return event_signals.promoter_buying(p)
+
+
 SIGNALS["insider_buying"] = insider_buying
 SIGNALS["results_reaction"] = results_reaction
+SIGNALS["promoter_buying"] = promoter_buying
 
 
 DESCRIPTIONS = {
@@ -91,6 +97,7 @@ DESCRIPTIONS = {
     "momentum_quality": "12-1 momentum divided by one-year volatility: steadier trends first",
     "momentum_lowvol": "Average of the ranks of momentum_quality and low_volatility",
     "insider_buying": "Net open-market buying by promoters, directors and key managers disclosed in the last 90 days, in days of normal traded value. Failed dev (FINDINGS.md)",
+    "promoter_buying": "Percent of the company promoters bought in the open market (SAST Regulation 29 disclosures) in the last 90 days",
     "results_reaction": "Two-session return around the latest quarterly results, above the market's, while it is under a quarter old. Failed dev (FINDINGS.md)",
 }
 
