@@ -104,6 +104,7 @@ live in their own files. Change the owner column freely.
 | Screener.in export importer: the owner's own Excel exports, read locally, for manual review only (not point-in-time, never for backtests) | `core/screener_export.py` | second agent | waiting for a sample file from the owner |
 | Bulk and block deals, collected daily from `nsearchives.nseindia.com/content/equities/bulk.csv` and `block.csv` (no history available) | `core/deals.py`, a line in `research/scan.py` update | second agent | open |
 | Port `trader-news` and `trader-alerts` to India (NSE announcements, NSE calendar, read-only quotes) | `trader-news/`, `trader-alerts/` | second agent | open |
+| Port `trader-budget`, `trader-risk`, `trader-rebalance` and `trader-screener` to India (rupees, whole shares, an order sheet for manual entry, verified charges). Offline only: tick sizes, price bands and circuit limits, lot sizes and other NSE facts not yet in `core/` data are left out and listed in each SKILL.md | `trader-budget/`, `trader-risk/`, `trader-rebalance/`, `trader-screener/`, their tests | second agent | in progress (branch `second-agent/india-skill-ports`) |
 | Position sizing and risk control (caps, cash buffer, volatility sizing) tested on dev | `research/` | owner's agent | open |
 | SAST Regulation 29 promoter open-market buying as a signal, dev test | `research/event_signals.py` | owner's agent | open |
 | Paper forward test from 2026-10-30, scan and app upkeep | `research/scan.py`, `research/paper.py`, `app/` | owner's agent | running |
