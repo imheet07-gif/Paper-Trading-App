@@ -141,14 +141,11 @@ check. Open items, each a task for whoever has the source file:
 
 Knock-on effects on skills that are still US originals:
 
-- `trader-broker` (Alpaca) no longer reads a matching risk verdict: the India
-  order sheet has different fields. Its tests now use their own US fixtures
-  (`tests/fixtures/trader-broker/`) and write the verdict file themselves.
-  Under CLAUDE.md nothing places an order, so its port should make it a
-  ticket-only skill (or retire it); that is a decision for the owner.
-- `trader-alerts` writes `trader/prices.json` with US tickers and float
-  prices; the ported skills read the same file keyed by NSE symbol. Its
-  test now uses `tests/fixtures/trader-alerts/targets-us.json`.
+- `trader-broker`: ported on branch `second-agent/paper-broker` as a paper
+  trader (owner's decision, 2026-10-27): tickets, an explicit yes per line,
+  fills into `trader/paper_portfolio.json` with real charges. No broker
+  connection and no live mode.
+- `trader-alerts`: ported (`second-agent/skill-ports-2`).
 - `trader-tax` and `trader-copycat` still write US-shaped portfolio and
   targets files.
 
