@@ -39,6 +39,10 @@ broker-neutral holdings, trades and charges.
   feed's broadcast time; parsed files cached in `data/financials_raw/`).
   The feed and its links stop in February 2025; where NSE serves the XBRL
   for later results is still open.
+- `core/deals.py` NSE bulk and block deals (`deals` table), collected by
+  the scan's evening update. NSE publishes only the latest session, so a
+  missed evening is lost; raw files cached in `data/deals_raw/`. Client
+  names include private individuals: they stay in the local store only.
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
