@@ -224,3 +224,55 @@ Verdict: none beats the baseline on dev Sharpe, so none gets the
 validation look and the strategy stays equal weight, unless the printed
 drawdowns show a variant cutting the baseline's -38.5% by a wide margin,
 in which case this section gets a dated follow-up, not an edit.
+
+## 2026-10-27: promoter buying under SAST Regulation 29, settings fixed before testing (second agent; no runs yet)
+
+`promoter_buying` (research/event_signals.py): for each stock, the percent
+of the company that promoters acquired in the open market, summed over
+SAST Regulation 29 disclosures made public in the last 63 trading days
+(about 90 calendar days). Only rows with `promoter = 1`, mode `Open
+market` and side `Acquisition` count; inter-se transfers, non-promoters
+and sales do not. A disclosure counts from the first trading day after
+the calendar day NSE published it (most are stamped in the evening).
+Stocks without such a disclosure have no score, as with insider_buying.
+
+Fixed before any run: the 63-day window, the percent-of-company measure
+(not rupees: promoters of small companies buy small rupee amounts), and
+the test, one run only:
+
+    python3 research/evaluate.py --period dev_2016 --signals promoter_buying --note "promoter_buying: SAST Reg 29 promoter open-market buys, 63 days, settings fixed in FINDINGS.md"
+
+dev_2016 because SAST data starts in 2015 and so it sits beside the
+logged insider_buying and momentum_quality runs on the same years
+(momentum_quality there: Sharpe 0.60, IC 0.032, t 1.56). It is a
+candidate only if the IC is positive with t of 2 or more, the top decile
+beats the bottom, and the backtest Sharpe beats the equal-weight
+universe's. Otherwise it is recorded as failed, like insider_buying.
+
+## 2026-10-27: promoter buying under SAST Regulation 29 on dev_2016 (second agent; run by the owner)
+
+The one run fixed in the section above, `promoter_buying`, dev_2016
+(2016 to 2020), top 20, monthly:
+
+| | IC | Sharpe | CAGR |
+| --- | --- | --- | --- |
+| promoter_buying | none: never 50 scored stocks | -0.05 | 2.4% |
+| equal-weight universe (same years) | | 0.19 | |
+| momentum_quality (same years, logged earlier) | 0.032 (t 1.56) | 0.60 | 20.0% |
+
+- **Too sparse to rank.** In no month of the 59 did 50 or more of the
+  roughly 430 eligible stocks have a promoter open-market purchase
+  disclosed in the previous 63 trading days, so the IC could not be
+  computed. Promoters who buy in the open market are mostly in companies
+  below the universe's liquidity floor.
+- **The backtest loses to cash.** Holding the few stocks with such
+  purchases earned 2.4% a year against the 6% cash yield and the
+  universe's Sharpe of 0.19.
+- evaluate.py crashed printing the empty IC after the run was logged; it
+  now prints n/a. The run was not repeated.
+
+Verdict: failed on the criteria fixed before the run (no IC, Sharpe below
+the universe). Not adopted, like insider_buying. A version that could be
+measured would need more coverage (smaller companies, a longer window, or
+promoter buying as one input to a composite); that is a new idea with its
+own settings fixed before any run, not a rescue of this one.

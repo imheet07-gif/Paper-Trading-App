@@ -100,14 +100,19 @@ def main(argv=None):
                               "period": a.period, "config": cfg.as_dict(), "sharpe": m.get("sharpe"),
                               "cagr": m.get("cagr"), "max_drawdown": m.get("max_drawdown"),
                               "bench_sharpe": bench.get("sharpe"), "ic": ic, "note": a.note or "evaluate.py"})
-            print("%-22s %-15s %7.3f %6.2f %5.0f%% %8.2f%% %6.2f | %6.1f%% %6.2f %6.1f%% %6.1f%%" % (
-                name, regime, ic["ic_mean"], ic["ic_t"], ic["ic_positive"] * 100, ic["top_minus_bottom"] * 100,
-                ic["monotonic"], m["cagr"] * 100, m["sharpe"], m["max_drawdown"] * 100,
+            if ic:
+                left = "%7.3f %6.2f %5.0f%% %8.2f%% %6.2f" % (
+                    ic["ic_mean"], ic["ic_t"], ic["ic_positive"] * 100, ic["top_minus_bottom"] * 100, ic["monotonic"])
+            else:  # fewer than 50 scored, eligible stocks in every month: too sparse to rank
+                left = "%7s %6s %6s %9s %6s" % ("n/a", "", "", "", "")
+            print("%-22s %-15s %s | %6.1f%% %6.2f %6.1f%% %6.1f%%" % (
+                name, regime, left, m["cagr"] * 100, m["sharpe"], m["max_drawdown"] * 100,
                 (m["cagr"] - bench["cagr"]) * 100))
     print("%-22s %-15s %7s %6s %6s %9s %6s | %6.1f%% %6.2f %6.1f%%" % (
         "equal-weight universe", "", "", "", "", "", "", bench["cagr"] * 100, bench["sharpe"],
         bench["max_drawdown"] * 100))
-    print("IC: monthly rank correlation with next-month return; t > 2 is the usual bar. top-bot: monthly return of the")
+    print("IC: monthly rank correlation with next-month return; t > 2 is the usual bar; n/a when no month had 50")
+    print("scored stocks in the universe, too few to rank. top-bot: monthly return of the")
     print("top decile minus the bottom. mono: how orderly the deciles are (1 = perfectly). Right side: top %d backtest" % a.top)
     print("with costs; excess is CAGR over the equal-weight universe.")
     return 0

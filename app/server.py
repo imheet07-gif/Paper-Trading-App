@@ -41,8 +41,8 @@ STATIC = os.path.join(HERE, "static")
 JOBS_PY = os.path.join(ROOT, "research", "jobs.py")
 
 SIGNALS = ["momentum_quality", "momentum_12_1", "momentum_6_1", "high_52w", "low_volatility",
-           "delivery_accumulation", "momentum_lowvol", "insider_buying", "results_reaction"]
-EVENT_SIGNALS = ["insider_buying", "results_reaction"]  # score only stocks with a recent event
+           "delivery_accumulation", "momentum_lowvol", "insider_buying", "results_reaction", "promoter_buying"]
+EVENT_SIGNALS = ["insider_buying", "results_reaction", "promoter_buying"]  # score only stocks with a recent event
 REGIMES = ["none", "trend200_cash", "trend200_half", "breadth40_half"]
 NAME = re.compile(r"^[A-Za-z0-9_]{1,40}$")
 RESULT_ID = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
