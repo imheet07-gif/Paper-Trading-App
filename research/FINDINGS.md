@@ -174,3 +174,53 @@ update refreshes every event source.
 - Not adopted: insider buying and results-day drift (failed dev).
 - Next: risk control by sizing rather than timing, and mutual fund
   accumulation as the remaining independent idea.
+
+## 2026-10-27: position sizing, settings fixed before testing (second agent; no runs yet)
+
+`research/backtest.py` now takes `--sizing equal|inverse_vol`,
+`--max-weight` (cap on one stock's share of the invested money) and
+`--cash-buffer` (share always in cash). The defaults reproduce every
+earlier run exactly. Volatility for inverse_vol is the one-year
+(252-session) standard deviation of daily returns to the rebalance close,
+the same measure momentum_quality divides by, so nothing is looked up
+after the fact.
+
+Variants, fixed now, all on `momentum_quality`, top 20, monthly, dev only:
+
+1. `--sizing inverse_vol --max-weight 0.10`
+2. `--sizing equal --cash-buffer 0.05`
+3. `--sizing inverse_vol --max-weight 0.10 --cash-buffer 0.05`
+
+Plus the equal-weight baseline rerun on the same code for comparison.
+Judged on dev Sharpe and worst drawdown against that baseline, and on
+the deflated Sharpe with every logged dev run counted. At most one of
+them, unchanged, gets the single validation look; if none beats the
+baseline on dev, none is validated and that is recorded here.
+Not run yet: this session cannot reach NSE to build the market store.
+
+## 2026-10-27: position sizing on dev (second agent; runs by the owner)
+
+The four runs fixed in the section above, `momentum_quality`, top 20,
+monthly, dev 2013 to 2020, on the owner's store:
+
+| sizing | Sharpe | CAGR |
+| --- | --- | --- |
+| equal weight (baseline) | 0.82 | 26.2% |
+| inverse vol, 10% cap | 0.78 | 24.1% |
+| equal weight, 5% cash | 0.81 | 25.2% |
+| inverse vol, 10% cap, 5% cash | 0.77 | 23.2% |
+
+- The baseline matches the earlier dev run to the last digit (Sharpe
+  0.817, CAGR 26.16%), so the new options change nothing by default.
+- Inverse vol costs about 2 points a year and 0.04 of Sharpe. The likely
+  reason: momentum_quality already divides by the same one-year
+  volatility, so sizing by it again tilts twice toward slower stocks.
+- A 5% cash buffer costs about 1 point a year at the 6% cash yield and
+  leaves Sharpe almost unchanged, as it should.
+- The worst drawdowns were printed but not logged (the log now records
+  them, from these runs on). They are the one open check.
+
+Verdict: none beats the baseline on dev Sharpe, so none gets the
+validation look and the strategy stays equal weight, unless the printed
+drawdowns show a variant cutting the baseline's -38.5% by a wide margin,
+in which case this section gets a dated follow-up, not an edit.

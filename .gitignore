@@ -6,3 +6,8 @@ data/
 .env
 __pycache__/
 *.pyc
+
+# Local tooling, never committed
+.venv/
+venv/
+.DS_Store

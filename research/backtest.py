@@ -75,17 +75,65 @@ def cost_rates(rates=None):
     return buy, sell
 
 
+SIZINGS = ("equal", "inverse_vol")
+
+
 class Config:
     def __init__(self, top=20, slippage_bps=15.0, capital=1_000_000.0, dp_charge=15.34, delist_haircut=0.5,
-                 delist_after=20, locked_move=0.02, cash_yield=0.06, regime="none"):
+                 delist_after=20, locked_move=0.02, cash_yield=0.06, regime="none", sizing="equal",
+                 max_weight=None, cash_buffer=0.0, vol_days=252):
         self.top, self.slippage, self.capital = top, slippage_bps / 1e4, capital
         self.dp_charge, self.delist_haircut, self.delist_after = dp_charge, delist_haircut, delist_after
         self.locked_move = locked_move
         self.cash_yield = cash_yield  # uninvested cash earns about a liquid fund's yield
         self.regime = regime  # see regimes.py; the share of capital invested at each rebalance
+        if sizing not in SIZINGS:
+            raise ValueError("sizing must be one of %s" % ", ".join(SIZINGS))
+        if max_weight is not None and not 0 < max_weight <= 1:
+            raise ValueError("max_weight must be above 0 and at most 1")
+        if not 0 <= cash_buffer < 1:
+            raise ValueError("cash_buffer must be at least 0 and below 1")
+        self.sizing = sizing  # equal, or inverse_vol: weight in proportion to 1 / one-year volatility
+        self.max_weight = max_weight  # cap on any one stock's share of the invested money; None = no cap
+        self.cash_buffer = cash_buffer  # share of the portfolio always kept in cash, on top of any regime
+        self.vol_days = vol_days  # lookback for inverse_vol, in sessions
 
     def as_dict(self):
         return dict(self.__dict__)
+
+
+def target_weights(picks, vol_row, cfg):
+    """Share of the portfolio for each pick, summing to at most 1 - cash_buffer.
+
+    equal: the same share each. inverse_vol: in proportion to 1 / volatility
+    as of the rebalance close (a pick without a volatility gets the median of
+    the others'). max_weight caps any one stock; the excess is shared over
+    the uncapped ones by their weight, and stays in cash once every stock is
+    at the cap."""
+    if not picks:
+        return {}
+    invest = 1.0 - cfg.cash_buffer
+    if cfg.sizing == "inverse_vol":
+        vols = {s: vol_row.get(s, np.nan) for s in picks}
+        known = [v for v in vols.values() if not np.isnan(v) and v > 0]
+        fill = float(np.median(known)) if known else 1.0
+        raw = {s: 1.0 / (v if not np.isnan(v) and v > 0 else fill) for s, v in vols.items()}
+    else:
+        raw = {s: 1.0 for s in picks}
+    cap = cfg.max_weight * invest if cfg.max_weight else None
+    w, active, left = {}, dict(raw), invest
+    while active:
+        tot = sum(active.values())
+        trial = {s: left * r / tot for s, r in active.items()}
+        over = [s for s, x in trial.items() if cap is not None and x > cap + 1e-12]
+        if not over:
+            w.update(trial)
+            break
+        for s in over:
+            w[s] = cap
+            left -= cap
+            del active[s]
+    return w
 
 
 def locked(H, L, C, i, k, direction, min_move):
@@ -120,6 +168,9 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None):
     close, open_ = p.close, p.open
     col = {s: k for k, s in enumerate(close.columns)}
     C, O, H, L = close.values, open_.values, p.high.values, p.low.values
+    vol = None
+    if cfg.sizing == "inverse_vol":
+        vol = p.returns().rolling(cfg.vol_days, min_periods=int(cfg.vol_days * 0.8)).std() * np.sqrt(252)
 
     cash, units, last_px, missing = cfg.capital, {}, {}, {}
     pending, navs, bench_navs, trades, invest = None, [], [], [], 1.0
@@ -132,7 +183,7 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None):
         # 1. fill yesterday's orders at today's open
         if pending is not None:
             nav_open = cash + sum(u * (O[i, col[s]] if not np.isnan(O[i, col[s]]) else last_px[s]) for s, u in units.items())
-            target = {s: nav_open * invest / len(pending) for s in pending} if pending else {}
+            target = {s: nav_open * invest * x for s, x in pending.items()}
             for s in list(units):
                 px = O[i, col[s]]
                 want = target.get(s, 0.0)
@@ -201,7 +252,8 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None):
         # 3. rebalance at the close: tomorrow's orders
         if d in rebal:
             ok = elig.iloc[i]
-            pending = select_top(scores, elig, i, cfg.top)
+            picks = select_top(scores, elig, i, cfg.top)
+            pending = target_weights(picks, vol.iloc[i] if vol is not None else {}, cfg)
             invest = float(exposure.iloc[i]) if exposure is not None and not np.isnan(exposure.iloc[i]) else 1.0
             bench_members = [col[s] for s in ok[ok].index]
 
@@ -272,6 +324,9 @@ def main(argv=None):
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--slippage-bps", type=float, default=15.0)
     ap.add_argument("--regime", default="none", choices=sorted(regimes_mod.REGIMES))
+    ap.add_argument("--sizing", default="equal", choices=SIZINGS)
+    ap.add_argument("--max-weight", type=float, help="cap on one stock's share of the invested money, e.g. 0.08")
+    ap.add_argument("--cash-buffer", type=float, default=0.0, help="share of the portfolio kept in cash, e.g. 0.05")
     ap.add_argument("--db", default=panel_mod.bhavcopy.DEFAULT_DB)
     ap.add_argument("--open-holdout", action="store_true", help="required for the holdout period; logged")
     ap.add_argument("--note", default="", help="why this run (kept in the run log)")
@@ -283,19 +338,22 @@ def main(argv=None):
     load_from = (pd.Timestamp(start) - pd.DateOffset(years=2)).date().isoformat()  # lookback for signals
     p = panel_mod.load(a.db, start=load_from, end=end)
     scores = signals_mod.SIGNALS[a.signal](p)
-    cfg = Config(top=a.top, slippage_bps=a.slippage_bps, regime=a.regime)
+    cfg = Config(top=a.top, slippage_bps=a.slippage_bps, regime=a.regime, sizing=a.sizing,
+                 max_weight=a.max_weight, cash_buffer=a.cash_buffer)
     res = run(p, scores, start, end, cfg, exposure=regimes_mod.REGIMES[a.regime](p, a.db))
     m, b = metrics(res["nav"]), metrics(res["bench"])
     trials = past_sharpes(period=a.period) + [m.get("sharpe", float("nan"))]
     dsr = deflated_sharpe(m["sharpe"], m["days"], m["skew"], m["kurtosis"], trials) if m else float("nan")
     entry = {"at": dt.datetime.now().isoformat(timespec="seconds"), "signal": a.signal, "period": a.period,
-             "config": cfg.as_dict(), "sharpe": m.get("sharpe"), "cagr": m.get("cagr"), "bench_sharpe": b.get("sharpe"),
+             "config": cfg.as_dict(), "sharpe": m.get("sharpe"), "cagr": m.get("cagr"), "max_drawdown": m.get("max_drawdown"),
+             "bench_sharpe": b.get("sharpe"),
              "note": a.note}
     log_run(entry)
     if a.period == "holdout":
         log_run(entry, HOLDOUT_LOG)
-    print("%s, %s %s to %s, top %d, slippage %.0f bps, regime %s" % (
-        a.signal, a.period, start, end or "now", a.top, a.slippage_bps, a.regime))
+    print("%s, %s %s to %s, top %d, slippage %.0f bps, regime %s, sizing %s, max weight %s, cash buffer %.0f%%" % (
+        a.signal, a.period, start, end or "now", a.top, a.slippage_bps, a.regime, a.sizing,
+        "none" if a.max_weight is None else "%.0f%%" % (a.max_weight * 100), a.cash_buffer * 100))
     for name, x in (("strategy", m), ("equal-weight universe", b)):
         print("  %-22s CAGR %6.1f%%  vol %5.1f%%  Sharpe %5.2f  max drawdown %6.1f%%" % (
             name, x["cagr"] * 100, x["vol"] * 100, x["sharpe"], x["max_drawdown"] * 100))
