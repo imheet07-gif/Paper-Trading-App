@@ -14,8 +14,10 @@ ca = load("core", "corporate_actions")
 if HAVE_PANDAS:
     sys.path.insert(0, os.path.join(ROOT, "research"))
     import backtest  # noqa: E402
+    import evaluate  # noqa: E402
     import panel  # noqa: E402
     import signals  # noqa: E402
+    import numpy as np  # noqa: E402
 
 
 def weekdays(start, n):
@@ -114,6 +116,26 @@ class Research(unittest.TestCase):
         low = backtest.deflated_sharpe(1.0, 2000, 0.0, 3.0, [1.0, 0.9, 1.1, 0.95, 1.05] * 20)
         high = backtest.deflated_sharpe(3.0, 2000, 0.0, 3.0, [1.0, 0.9, 1.1, 0.95, 1.05] * 20)
         self.assertLess(low, high)
+
+    def test_forward_returns_start_at_the_next_open(self):
+        f = evaluate.forward_returns(self.p, horizon=5)
+        o = self.p.open
+        sid = [s for s in o.columns if self.sym(s) == "UPUP"][0]
+        self.assertAlmostEqual(f[sid].iloc[100], o[sid].iloc[106] / o[sid].iloc[101] - 1)
+
+    def test_ic_sees_a_perfect_signal(self):
+        import pandas as pd
+        fwd = evaluate.forward_returns(self.p)
+        elig = panel.universe(self.p, min_value=1)
+        dates = self.p.dates[260:400:21]
+        rep = evaluate.ic_report(fwd, fwd, elig, dates)  # the future itself as the signal
+        self.assertIsNone(rep)  # five stocks are too few to judge: at least 50 are required
+        wide = pd.concat([fwd] * 12, axis=1)
+        wide.columns = range(wide.shape[1])
+        noise = pd.DataFrame(np.random.default_rng(1).normal(0, 1e-6, wide.shape), index=wide.index, columns=wide.columns)
+        many = wide + noise
+        rep = evaluate.ic_report(many, many, pd.DataFrame(True, index=wide.index, columns=wide.columns), dates)
+        self.assertGreater(rep["ic_mean"], 0.99)
 
     def test_holdout_needs_the_flag(self):
         with open(os.devnull, "w") as null:
