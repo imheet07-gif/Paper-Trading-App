@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.join(ROOT, "dashboard"))
 import backtest  # noqa: E402
 import bhavcopy  # noqa: E402
 import corporate_actions as ca  # noqa: E402
+import deals as deals_mod  # noqa: E402
 import events as events_mod  # noqa: E402
 import instruments as instruments_mod  # noqa: E402
 import nse_calendar as cal  # noqa: E402
@@ -157,6 +158,11 @@ def update(db_path=bhavcopy.DEFAULT_DB, today=None, log=print):
     edb = events_mod.connect(db_path)
     events_mod.rebuild(edb, log=log)
     edb.close()
+    # bulk and block deals: NSE keeps only the latest session, so a missed evening is lost
+    deals_mod.fetch(log=log)
+    ddb = deals_mod.connect(db_path)
+    deals_mod.rebuild(ddb, log=log)
+    ddb.close()
 
 
 # ---------------------------------------------------------------- evidence
