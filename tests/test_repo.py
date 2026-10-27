@@ -38,7 +38,7 @@ class Repo(unittest.TestCase):
     def test_root_matches_the_reel(self):
         local = (".env", "private", "trader", "data", "__pycache__")  # git-ignored, may exist locally
         root = sorted(d for d in os.listdir(ROOT) if not d.startswith(".git") and d not in local)
-        self.assertEqual(root, sorted([".claude-plugin", "CLAUDE.md", "LICENSE", "README.md",
+        self.assertEqual(root, sorted([".claude", ".claude-plugin", "CLAUDE.md", "LICENSE", "README.md",
                                        "core", "docs", "tests"] + SKILLS))
 
     def test_core_modules_present(self):
@@ -71,7 +71,7 @@ class Repo(unittest.TestCase):
             plugin = json.load(fh)
         self.assertEqual(plugin["name"], "india-trader")
         self.assertEqual(plugin["skills"], "./")
-        self.assertIn("never places an order without your yes", plugin["description"].lower())
+        self.assertIn("never places orders", plugin["description"].lower())
         with open(os.path.join(ROOT, ".claude-plugin", "marketplace.json")) as fh:
             market = json.load(fh)
         self.assertEqual(market["name"], "india-trader")
@@ -82,12 +82,19 @@ class Repo(unittest.TestCase):
             readme = " ".join(fh.read().split())
         self.assertTrue(readme.startswith("# India Trader"))
         for line in ("https://github.com/Jakeschincariol/trader-skill", "## Fine print",
-                     "Not financial advice", "No trade goes through until you say yes"):
+                     "Not financial advice", "Nothing here places an order"):
             self.assertIn(line, readme)
         with open(os.path.join(ROOT, "docs", "trader-skill-README.md"), encoding="utf-8") as fh:
             upstream = fh.read()
         for s in SKILLS:
             self.assertIn("/" + s, upstream, s)
+
+    def test_broker_order_tools_are_denied(self):
+        with open(os.path.join(ROOT, ".claude", "settings.json")) as fh:
+            deny = json.load(fh)["permissions"]["deny"]
+        for tool in ("place_order", "modify_order", "cancel_order",
+                     "place_gtt_order", "modify_gtt_order", "delete_gtt_order"):
+            self.assertIn("mcp__Zerodha_MCP__" + tool, deny)
 
     def test_license_keeps_the_original_copyright(self):
         with open(os.path.join(ROOT, "LICENSE"), encoding="utf-8") as fh:

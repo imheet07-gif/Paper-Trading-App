@@ -1,6 +1,6 @@
 {
   "name": "india-trader",
-  "description": "Claude skills for Indian equities (NSE/BSE): portfolio analysis, sizing, risk checks, Indian tax lots and broker tickets for Zerodha and Angel One, built on trader-skill. Never places an order without your yes.",
+  "description": "Claude skills for Indian equities (NSE/BSE): portfolio analysis, sizing, risk checks, Indian tax lots and order sheets you enter yourself in your broker, built on trader-skill. Never places orders.",
   "version": "0.1.0",
   "author": {
     "name": "imheet07-gif"
@@ -16,7 +16,6 @@
     "nse",
     "bse",
     "zerodha",
-    "angel-one",
     "portfolio"
   ],
   "skills": "./"

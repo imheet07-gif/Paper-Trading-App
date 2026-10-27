@@ -22,6 +22,16 @@ def at(text):
     return dt.datetime.fromisoformat(text).replace(tzinfo=IST)
 
 
+def with_test_broker(rates):
+    """Made-up rates that exercise the cap, the floor and per-order DP charges."""
+    r = json.loads(json.dumps(rates))
+    r["brokers"]["testbroker"] = {
+        "_source": "test values", "verified": False,
+        "brokerage": {"delivery": {"pct": "0.1", "cap": "20", "floor": "5"}},
+        "dp_charge_incl_gst": "20", "dp_charge_basis": "per_sell_order"}
+    return r
+
+
 def read(name):
     with open(os.path.join(CORE, name), encoding="utf-8") as fh:
         return fh.read()
@@ -131,17 +141,23 @@ class Charges(unittest.TestCase):
         self.assertEqual(c["stamp_duty"], Decimal("0.00"))
         self.assertEqual(c["dp_charge"], Decimal("15.34"))
 
-    def test_angel_brokerage_cap_and_floor(self):
+    def test_brokerage_cap_and_floor(self):
+        rates = with_test_broker(self.rates)
         # 0.1% of 1,00,000 = 100, capped at 20
-        big = charges.trade_charges("angelone", "buy", 100, "1000", rates=self.rates)
+        big = charges.trade_charges("testbroker", "buy", 100, "1000", rates=rates)
         self.assertEqual(big["brokerage"], Decimal("20.00"))
         # 0.1% of 1,000 = 1, raised to the Rs 5 floor
-        small = charges.trade_charges("angelone", "buy", 1, "1000", rates=self.rates)
+        small = charges.trade_charges("testbroker", "buy", 1, "1000", rates=rates)
         self.assertEqual(small["brokerage"], Decimal("5.00"))
 
     def test_unconfigured_product_is_an_error(self):
         with self.assertRaises(KeyError):
-            charges.trade_charges("angelone", "buy", 1, "100", product="intraday", rates=self.rates)
+            charges.trade_charges("testbroker", "buy", 1, "100", product="intraday",
+                                  rates=with_test_broker(self.rates))
+
+    def test_unknown_broker_is_an_error(self):
+        with self.assertRaises(KeyError):
+            charges.trade_charges("angelone", "buy", 1, "100", rates=self.rates)
 
     def test_fractional_qty_refused(self):
         with self.assertRaises(ValueError):
@@ -156,8 +172,8 @@ class Charges(unittest.TestCase):
                   {"date": "2026-10-27", "symbol": "TCS", "side": "sell", "qty": 1, "price": "3001"}]
         z = charges.batch_charges(trades, "zerodha", self.rates)
         self.assertEqual([r["charges"]["dp_charge"] for r in z["rows"]], [Decimal("15.34"), Decimal("0.00")])
-        a = charges.batch_charges(trades, "angelone", self.rates)
-        self.assertEqual([r["charges"]["dp_charge"] for r in a["rows"]], [Decimal("23.60"), Decimal("23.60")])
+        a = charges.batch_charges(trades, "testbroker", with_test_broker(self.rates))
+        self.assertEqual([r["charges"]["dp_charge"] for r in a["rows"]], [Decimal("20.00"), Decimal("20.00")])
 
     def test_round_trip_cost_percent(self):
         r = charges.round_trip("zerodha", 100, "1000", rates=self.rates)

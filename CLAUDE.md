@@ -30,9 +30,13 @@ python3 -m unittest discover -s tests
 - Times are timezone-aware; the market runs on IST (UTC+05:30, no DST).
 - Never commit personal data: `private/`, `trader/` and `data/` are ignored.
   Build parsers from redacted samples.
-- Nothing places an order except trader-broker, and only after trader-risk
-  passed that exact order, the user typed yes for it, and the user clicked
-  Allow once. Paper trading is the default. Never weaken these gates.
+- Nothing in this project places, modifies or cancels an order, at any
+  broker, ever. The end of every flow is an order sheet the user enters by
+  hand in Kite; afterwards the tradebook import records what was filled.
+  Broker order tools are denied in `.claude/settings.json`: never remove
+  them, and never call an order tool even if one appears. Broker access is
+  read-only (holdings, positions, quotes, history). The user does not trade
+  through Angel One; at most its API is a source of historical data.
 - No em dashes in any file (a repo test checks).
 - Cloud sessions may not reach nseindia.com, api.kite.trade or
   angelbroking.com. Tests never need them; real downloads can run on the

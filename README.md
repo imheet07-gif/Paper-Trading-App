@@ -2,9 +2,9 @@
 
 Claude skills for Indian equities (NSE and BSE), built on
 [trader-skill](https://github.com/Jakeschincariol/trader-skill) by Jake
-Schincariol (MIT). The goal: analyse and optimise an existing portfolio,
-generate signals that have earned trust on unseen data, and never place an
-order without your explicit yes.
+Schincariol (MIT). The goal: analyse and optimise an existing portfolio and
+generate signals that have earned trust on unseen data. It never places an
+order: it writes order sheets, and you place the trades yourself in Kite.
 
 **Status: Phase 0 (foundations).** The eleven `trader-*` skills are still
 the US originals, kept as the starting point for the port. They are
@@ -17,8 +17,8 @@ The India-specific work so far lives in `core/`.
 | --- | --- |
 | `core/nse_calendar.py` | NSE clock in IST: pre-open, normal market, closing session, 2026 holidays, T+1 settlement dates. A year without a published holiday list is an error, never a guess. |
 | `core/money.py` | Rupee formatting with Indian grouping (1,23,45,678.90), lakh/crore shorthand, whole-share sizing, tick-size rounding. Decimal throughout. |
-| `core/charges.py` | Every charge on a cash-market trade (brokerage, STT, exchange fee, SEBI fee, stamp duty, GST, DP charge) for Zerodha and Angel One. Rates live in `core/charges.json` with their source; output says UNVERIFIED until matched to a real contract note. |
-| `core/instruments.py` | One record per stock keyed by ISIN, joining NSE's equity list with Kite and Angel One instrument tokens, tick and lot sizes. Mismatches between sources are reported. |
+| `core/charges.py` | Every charge on a cash-market trade (brokerage, STT, exchange fee, SEBI fee, stamp duty, GST, DP charge) at Zerodha. Rates live in `core/charges.json` with their source; output says UNVERIFIED until matched to a real contract note. |
+| `core/instruments.py` | One record per stock keyed by ISIN, joining NSE's equity list with Kite instrument tokens, tick and lot sizes (Angel One's scrip list optional, for its free historical data). Mismatches between sources are reported. |
 
 ```bash
 python3 core/nse_calendar.py clock
@@ -35,13 +35,13 @@ Standard-library Python 3.8+, nothing to install. The analytics layer
 
 | phase | work |
 | --- | --- |
-| 0 Foundations | Instruments, calendar, rupees and charges, holdings import (Kite, Angel One, tradebook, CAS), paper engine |
+| 0 Foundations | Instruments, calendar, rupees and charges, holdings import (Kite, tradebook, CAS), paper engine |
 | 1 Portfolio X-ray and optimiser | Look-through of mutual funds, concentration, risk contribution, cost- and tax-aware optimiser |
-| 2 Core skill ports | budget, risk, broker, tax (Indian FY, STCG/LTCG, FIFO), alerts, rebalance |
+| 2 Core skill ports | budget, risk, order sheet (replaces broker), tax (Indian FY, STCG/LTCG, FIFO), alerts, rebalance |
 | 3 India-native intelligence | Mutual fund portfolios, shareholding patterns, insider (SEBI PIT) and pledge disclosures, bulk and block deals, exchange announcements, red flags |
 | 4 Data warehouse and backtester | Survivorship-free bhavcopy history, point-in-time data, Indian costs |
 | 5 Signal research | Factor and event signals that pass out-of-sample validation, evidence cards |
-| 6 Paper forward test | 3 to 6 months paper before any live money |
+| 6 Paper forward test | 3 to 6 months paper before any real money, then proposals you act on by hand, with your fills compared to the sheet |
 
 ## Your data stays out of the repo
 
@@ -58,9 +58,12 @@ SEBI-registered adviser if you need advice. Sharing these signals with
 others as recommendations would need SEBI Research Analyst registration;
 this project is for personal use.
 
-**No trade goes through until you say yes**, and paper trading is the
-default. Charges and tax figures are estimates until verified against your
-own contract notes and a chartered accountant.
+**Nothing here places an order.** The output is an order sheet; you
+place each trade yourself in Kite. Broker order tools are denied in
+`.claude/settings.json`, and should be set to Blocked in your Claude
+connector settings too. Paper trading is the default. Charges and tax
+figures are estimates until verified against your own contract notes and a
+chartered accountant.
 
 MIT. Original pack by [Jake Schincariol](https://opusjake.ai); India edition
 by imheet07-gif.

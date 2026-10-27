@@ -6,8 +6,10 @@ block there says whether it has been matched to a real contract note. The
 output says UNVERIFIED until every block used is verified.
 
   python3 core/charges.py --broker zerodha --side buy --qty 10 --price 2875.40
-  python3 core/charges.py --broker angelone --side sell --qty 10 --price 2875.40 --json
+  python3 core/charges.py --broker zerodha --side sell --qty 10 --price 2875.40 --json
   python3 core/charges.py --broker zerodha --round-trip --qty 10 --price 2875.40
+
+Only the broker you trade through needs rates: Zerodha today.
 
 Components: brokerage, STT, exchange transaction charge, SEBI turnover fee,
 stamp duty (buy side), GST at 18% on brokerage + exchange charge + SEBI fee,

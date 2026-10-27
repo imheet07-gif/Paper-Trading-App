@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "mcp__Zerodha_MCP__place_order",
+      "mcp__Zerodha_MCP__modify_order",
+      "mcp__Zerodha_MCP__cancel_order",
+      "mcp__Zerodha_MCP__place_gtt_order",
+      "mcp__Zerodha_MCP__modify_gtt_order",
+      "mcp__Zerodha_MCP__delete_gtt_order"
+    ]
+  }
+}
