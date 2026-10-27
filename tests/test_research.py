@@ -82,6 +82,24 @@ class Research(unittest.TestCase):
         self.assertFalse(u.iloc[100].any())  # under 250 days of history
         self.assertTrue(u.iloc[300].any())
 
+    def test_funds_and_etfs_are_never_eligible(self):
+        import pandas as pd
+        p = self.p
+        etf = p.close.columns[0]
+        renamed = {etf: "INF" + etf[3:]}
+        for name in ("close", "raw_close", "value"):
+            setattr(p, name, getattr(p, name).rename(columns=renamed))
+        p.eq, p.data_issue = p.eq.rename(columns=renamed), p.data_issue.rename(columns=renamed)
+        try:
+            u = panel.universe(p, min_value=1)
+            self.assertFalse(u["INF" + etf[3:]].any())
+            self.assertTrue(u.drop(columns=["INF" + etf[3:]]).iloc[300].any())
+        finally:
+            back = {v: k for k, v in renamed.items()}
+            for name in ("close", "raw_close", "value"):
+                setattr(p, name, getattr(p, name).rename(columns=back))
+            p.eq, p.data_issue = p.eq.rename(columns=back), p.data_issue.rename(columns=back)
+
     def test_momentum_ranks_the_trend_first(self):
         s = signals.momentum_12_1(self.p).iloc[400].dropna().sort_values(ascending=False)
         self.assertEqual([self.sym(x) for x in s.index[:2]], ["LOCK", "GONE"])

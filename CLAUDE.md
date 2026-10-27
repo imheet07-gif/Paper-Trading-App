@@ -17,7 +17,8 @@ broker-neutral holdings, trades and charges.
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
   protocol. Never open the holdout without the user asking; every run is
-  logged to `data/research_runs.jsonl`.
+  logged to `research/runs.jsonl`, which is committed so the count of
+  variants tried survives.
 - `dashboard/` the personal dashboard: `build.py` writes one self-contained
   HTML file (no external scripts, fonts or requests) to `private/`.
 - `tests/` unittest, offline only. `tests/_load.py` loads a script by folder.

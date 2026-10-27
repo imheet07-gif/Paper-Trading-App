@@ -116,15 +116,18 @@ def load(db_path=bhavcopy.DEFAULT_DB, start=None, end=None):
 def universe(p, min_price=20.0, min_value=2e7, value_days=60, min_history=250):
     """Boolean frame: eligible to buy at each date's close, using only data to that date.
 
-    EQ series that day (trade-for-trade and surveillance series excluded),
+    a company share (ISIN starting INE: ETFs and fund units, INF, trade in
+    the EQ series too and are left out), EQ series that day (trade-for-trade
+    and surveillance series excluded),
     no failed corporate action check in the past year,
     unadjusted close at least min_price, median traded value over
     value_days at least min_value rupees, and min_history days of prices.
     """
     med_value = p.value.rolling(value_days, min_periods=int(value_days * 0.8)).median()
     history = p.close.notna().cumsum()
+    company = pd.Series([str(c).startswith("INE") for c in p.close.columns], index=p.close.columns)
     return (p.eq & (p.raw_close >= min_price) & (med_value >= min_value) & (history >= min_history)
-            & ~p.data_issue)
+            & ~p.data_issue & company)
 
 
 def month_ends(dates):

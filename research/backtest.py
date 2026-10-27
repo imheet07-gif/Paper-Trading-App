@@ -21,8 +21,9 @@ And the protocol that keeps the researcher from lying:
                                         opening is appended to
                                         research/holdout_log.jsonl
 
-Every run is appended to data/research_runs.jsonl, so the number of
-variants tried is known when judging the best one (deflated Sharpe).
+Every run is appended to research/runs.jsonl (committed, no personal
+data), so the number of variants tried is known when judging the best one
+(deflated Sharpe).
 
   python3 research/backtest.py --signal momentum_12_1 --period dev
   python3 research/backtest.py --signal high_52w --period validation --top 30
@@ -52,7 +53,7 @@ PERIODS = {
     "validation": ("2021-01-01", "2023-12-31"),
     "holdout": ("2024-01-01", None),
 }
-RUNS_LOG = os.path.join(ROOT, "data", "research_runs.jsonl")
+RUNS_LOG = os.path.join(HERE, "runs.jsonl")  # committed: the count of variants tried must survive
 HOLDOUT_LOG = os.path.join(HERE, "holdout_log.jsonl")
 RISK_FREE = 0.065  # annual, roughly the Indian 91-day T-bill over the period
 
@@ -130,8 +131,8 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None):
                     value = q * fill
                     cost = value * sell_cost + cfg.dp_charge
                     cash += value - cost
-                    stats["costs"] += cost + q * px * cfg.slippage
-                    stats["turnover"] += q * px
+                    stats["costs"] += (cost + q * px * cfg.slippage) / nav_open
+                    stats["turnover"] += q * px / nav_open
                     units[s] -= q
                     if units[s] <= 1e-9:
                         del units[s]
@@ -154,8 +155,8 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None):
                 q = spend / (fill * (1 + buy_cost))
                 cost = q * fill * buy_cost
                 cash -= q * fill + cost
-                stats["costs"] += cost + q * px * cfg.slippage
-                stats["turnover"] += q * px
+                stats["costs"] += (cost + q * px * cfg.slippage) / nav_open
+                stats["turnover"] += q * px / nav_open
                 units[s] = units.get(s, 0.0) + q
                 trades.append((d.date().isoformat(), s, "buy", q, fill))
             pending = None
@@ -188,7 +189,6 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None):
 
     idx = dates[lo:hi]
     nav = pd.Series(navs, index=idx) / cfg.capital
-    stats["turnover"] = stats["turnover"] / cfg.capital
     return {"nav": nav, "bench": pd.Series(bench_navs, index=idx), "trades": trades, "stats": stats}
 
 
@@ -282,8 +282,9 @@ def main(argv=None):
     print("  by year: " + "  ".join("%d %+.0f%%/%+.0f%%" % (y, m["yearly"][y] * 100, b["yearly"].get(y, float("nan")) * 100)
                                    for y in sorted(m["yearly"])))
     s = res["stats"]
-    print("  turnover %.1fx/yr, costs %.2f%% of capital/yr, blocked buys %d, blocked sells %d, delisting exits %d" % (
-        s["turnover"] / (m["days"] / 252), s["costs"] / cfg.capital / (m["days"] / 252) * 100,
+    print("  turnover %.1fx/yr (buys + sells over portfolio value), costs %.2f%% of portfolio value/yr, "
+          "blocked buys %d, blocked sells %d, delisting exits %d" % (
+        s["turnover"] / (m["days"] / 252), s["costs"] / (m["days"] / 252) * 100,
         s["blocked_buys"], s["blocked_sells"], s["delist_exits"]))
     print("  deflated Sharpe probability %.2f over %d %s run(s) logged" % (dsr, len(trials), a.period))
     return 0
