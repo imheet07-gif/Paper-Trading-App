@@ -100,7 +100,7 @@ column freely.
 
 | task | files | owner | status |
 | --- | --- | --- | --- |
-| Position sizing and risk control (per-stock cap, cash buffer, volatility sizing) for `momentum_quality`, tested on dev only; one validation look for the finished version, recorded in FINDINGS.md | `research/backtest.py`, `research/paper.py` | second agent | in progress (branch `second-agent/position-sizing`): backtester options and tests done, variants fixed in FINDINGS.md; dev runs wait for a market store |
+| Position sizing and risk control (per-stock cap, cash buffer, volatility sizing) for `momentum_quality`, tested on dev only; one validation look for the finished version, recorded in FINDINGS.md | `research/backtest.py`, `research/paper.py` | second agent | dev runs done 2026-10-27: no variant beats equal weight on Sharpe, not adopted (FINDINGS.md); drawdown check open; branch `second-agent/position-sizing` |
 | SAST Regulation 29 promoter open-market buying as a signal (`sast` table, `promoter=1 AND mode='Open market' AND side='Acquisition'`, usable the session after `disclosed_at`), settings fixed before testing, dev test | `research/event_signals.py`, `research/signals.py` | second agent | open |
 | Shareholding patterns ingest: NSE `api/corporate-share-holdings-master` answers with `broadcastDate`, store promoter, FII, MF and public stakes and pledges per quarter, keyed on publication time | `core/shareholding.py`, tests, fixtures | second agent | open |
 | Results XBRL financials: find where NSE serves the XBRL for each results filing (the announcement has `hasXbrl` but only the PDF link), parse with the standard library | `core/financials.py`, tests, fixtures | second agent | open |

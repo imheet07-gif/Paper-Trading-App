@@ -197,3 +197,30 @@ the deflated Sharpe with every logged dev run counted. At most one of
 them, unchanged, gets the single validation look; if none beats the
 baseline on dev, none is validated and that is recorded here.
 Not run yet: this session cannot reach NSE to build the market store.
+
+## 2026-10-27: position sizing on dev (second agent; runs by the owner)
+
+The four runs fixed in the section above, `momentum_quality`, top 20,
+monthly, dev 2013 to 2020, on the owner's store:
+
+| sizing | Sharpe | CAGR |
+| --- | --- | --- |
+| equal weight (baseline) | 0.82 | 26.2% |
+| inverse vol, 10% cap | 0.78 | 24.1% |
+| equal weight, 5% cash | 0.81 | 25.2% |
+| inverse vol, 10% cap, 5% cash | 0.77 | 23.2% |
+
+- The baseline matches the earlier dev run to the last digit (Sharpe
+  0.817, CAGR 26.16%), so the new options change nothing by default.
+- Inverse vol costs about 2 points a year and 0.04 of Sharpe. The likely
+  reason: momentum_quality already divides by the same one-year
+  volatility, so sizing by it again tilts twice toward slower stocks.
+- A 5% cash buffer costs about 1 point a year at the 6% cash yield and
+  leaves Sharpe almost unchanged, as it should.
+- The worst drawdowns were printed but not logged (the log now records
+  them, from these runs on). They are the one open check.
+
+Verdict: none beats the baseline on dev Sharpe, so none gets the
+validation look and the strategy stays equal weight, unless the printed
+drawdowns show a variant cutting the baseline's -38.5% by a wide margin,
+in which case this section gets a dated follow-up, not an edit.
