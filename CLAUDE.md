@@ -23,6 +23,13 @@ broker-neutral holdings, trades and charges.
   2025, then the announcements feed) and SAST Regulation 29 holdings
   changes. The app's update refreshes them. `research/event_signals.py`
   turns them into signals.
+- `core/shareholding.py` quarterly shareholding patterns from NSE into the
+  store (`shareholding` table: promoter, public and employee trust stakes
+  per quarter, keyed on broadcast time; raw answers cached in
+  `data/shareholding_raw/`). A revised filing replaces the original in
+  NSE's list: `submitted_on` keeps the original filing day, the numbers are
+  the revised ones. FII, mutual fund and pledge detail is in each filing's
+  XBRL, not read yet.
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
