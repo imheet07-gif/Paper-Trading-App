@@ -1,28 +1,21 @@
-import datetime
+import datetime as dt
 import io
 import json
 import os
-import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
+from decimal import Decimal
 
-from _load import load, ROOT, FIX
+from _load import load, ROOT
 
 alerts = load("trader-alerts", "alerts")
+bc = load("core", "bhavcopy")
 
-QDIR = os.path.join(FIX, "trader-alerts")
-DT = datetime.datetime
-
-# NYSE holidays as published at https://www.nyse.com/markets/hours-calendars (read 2026-10-13)
-NYSE_2026 = ["2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19",
-             "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25"]
-NYSE_2027 = ["2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18",
-             "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24"]
-EARLY = ["2026-11-27", "2026-12-24", "2027-11-26"]
+EXAMPLE = os.path.join(ROOT, "trader-alerts", "alerts.example.json")
 
 
-def ny(text):
+def ist(text):
     return alerts.parse_now(text)
 
 
@@ -33,200 +26,184 @@ def run(argv):
     return code, out.getvalue(), err.getvalue()
 
 
-class Calendar(unittest.TestCase):
-    def test_holidays_match_the_published_list(self):
-        self.assertEqual(sorted(alerts.NYSE_HOLIDAYS), NYSE_2026 + NYSE_2027)
-        self.assertEqual(sorted(alerts.NYSE_EARLY_CLOSE), EARLY)
-        for d in list(alerts.NYSE_HOLIDAYS) + list(alerts.NYSE_EARLY_CLOSE):
-            self.assertLess(datetime.date.fromisoformat(d).weekday(), 5, d)
+def row(day, isin, symbol, close, prev, series="EQ"):
+    """One made-up bhavcopy row, prices in rupees (stored in paise)."""
+    c, p = int(Decimal(close) * 100), int(Decimal(prev) * 100)
+    return {"date": day, "isin": isin, "symbol": symbol, "series": series, "open": p, "high": max(c, p),
+            "low": min(c, p), "close": c, "last": c, "prev_close": p, "volume": 1000, "value": 1000 * c, "trades": 10}
 
-    def test_daylight_saving_switches(self):
-        self.assertEqual(alerts.eastern_offset(DT(2026, 3, 8, 6, 59)), -5)
-        self.assertEqual(alerts.eastern_offset(DT(2026, 3, 8, 7, 0)), -4)
-        self.assertEqual(alerts.eastern_offset(DT(2026, 11, 1, 5, 59)), -4)
-        self.assertEqual(alerts.eastern_offset(DT(2026, 11, 1, 6, 0)), -5)
-        self.assertEqual(alerts.eastern_offset(DT(2027, 3, 14, 7, 0)), -4)
 
-    def test_parse_now(self):
-        self.assertEqual(ny("2026-10-13T09:30"), DT(2026, 10, 13, 13, 30))
-        self.assertEqual(ny("2026-12-01T09:30"), DT(2026, 12, 1, 14, 30))
-        self.assertEqual(ny("2026-10-13T20:00:01Z"), DT(2026, 10, 13, 20, 0, 1))
-        with self.assertRaises(alerts.AlertError):
-            ny("tomorrow")
+def store(path):
+    """A made-up market store: TCS on two days, ITC only in a non-cash series on its last day."""
+    db = bc.connect(path)
+    bc.store_day(db, [row("2026-10-26", "INE467B01029", "TCS", "3100", "3050"),
+                      row("2026-10-27", "INE467B01029", "TCS", "3205.5", "3100"),
+                      row("2026-10-27", "INE154A01025", "ITC", "395", "410"),
+                      row("2026-10-27", "INE009A01021", "INFY", "1450", "1500"),
+                      row("2026-10-27", "INE000X01010", "ODDLOT", "10", "10", series="N1")])
+    db.commit()
+    db.close()
 
-    def test_market_status(self):
-        st = alerts.market_status(ny("2026-10-13T10:00"))
+
+class Clock(unittest.TestCase):
+    def test_phases_on_a_trading_day(self):
+        self.assertEqual(alerts.market_status(ist("2026-10-28T09:05"))["phase"], "pre_open_entry")
+        self.assertEqual(alerts.market_status(ist("2026-10-28T09:10"))["phase"], "pre_open_matching")
+        st = alerts.market_status(ist("2026-10-28T10:00"))
+        self.assertEqual(st["phase"], "open")
         self.assertTrue(st["open"])
-        self.assertFalse(alerts.market_status(ny("2026-10-13T09:29"))["open"])
-        self.assertEqual(alerts.market_status(ny("2026-10-13T09:29"))["next_open"], "2026-10-13 09:30")
-        after = alerts.market_status(ny("2026-10-13T16:00"))
-        self.assertFalse(after["open"])
-        self.assertEqual(after["next_open"], "2026-10-14 09:30")
-        july = alerts.market_status(ny("2026-07-03T11:00"))
-        self.assertFalse(july["open"])
-        self.assertIn("Independence Day", july["reason"])
-        self.assertEqual(july["next_open"], "2026-07-06 09:30")
-        self.assertTrue(alerts.market_status(ny("2026-11-27T12:59"))["open"])
-        self.assertFalse(alerts.market_status(ny("2026-11-27T13:00"))["open"])
-        xmas = alerts.market_status(ny("2027-12-24T10:00"))
-        self.assertFalse(xmas["open"])
-        self.assertEqual(xmas["next_open"], "2027-12-27 09:30")
-        self.assertTrue(alerts.market_status(ny("2027-12-31T10:00"))["open"])
-        self.assertEqual(alerts.market_status(ny("2026-10-17T10:00"))["reason"], "weekend")
-        self.assertFalse(alerts.market_status(ny("2028-03-01T10:00"))["calendar_known"])
+        self.assertEqual(st["date"], "2026-10-28")
+        self.assertEqual(alerts.market_status(ist("2026-10-28T15:45"))["phase"], "closing_session")
+        self.assertFalse(alerts.market_status(ist("2026-10-28T16:30"))["open"])
+
+    def test_holidays_and_weekends_from_nse_holidays_json(self):
+        st = alerts.market_status(ist("2026-10-20T10:00"))  # Dussehra in core/nse_holidays.json
+        self.assertFalse(st["open"])
+        self.assertEqual(st["holiday"], "Dussehra")
+        self.assertTrue(st["next_open_ist"].startswith("2026-10-21T09:15"))
+        sat = alerts.market_status(ist("2026-10-31T10:00"))
+        self.assertTrue(sat["next_open_ist"].startswith("2026-11-02T09:15"))
+
+    def test_times_without_an_offset_are_ist(self):
+        self.assertEqual(ist("2026-10-28T09:15"), ist("2026-10-28T03:45:00+00:00"))
+        with self.assertRaises(alerts.AlertError):
+            ist("tomorrow")
+
+    def test_a_year_without_a_holiday_list_is_an_error(self):
+        with self.assertRaisesRegex(alerts.AlertError, "update-holidays"):
+            alerts.market_status(ist("2031-01-06T10:00"))
+
+    def test_clock_command_exit_codes(self):
+        code, text, _ = run(["clock", "--now", "2026-10-28T10:00"])
+        self.assertEqual(code, 0)
+        self.assertIn("NSE OPEN", text)
+        code, text, _ = run(["clock", "--now", "2026-10-20T10:00"])
+        self.assertEqual(code, 1)
+        self.assertIn("Dussehra", text)
 
 
-class Quotes(unittest.TestCase):
-    def test_yahoo_fixture(self):
-        with open(os.path.join(QDIR, "yahoo-AAPL.json")) as fh:
-            q = alerts.parse_yahoo(fh.read(), "AAPL")
-        self.assertEqual(q["price"], 341.27)
-        self.assertEqual(q["prev_close"], 340.97)
-        self.assertEqual(q["time"], "2026-10-13T20:00:01Z")
+class Prices(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = os.path.join(self.tmp.name, "market.db")
+        store(self.db)
 
-    def test_stooq_fixture(self):
-        with open(os.path.join(QDIR, "stooq-AAPL.csv")) as fh:
-            q = alerts.parse_stooq(fh.read(), "AAPL")
-        self.assertEqual(q["price"], 341.27)
-        self.assertEqual(q["open"], 344.67)
-        with open(os.path.join(QDIR, "stooq-ZZZZ.csv")) as fh:
-            with self.assertRaises(alerts.AlertError):
-                alerts.parse_stooq(fh.read(), "ZZZZ")
+    def tearDown(self):
+        self.tmp.cleanup()
 
-    def test_urls(self):
-        self.assertEqual(alerts.stooq_url("BRK.B"), "https://stooq.com/q/l/?s=brk-b.us&f=sd2t2ohlcv&h&e=csv")
-        self.assertIn("/chart/BRK-B?", alerts.yahoo_url("brk.b"))
-
-    def test_offline_quotes_and_errors(self):
-        q, errors = alerts.get_quotes(["AAPL", "KO", "ZZZZ", "NOPE"], "yahoo", QDIR)
-        self.assertEqual(sorted(q), ["AAPL", "KO"])
-        self.assertEqual(q["KO"]["price"], 90.11)
+    def test_store_gives_the_latest_cash_market_close(self):
+        q, errors = alerts.store_quotes(["TCS", "ODDLOT", "NOPE"], self.db)
+        self.assertEqual(q["TCS"]["price"], Decimal("3205.5"))
+        self.assertEqual(q["TCS"]["prev_close"], Decimal("3100"))
+        self.assertEqual((q["TCS"]["isin"], q["TCS"]["time"]), ("INE467B01029", "2026-10-27"))
+        self.assertNotIn("ODDLOT", q)  # odd-lot series is not a cash-market price
         self.assertEqual(len(errors), 2)
-        self.assertIn("No data found", errors[0])
+
+    def test_file_source_and_no_guessing(self):
+        p = os.path.join(self.tmp.name, "kite.json")
+        with open(p, "w") as fh:
+            json.dump({"as_of": "2026-10-28T10:05+05:30", "prices": {"tcs": "3,210.25", "BAD": "n/a"}}, fh)
+        q, errors = alerts.file_quotes(["TCS", "BAD"], p)
+        self.assertEqual(q["TCS"]["price"], Decimal("3210.25"))
+        self.assertIsNone(q["TCS"]["prev_close"])
+        self.assertIn("no price for BAD", errors[0])
+        with self.assertRaisesRegex(alerts.AlertError, "--prices-file"):
+            alerts.get_quotes(["TCS"], "file")
+
+    def test_quote_writes_prices_json_for_the_other_skills(self):
+        out = os.path.join(self.tmp.name, "trader", "prices.json")
+        code, text, _ = run(["quote", "TCS", "ITC", "--db", self.db, "--write", out, "--now", "2026-10-28T08:00"])
+        self.assertEqual(code, 0)
+        self.assertIn("₹3,205.50", text)
+        self.assertIn("not live quotes", text)
+        with open(out, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        self.assertEqual(doc["prices"], {"TCS": "3205.50", "ITC": "395.00"})
+        self.assertEqual(doc["currency"], "INR")
+        self.assertEqual(doc["detail"]["TCS"]["isin"], "INE467B01029")
+        self.assertTrue(doc["as_of"].startswith("2026-10-28T08:00"))
+
+    def test_holdings_reads_symbols(self):
+        pf = os.path.join(self.tmp.name, "portfolio.json")
+        with open(pf, "w") as fh:
+            json.dump({"cash": "0", "positions": [{"symbol": "ITC", "qty": 10}]}, fh)
+        tg = os.path.join(ROOT, "trader-budget", "targets.example.json")
+        code, text, _ = run(["quote", "--holdings", "--portfolio", pf, "--targets", tg, "--db", self.db, "--json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(json.loads(text)["quotes"]), ["INFY", "ITC", "TCS"])
+
+    def test_missing_store_is_an_error(self):
+        code, _, err = run(["quote", "TCS", "--db", os.path.join(self.tmp.name, "none.db")])
+        self.assertEqual(code, 1)
+        self.assertIn("no market store", err)
 
 
 class Rules(unittest.TestCase):
     def setUp(self):
-        self.q, _ = alerts.get_quotes(["AAPL", "BAC", "KO"], "yahoo", QDIR)
-        self.open = alerts.market_status(ny("2026-10-13T10:00"))
-        self.now = ny("2026-10-13T10:00")
-
-    def test_a_target_rings_once(self):
-        rules = [{"id": "aapl-340", "symbol": "AAPL", "type": "above", "price": 340}]
-        rings, st = alerts.evaluate(rules, self.q, self.open, {}, self.now)
-        self.assertEqual(len(rings), 1)
-        self.assertIn("AAPL is $341.27", rings[0]["message"])
-        rings, st = alerts.evaluate(rules, self.q, self.open, st, self.now)
-        self.assertEqual(rings, [])
-
-    def test_stop_and_rearm(self):
-        rules = [{"id": "bac-stop", "symbol": "BAC", "type": "stop", "price": 54, "rearm": True}]
-        rings, st = alerts.evaluate(rules, self.q, self.open, {}, self.now)
-        self.assertIn("your stop $54", rings[0]["message"])
-        self.q["BAC"]["price"] = 55.0
-        rings, st = alerts.evaluate(rules, self.q, self.open, st, self.now)
-        self.assertEqual(rings, [])
-        self.assertNotIn("bac-stop", st["rung"])
-        self.q["BAC"]["price"] = 53.5
-        rings, st = alerts.evaluate(rules, self.q, self.open, st, self.now)
-        self.assertEqual(len(rings), 1)
-
-    def test_pct_move_from_previous_close(self):
-        big = [{"id": "bac-3", "symbol": "BAC", "type": "pct_move", "pct": 3}]
-        self.assertEqual(alerts.evaluate(big, self.q, self.open, {}, self.now)[0], [])
-        small = [{"id": "bac-1", "symbol": "BAC", "type": "pct_move", "pct": 1, "direction": "down"}]
-        rings, st = alerts.evaluate(small, self.q, self.open, {}, self.now)
-        self.assertIn("-1.14%", rings[0]["message"])
-        self.assertEqual(alerts.evaluate(small, self.q, self.open, st, self.now)[0], [])
-        up = [{"id": "bac-up", "symbol": "BAC", "type": "pct_move", "pct": 1, "direction": "up"}]
-        self.assertEqual(alerts.evaluate(up, self.q, self.open, {}, self.now)[0], [])
-
-    def test_opening_bell_once_per_trading_day(self):
-        rules = [{"id": "bell", "type": "opening_bell"}]
-        closed = alerts.market_status(ny("2026-10-13T08:00"))
-        self.assertEqual(alerts.evaluate(rules, {}, closed, {}, ny("2026-10-13T08:00"))[0], [])
-        rings, st = alerts.evaluate(rules, {}, self.open, {}, self.now)
-        self.assertIn("Opening bell", rings[0]["message"])
-        self.assertEqual(alerts.evaluate(rules, {}, self.open, st, ny("2026-10-13T11:00"))[0], [])
-        nxt = alerts.market_status(ny("2026-10-14T09:31"))
-        self.assertEqual(len(alerts.evaluate(rules, {}, nxt, st, ny("2026-10-14T09:31"))[0]), 1)
-
-    def test_bad_rules(self):
-        with self.assertRaises(alerts.AlertError):
-            alerts.evaluate([{"id": "x", "type": "moon"}], {}, self.open, {}, self.now)
-        with self.assertRaises(alerts.AlertError):
-            alerts.evaluate([{"id": "x", "type": "above", "symbol": "AAPL"}], {}, self.open, {}, self.now)
-
-
-class Cli(unittest.TestCase):
-    def setUp(self):
-        self.d = tempfile.mkdtemp()
-        self.rules = os.path.join(self.d, "alerts.json")
-        self.state = os.path.join(self.d, "state", "alerts.json")
-        self.prices = os.path.join(self.d, "prices.json")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = os.path.join(self.tmp.name, "market.db")
+        store(self.db)
+        self.rules = os.path.join(self.tmp.name, "alerts.json")
+        self.state = os.path.join(self.tmp.name, "state.json")
+        with open(EXAMPLE) as fh:
+            doc = json.load(fh)
+        with open(self.rules, "w") as fh:
+            json.dump(doc, fh)
 
     def tearDown(self):
-        shutil.rmtree(self.d)
+        self.tmp.cleanup()
 
-    def check(self, now):
-        return run(["check", "--rules", self.rules, "--state", self.state, "--prices-out", self.prices,
-                    "--offline", QDIR, "--now", now])
+    def check(self, now="2026-10-28T10:00", *extra):
+        return run(["check", "--rules", self.rules, "--state", self.state, "--db", self.db, "--now", now,
+                    "--prices-out", "", *extra])
 
-    def test_the_reel_portfolio_evening_and_morning(self):
-        for args in (["--opening-bell"], ["--symbol", "AAPL", "--above", "350"], ["--symbol", "BAC", "--stop", "50"]):
-            code, _, _ = run(["add", "--rules", self.rules] + args)
-            self.assertEqual(code, 0)
-        code, _, err = run(["add", "--rules", self.rules, "--symbol", "AAPL", "--above", "350"])
-        self.assertEqual(code, 1)
-        self.assertIn("already exists", err)
+    def test_the_example_rules(self):
+        code, text, _ = self.check()
+        self.assertEqual(code, 0)
+        self.assertIn("Opening bell", text)
+        self.assertIn("TCS last ₹3,205.50 (2026-10-27), at or above your alert level of ₹3,200.00", text)
+        self.assertNotIn("ALERT ITC", text)  # 395 is not at or below the 380 stop
+        self.assertIn("no price for HDFCBANK", text)
+        self.assertIn("INFY moved -3.33% to ₹1,450.00 (from ₹1,500.00)", text)
+        self.assertIn("ex-date", text)
+        self.assertIn("enter it yourself in your broker", text)
 
-        code, text, _ = self.check("2026-10-13T20:00")
+    def test_each_rule_rings_once(self):
+        self.check()
+        code, text, _ = self.check("2026-10-28T11:00")
         self.assertEqual(code, 1)
         self.assertIn("Nothing hit", text)
-        with open(self.prices) as fh:
-            doc = json.load(fh)
-        self.assertEqual(doc["prices"], {"AAPL": 341.27, "BAC": 53.96})
+        code, text, _ = self.check("2026-10-29T10:00")  # a new day: the bell and the pct move ring again
+        self.assertIn("Opening bell", text)
+        self.assertIn("INFY moved", text)
+        self.assertNotIn("TCS", text)  # above rings once until reset
+        self.assertEqual(run(["reset", "tcs-above-3200", "--state", self.state])[0], 0)
+        self.assertIn("TCS", self.check("2026-10-30T10:00")[1])
 
-        code, text, _ = self.check("2026-10-14T09:31")
-        self.assertEqual(code, 0)
-        self.assertIn("ALERT Opening bell", text)
-        self.assertIn("not an order", text)
-        code, text, _ = self.check("2026-10-14T09:45")
+    def test_a_stop_rings_with_its_note(self):
+        with open(self.rules, "w") as fh:
+            json.dump({"rules": [{"id": "itc-stop", "symbol": "ITC", "type": "stop", "price": "400", "note": "my stop"}]}, fh)
+        self.assertIn("ITC last ₹395.00 (2026-10-27), at or below your stop of ₹400.00 (my stop)", self.check()[1])
+
+    def test_no_bell_when_closed(self):
+        code, text, _ = self.check("2026-10-20T10:00")
+        self.assertNotIn("Opening bell", text)
+
+    def test_add_list_and_validation(self):
+        rules = os.path.join(self.tmp.name, "new.json")
+        self.assertEqual(run(["add", "--rules", rules, "--symbol", "tcs", "--above", "3200.5"])[0], 0)
+        code, _, err = run(["add", "--rules", rules, "--symbol", "tcs", "--above", "3200.5"])
+        self.assertIn("already exists", err)
+        code, _, err = run(["add", "--rules", rules, "--symbol", "itc", "--stop", "-5"])
         self.assertEqual(code, 1)
-
-        code, text, _ = run(["list", "--rules", self.rules, "--state", self.state])
-        self.assertIn("rang", text)
-        self.assertEqual(run(["reset", "opening-bell", "--state", self.state])[0], 0)
-        self.assertEqual(run(["reset", "opening-bell", "--state", self.state])[0], 1)
-
-    def test_quote_write_merges(self):
-        code, text, _ = run(["quote", "AAPL", "KO", "--offline", QDIR, "--write", self.prices,
-                             "--now", "2026-10-13T20:00:01Z"])
-        self.assertEqual(code, 0)
-        self.assertIn("AAPL   $341.27", text)
-        run(["quote", "BAC", "--offline", QDIR, "--write", self.prices])
-        with open(self.prices) as fh:
-            doc = json.load(fh)
-        self.assertEqual(sorted(doc["prices"]), ["AAPL", "BAC", "KO"])
-        self.assertEqual(doc["detail"]["KO"]["prev_close"], 89.79)
-
-    def test_quote_holdings(self):
-        pf = os.path.join(self.d, "portfolio.json")
-        with open(pf, "w") as fh:
-            json.dump({"cash": 0, "positions": [{"ticker": "KO", "shares": 1}]}, fh)
-        code, text, _ = run(["quote", "--holdings", "--portfolio", pf, "--targets",
-                             os.path.join(ROOT, "trader-budget", "targets.example.json"), "--offline", QDIR, "--json"])
-        self.assertEqual(code, 0)
-        self.assertEqual(sorted(json.loads(text)["quotes"]), ["AAPL", "AXP", "BAC", "GOOGL", "KO"])
-
-    def test_clock_exit_codes(self):
-        self.assertEqual(run(["clock", "--now", "2026-10-13T10:00"])[0], 0)
-        code, text, _ = run(["clock", "--now", "2026-12-25T10:00"])
-        self.assertEqual(code, 1)
-        self.assertIn("Christmas Day", text)
+        self.assertIn("not a positive number", err)
+        code, text, _ = run(["list", "--rules", rules, "--state", self.state])
+        self.assertIn("tcs-above-3200.5", text)
+        with self.assertRaises(alerts.AlertError):
+            alerts.validate({"id": "x", "type": "teleport", "symbol": "TCS"})
 
     def test_check_without_rules(self):
-        code, _, err = run(["check", "--rules", self.rules, "--offline", QDIR])
+        code, _, err = run(["check", "--rules", os.path.join(self.tmp.name, "none.json"), "--db", self.db])
         self.assertEqual(code, 1)
         self.assertIn("no rules", err)
 

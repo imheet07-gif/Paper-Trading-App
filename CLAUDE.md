@@ -9,9 +9,12 @@ broker-neutral holdings, trades and charges.
 
 ## Layout
 
-- `trader-*/` the eleven skills, each a `SKILL.md` plus one stdlib CLI. Still
-  the US originals until Phase 2 ports them; do not assume their data sources
-  (SEC, NYSE, Alpaca, US tax) apply to India.
+- `trader-*/` the eleven skills, each a `SKILL.md` plus one stdlib CLI.
+  `trader-budget`, `trader-risk`, `trader-rebalance` and `trader-screener`
+  are ported to India (rupees, whole shares, an order sheet for manual
+  entry; gaps in HANDOVER.md). The rest are still the US originals until
+  Phase 2 ports them; do not assume their data sources (SEC, NYSE, Alpaca,
+  US tax) apply to India.
 - `core/` shared India modules. Skills import them with
   `sys.path.insert(0, <repo>/core)`, the way `core/charges.py` imports `money`.
 - `core/events.py` company events from NSE into the store, keyed on
