@@ -28,8 +28,11 @@ broker-neutral holdings, trades and charges.
   per quarter, keyed on broadcast time; raw answers cached in
   `data/shareholding_raw/`). A revised filing replaces the original in
   NSE's list: `submitted_on` keeps the original filing day, the numbers are
-  the revised ones. FII, mutual fund and pledge detail is in each filing's
-  XBRL, not read yet.
+  the revised ones. `shareholding_detail` adds, from each filing's XBRL,
+  FII (FPI I and II), domestic institutions, mutual funds, insurance,
+  retail, total shares and NSE's yes/no promoter pledge answers; only
+  category totals are read, never per-shareholder rows. Pledged
+  quantities are not read yet (no sample with pledges seen).
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout

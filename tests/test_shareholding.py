@@ -50,6 +50,46 @@ class Parse(unittest.TestCase):
         self.assertIsNone(sh.row(dict(rows("master_2026-09.json")[0], recordId=None)))
 
 
+def xbrl(sym):
+    with open(os.path.join(DIR, "shp_xbrl_%s_2026-09.xml" % sym), "rb") as fh:
+        return fh.read()
+
+
+class Xbrl(unittest.TestCase):
+    def test_tcs_categories_match_the_list_and_add_the_detail(self):
+        f = sh.xbrl_facts(xbrl("TCS"))
+        self.assertEqual((f["symbol"], f["isin"], f["date"]), ("TCS", "INE467B01029", "2026-09-30"))
+        d = sh.detail(f)
+        self.assertEqual((d["promoter"], d["public"]), ("71.77", "28.23"))  # the same as NSE's list
+        self.assertEqual((d["fii"], d["fpi_cat1"], d["fpi_cat2"]), ("9.01", "8.24", "0.77"))
+        self.assertEqual((d["dii"], d["mutual_funds"], d["insurance"]), ("13.57", "5.65", "6.8"))
+        self.assertEqual((d["retail_small"], d["retail_large"], d["employee_trusts"]), ("4.67", "0.23", "0"))
+        self.assertEqual(d["total_shares"], 3618087518)
+        self.assertEqual((d["pledged"], d["ndu"], d["other_encumbrance"]), (0, 0, 0))
+
+    def test_a_small_company(self):
+        d = sh.detail(sh.xbrl_facts(xbrl("DONEAR")))
+        self.assertEqual((d["promoter"], d["public"], d["fii"], d["mutual_funds"]), ("67.55", "32.45", "0", "0"))
+        self.assertEqual((d["retail_small"], d["retail_large"], d["total_shares"]), ("12.41", "15.25", 51999999))
+
+    def test_only_category_facts_are_kept(self):
+        f = sh.xbrl_facts(xbrl("TCS"))
+        self.assertTrue(all(set(v) <= set(sh.KEEP) for v in f["categories"].values()))
+        self.assertNotIn("Name", json.dumps(f))
+
+    def test_missing_values_and_bad_files(self):
+        d = sh.detail({"categories": {}, "flags": {}})
+        self.assertIsNone(d["promoter"])
+        self.assertIsNone(d["pledged"])
+        with self.assertRaises(ValueError):
+            sh.xbrl_facts(b"<not xml")
+        self.assertEqual(sh.xbrl_name("https://nsearchives.nseindia.com/corporate/xbrl/../../SHP_1.xml"), "SHP_1")
+        for bad in ("https://nsearchives.nseindia.com/corporate/xbrl/SHP_1.pdf",
+                    "https://nsearchives.nseindia.com/corporate/xbrl/SHP 1;.xml"):
+            with self.assertRaises(ValueError):
+                sh.xbrl_name(bad)
+
+
 class FetchAndStore(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -87,6 +127,21 @@ class FetchAndStore(unittest.TestCase):
                                     "AND period_end='2026-09-30'").fetchone(), ("71.77",))
         sh.rebuild(db, raw=self.raw, log=None)  # rebuilding is repeatable
         self.assertEqual(db.execute("SELECT COUNT(*) FROM shareholding").fetchone(), (24,))
+
+        # stage 2: the XBRL of the September 2026 quarter, for the two companies with a sample
+        files = {"SHP_1741905_19102026063741_WEB.xml": xbrl("TCS"), "SHP_1746677_27102026033452_WEB.xml": xbrl("DONEAR")}
+
+        def get_xbrl(url):
+            self.calls.append(url)
+            return files.get(url.rsplit("/", 1)[-1])
+        n = sh.fetch_xbrl(db, get=get_xbrl, raw=self.raw, since="2026-09-30", pause=0, log=None)
+        self.assertEqual(n, 2)  # EPL and SPENCERS answer nothing here and are skipped
+        self.assertEqual(sh.fetch_xbrl(db, get=get_xbrl, raw=self.raw, since="2026-09-30", pause=0, log=None), 0)
+        sh.rebuild(db, raw=self.raw, log=None)
+        got = db.execute("SELECT isin, promoter, fii, mutual_funds, total_shares, pledged FROM shareholding_detail "
+                         "ORDER BY isin").fetchall()
+        self.assertEqual(got, [("INE467B01029", "71.77", "9.01", "5.65", 3618087518, 0),
+                               ("INE668D01028", "67.55", "0", "0", 51999999, 0)])
         db.close()
 
 
