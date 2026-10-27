@@ -100,6 +100,13 @@ class Store(unittest.TestCase):
         bc.backfill(self.db, dt.date(2024, 12, 30), dt.date(2025, 1, 3), pause=0, get=fake_nse(self.calls), log=None)
         self.assertEqual(len(self.calls), before)
 
+    def test_parallel_downloads_store_the_same(self):
+        other = ca.connect(os.path.join(self.tmp.name, "p.db"))
+        bc.backfill(other, dt.date(2024, 12, 30), dt.date(2025, 1, 3), pause=0, get=fake_nse(), log=None, workers=3)
+        q = "SELECT * FROM prices ORDER BY date, isin, series"
+        self.assertEqual(other.execute(q).fetchall(), self.db.execute(q).fetchall())
+        other.close()
+
     def test_delivery_joined_by_symbol_and_series(self):
         r = self.db.execute("SELECT deliv_qty, deliv_bp FROM prices WHERE symbol='SURYAROSNI' AND date='2025-01-01'").fetchone()
         self.assertEqual(r, (298403, 3571))
@@ -170,6 +177,46 @@ class CorporateActions(unittest.TestCase):
         jumps = ca.unexplained_jumps(self.db)
         self.assertEqual(sorted((i, d) for i, d, _ in jumps),
                          [("INE276A01018", "2025-01-03"), ("INE335A01020", "2025-01-01")])
+
+
+
+class IsinChains(unittest.TestCase):
+    """A face value split usually brings a new ISIN: the history must join up."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = ca.connect(os.path.join(self.tmp.name, "m.db"))
+        rows = []
+        for d, isin, close in (("2025-01-01", "INE000X01011", 100000), ("2025-01-02", "INE000X01011", 101000),
+                               ("2025-01-03", "INE000X01029", 20400), ("2025-01-06", "INE000X01029", 20600)):
+            rows.append({"date": d, "isin": isin, "symbol": "XYZ", "series": "EQ", "open": close, "high": close,
+                         "low": close, "close": close, "last": close, "prev_close": None, "volume": 1, "value": close,
+                         "trades": 1})
+        # a different company reusing the symbol a year later must not join the chain
+        rows.append(dict(rows[-1], date="2026-03-02", isin="INE999Z01015"))
+        bc.store_day(self.db, rows)
+        ca.store(self.db, [{"exDate": "03-Jan-2025", "symbol": "XYZ", "isin": "INE000X01011", "faceVal": "2",
+                            "series": "EQ",
+                            "subject": "Face Value Split (Sub-Division) - From Rs 10/- Per Share To Rs 2/- Per Share"}])
+
+    def tearDown(self):
+        self.db.close()
+        self.tmp.cleanup()
+
+    def test_links_and_chain(self):
+        self.assertEqual(ca.links(self.db), {"INE000X01011": "INE000X01029"})
+        self.assertEqual(ca.chain("INE000X01011", ca.links(self.db)), ["INE000X01011", "INE000X01029"])
+        self.assertEqual(ca.chain("INE999Z01015", ca.links(self.db)), ["INE999Z01015"])
+
+    def test_split_checked_across_the_isin_change(self):
+        r = self.db.execute("SELECT isin, factor, check_note FROM corporate_actions").fetchone()
+        self.assertEqual(r, ("INE000X01029", "0.2", None))  # stored on the latest ISIN, move checked: +1%
+
+    def test_adjusted_history_is_continuous(self):
+        s = ca.adjusted(self.db, "INE000X01011")
+        self.assertEqual([a for _, _, a in s], [Decimal("200.0000"), Decimal("202.0000"), Decimal("204.0000"),
+                                                Decimal("206.0000")])
+        self.assertEqual(ca.unexplained_jumps(self.db), [])
 
 
 if __name__ == "__main__":

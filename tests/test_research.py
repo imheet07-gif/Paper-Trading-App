@@ -1,0 +1,129 @@
+import datetime as dt
+import importlib.util
+import os
+import sys
+import tempfile
+import unittest
+
+HAVE_PANDAS = importlib.util.find_spec("pandas") is not None and importlib.util.find_spec("numpy") is not None
+
+from _load import ROOT, load  # noqa: E402
+
+bc = load("core", "bhavcopy")
+ca = load("core", "corporate_actions")
+if HAVE_PANDAS:
+    sys.path.insert(0, os.path.join(ROOT, "research"))
+    import backtest  # noqa: E402
+    import panel  # noqa: E402
+    import signals  # noqa: E402
+
+
+def weekdays(start, n):
+    d, out = start, []
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d)
+        d += dt.timedelta(days=1)
+    return out
+
+
+def market(db, days):
+    """Five made-up stocks over `days` weekdays, prices in paise.
+
+    UPUP rises 0.2% a day, FLAT stays at 100, DOWN falls 0.1% a day, GONE
+    rises fastest but stops trading 60 days before the end (delisted), and
+    LOCK rises fast but is locked at its upper circuit on every day after
+    day 300 (high == low, +5%), so it can never be bought then.
+    """
+    spec = {"UPUP": 0.002, "FLAT": 0.0, "DOWN": -0.001, "GONE": 0.004, "LOCK": 0.003}
+    rows = []
+    for k, (sym, g) in enumerate(spec.items()):
+        isin = "INE%03dT01010" % k
+        px = 100.0
+        for i, d in enumerate(days):
+            if sym == "GONE" and i >= len(days) - 60:
+                break
+            prev = px
+            px = px * (1.05 if sym == "LOCK" and i > 300 else 1 + g)
+            p = int(round(px * 100))
+            hi = lo = p if (sym == "LOCK" and i > 300) else None
+            rows.append({"date": d.isoformat(), "isin": isin, "symbol": sym, "series": "EQ",
+                         "open": int(round(prev * 100)) if hi is None else p, "high": hi or int(p * 1.01),
+                         "low": lo or int(p * 0.99), "close": p, "last": p, "prev_close": int(round(prev * 100)),
+                         "volume": 1_000_000, "value": 1_000_000 * p, "trades": 100})
+    bc.store_day(db, rows)
+    db.commit()
+
+
+@unittest.skipUnless(HAVE_PANDAS, "numpy and pandas are needed for the research layer")
+class Research(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.path = os.path.join(cls.tmp.name, "m.db")
+        db = ca.connect(cls.path)
+        cls.days = weekdays(dt.date(2013, 1, 1), 520)
+        market(db, cls.days)
+        db.close()
+        cls.p = panel.load(cls.path)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def sym(self, sid):
+        return self.p.names[sid]
+
+    def test_panel_shape_and_universe_needs_history(self):
+        self.assertEqual(len(self.p.dates), 520)
+        u = panel.universe(self.p, min_value=1)
+        self.assertFalse(u.iloc[100].any())  # under 250 days of history
+        self.assertTrue(u.iloc[300].any())
+
+    def test_momentum_ranks_the_trend_first(self):
+        s = signals.momentum_12_1(self.p).iloc[400].dropna().sort_values(ascending=False)
+        self.assertEqual([self.sym(x) for x in s.index[:2]], ["LOCK", "GONE"])
+        self.assertEqual(self.sym(s.index[-1]), "DOWN")
+
+    def test_costs_are_charged(self):
+        buy, sell = backtest.cost_rates()
+        self.assertAlmostEqual(buy, 0.001 + 0.00015 + 0.0000307 + 0.000001 + 0.18 * (0.0000307 + 0.000001), places=9)
+        self.assertGreater(sell, 0.001)
+
+    def test_backtest_holds_winners_exits_delisting_and_respects_circuits(self):
+        scores = signals.momentum_12_1(self.p)
+        start = self.days[310].isoformat()  # after LOCK locks at its circuit on every day
+        cfg = backtest.Config(top=2, capital=1_000_000)
+        res = backtest.run(self.p, scores, start, None, cfg, rebalance_dates=None)
+        bought = {self.sym(t[1]) for t in res["trades"] if t[2] == "buy"}
+        self.assertIn("GONE", bought)
+        self.assertNotIn("DOWN", bought)
+        self.assertGreaterEqual(res["stats"]["delist_exits"], 1)  # GONE stopped trading while held
+        self.assertGreater(res["stats"]["blocked_buys"], 0)  # LOCK was wanted but locked at its circuit
+        lock_buys = [t for t in res["trades"] if t[2] == "buy" and self.sym(t[1]) == "LOCK"]
+        self.assertEqual(lock_buys, [])
+        self.assertGreater(res["stats"]["costs"], 0)
+        self.assertTrue((res["nav"] > 0).all())
+
+    def test_metrics_and_deflated_sharpe(self):
+        import pandas as pd
+        nav = pd.Series([1.0 * (1.0005 ** i) for i in range(504)], index=pd.bdate_range("2014-01-01", periods=504))
+        m = backtest.metrics(nav, rf=0.0)
+        self.assertAlmostEqual(m["cagr"], 1.0005 ** 252 - 1, places=3)
+        self.assertEqual(m["max_drawdown"], 0)
+        low = backtest.deflated_sharpe(1.0, 2000, 0.0, 3.0, [1.0, 0.9, 1.1, 0.95, 1.05] * 20)
+        high = backtest.deflated_sharpe(3.0, 2000, 0.0, 3.0, [1.0, 0.9, 1.1, 0.95, 1.05] * 20)
+        self.assertLess(low, high)
+
+    def test_holdout_needs_the_flag(self):
+        with open(os.devnull, "w") as null:
+            old, sys.stderr = sys.stderr, null
+            try:
+                self.assertEqual(backtest.main(["--signal", "momentum_12_1", "--period", "holdout",
+                                                "--db", self.path]), 2)
+            finally:
+                sys.stderr = old
+
+
+if __name__ == "__main__":
+    unittest.main()

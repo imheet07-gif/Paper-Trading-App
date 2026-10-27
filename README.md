@@ -10,10 +10,13 @@ For personal use today, built to become a Claude plugin anyone can install:
 broker-neutral underneath, with importers per broker and the CAS statement
 as the import that works for everyone.
 
-**Status: Phase 0 (foundations).** The eleven `trader-*` skills are still
-the US originals, kept as the starting point for the port. They are
-documented in [docs/trader-skill-README.md](docs/trader-skill-README.md).
-The India-specific work so far lives in `core/`.
+**Status: building the signals engine.** Foundations are in place
+(instruments, calendar, verified charges, broker and CAS imports, a
+portfolio overview page). The main track now is the research layer: a
+survivorship-free NSE history from 2012, corporate action adjustment, and
+a backtester with a fixed validation protocol. The eleven `trader-*`
+skills are still the US originals, documented in
+[docs/trader-skill-README.md](docs/trader-skill-README.md).
 
 ## What works today
 
@@ -28,6 +31,8 @@ The India-specific work so far lives in `core/`.
 | `dashboard/build.py` | Builds your portfolio dashboard as one self-contained HTML file: headline numbers, allocation, holdings with their checks, realized gains by year, modelled charges, and everything that needs a look. No network requests; opens offline in any browser, phone included. |
 | `core/bhavcopy.py` | NSE daily prices and delivery data for every listed security (delisted ones included, so backtests have no survivorship bias) into a local SQLite store, from 2012, both bhavcopy formats. Prices in integer paise, exactly as published. |
 | `core/corporate_actions.py` | NSE corporate actions turned into adjustment factors (bonus, split, consolidation, rights at theoretical ex-rights price, demergers from the price move) and checked against the actual ex-date move; unexplained jumps reported. |
+| `research/backtest.py` | Backtests a signal on the NSE history with the rules that keep it honest: delisted stocks included, next-day-open fills, no trading into locked circuits, real charges and slippage, a point-in-time universe, and fixed dev / validation / holdout periods with every run logged (deflated Sharpe). numpy and pandas. |
+| `research/signals.py` | Candidate signals: 12-1 and 6-1 momentum, 52-week high, low volatility, momentum per unit of volatility, and NSE delivery accumulation. None is trusted until it passes validation. |
 | `core/instruments.py` | One record per stock keyed by ISIN, joining NSE's equity list with Kite instrument tokens, tick and lot sizes (Angel One's scrip list optional, for its free historical data). Mismatches between sources are reported. |
 
 ```bash
@@ -42,23 +47,28 @@ python3 dashboard/build.py --holdings private/holdings.xlsx --tradebook private/
 python3 core/bhavcopy.py backfill --start 2012-01-01
 python3 core/corporate_actions.py fetch --start 2012-01-01
 python3 core/corporate_actions.py check
+python3 research/backtest.py --signal momentum_12_1 --period dev
 python3 -m unittest discover -s tests
 ```
 
-Standard-library Python 3.8+. Reading a CAS PDF needs `pip install
-casparser`; the analytics layer (Phase 1) will add numpy and pandas.
+Standard-library Python 3.8+ for `core/`. Reading a CAS PDF needs `pip
+install casparser`; `research/` needs numpy and pandas.
 
 ## The plan
 
-| phase | work |
-| --- | --- |
-| 0 Foundations | Instruments, calendar, rupees and charges verified against a broker ledger, holdings and trade import (Zerodha Console, CAS; more brokers next), paper engine |
-| 1 Portfolio X-ray and optimiser | Look-through of mutual funds, concentration, risk contribution, cost- and tax-aware optimiser |
-| 2 Core skill ports | budget, risk, order sheet (replaces broker), tax (Indian FY, STCG/LTCG, FIFO), alerts, rebalance |
-| 3 India-native intelligence | Mutual fund portfolios, shareholding patterns, insider (SEBI PIT) and pledge disclosures, bulk and block deals, exchange announcements, red flags |
-| 4 Data warehouse and backtester | Survivorship-free bhavcopy history, point-in-time data, Indian costs |
-| 5 Signal research | Factor and event signals that pass out-of-sample validation, evidence cards |
-| 6 Paper forward test | 3 to 6 months paper before any real money, then proposals you act on by hand, with your fills compared to the sheet |
+Signals first; the portfolio overview stays a side page because brokers
+already do it well.
+
+| step | work | status |
+| --- | --- | --- |
+| Foundations | Instruments, calendar, charges verified against a broker ledger, Zerodha and CAS imports, FIFO lots, overview page | done |
+| Market history | NSE bhavcopy and delivery data from 2012, corporate action factors checked against prices, ISINs joined across splits | in progress |
+| Backtester | Honest simulation and the dev / validation / holdout protocol | built, running on real data next |
+| Price signals | Momentum, 52-week high, low volatility, delivery accumulation, regime filter (breadth, index trend) | next |
+| Event signals | Results dates and earnings drift, insider (SEBI PIT) and promoter buying, pledges, bulk and block deals, mutual fund accumulation | after |
+| Evidence cards and daily scan | Each candidate with its reasons, sources, scorecard and red flags, for manual review; order sheets only | after |
+| Paper forward test | 3 to 6 months on paper before any real money | last |
+| Later | Portfolio X-ray and optimiser, Indian tax module, more brokers | parked |
 
 ## Your data stays out of the repo
 

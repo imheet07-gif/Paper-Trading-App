@@ -124,14 +124,58 @@ def fetch(start, end, get=bhavcopy.http_get, pause=1.0):
     return rows
 
 
-def _price_before(db, isin, ex_date):
-    return db.execute("SELECT date, close FROM prices WHERE isin=? AND date<? AND series IN ('EQ','BE','BZ') "
-                      "ORDER BY date DESC LIMIT 1", (isin, ex_date)).fetchone()
+LINK_GAP_DAYS = 10  # calendar days allowed between an old ISIN's last trade and the new one's first
 
 
-def _price_on(db, isin, ex_date):
-    return db.execute("SELECT date, close FROM prices WHERE isin=? AND date>=? AND series IN ('EQ','BE','BZ') "
-                      "ORDER BY date LIMIT 1", (isin, ex_date)).fetchone()
+def links(db, gap_days=LINK_GAP_DAYS):
+    """{old ISIN: new ISIN} where a symbol stops trading under one ISIN and
+    resumes under another within a few days, as on most face value splits
+    and some schemes. Symbols reused by a different company after a long
+    gap are not linked."""
+    spans = {}
+    for isin, sym, first, last in db.execute(
+            "SELECT isin, symbol, MIN(date), MAX(date) FROM prices WHERE series IN ('EQ','BE','BZ') "
+            "GROUP BY isin, symbol"):
+        spans.setdefault(sym, []).append((first, last, isin))
+    out = {}
+    for sym, rows in spans.items():
+        rows.sort()
+        for (f1, l1, a), (f2, l2, b) in zip(rows, rows[1:]):
+            if a != b and l1 < f2 and (dt.date.fromisoformat(f2) - dt.date.fromisoformat(l1)).days <= gap_days:
+                out[a] = b
+    return out
+
+
+def chain(isin, link_map):
+    """Every ISIN of one security, oldest first, ending at its latest ISIN."""
+    back = {v: k for k, v in link_map.items()}
+    last = isin
+    seen = {isin}
+    while last in link_map and link_map[last] not in seen:
+        last = link_map[last]
+        seen.add(last)
+    members = [last]
+    while members[0] in back and back[members[0]] not in members:
+        members.insert(0, back[members[0]])
+    return members
+
+
+def _members(db, isin):
+    return chain(isin, links(db)) if isin else []
+
+
+def _in(members):
+    return ",".join("?" * len(members))
+
+
+def _price_before(db, members, ex_date):
+    return db.execute("SELECT date, close FROM prices WHERE isin IN (%s) AND date<? AND series IN ('EQ','BE','BZ') "
+                      "ORDER BY date DESC LIMIT 1" % _in(members), tuple(members) + (ex_date,)).fetchone()
+
+
+def _price_on(db, members, ex_date):
+    return db.execute("SELECT date, close FROM prices WHERE isin IN (%s) AND date>=? AND series IN ('EQ','BE','BZ') "
+                      "ORDER BY date LIMIT 1" % _in(members), tuple(members) + (ex_date,)).fetchone()
 
 
 def resolve_isin(db, symbol, reported, ex_date):
@@ -146,6 +190,7 @@ def resolve_isin(db, symbol, reported, ex_date):
 
 def store(db, rows):
     n = 0
+    link_map = links(db)
     for r in rows:
         try:
             ex = dt.datetime.strptime(r["exDate"], "%d-%b-%Y").date().isoformat()
@@ -155,8 +200,10 @@ def store(db, rows):
         if p["kind"] == "other":
             continue  # AGMs, interest payments, buy-backs: nothing to adjust
         isin = resolve_isin(db, r["symbol"], r.get("isin"), ex)
+        members = chain(isin, link_map) if isin else []
+        isin = members[-1] if members else None  # stored against the security's latest ISIN
         f, method, note = None, None, None
-        before, on = (_price_before(db, isin, ex), _price_on(db, isin, ex)) if isin else (None, None)
+        before, on = (_price_before(db, members, ex), _price_on(db, members, ex)) if members else (None, None)
         if p["kind"] in ("bonus", "split", "consolidation", "rights"):
             fv = Decimal(r["faceVal"]) if (r.get("faceVal") or "").replace(".", "", 1).isdigit() else None
             f, method = factor(p, Decimal(before[1]) / 100 if before else None, fv)
@@ -178,20 +225,27 @@ def store(db, rows):
     return n
 
 
-def factors(db, isin):
-    """{ex_date: Decimal factor} for one ISIN, splits, bonuses, rights and restructures."""
-    return {d: Decimal(f) for d, f in db.execute(
-        "SELECT ex_date, factor FROM corporate_actions WHERE isin=? AND factor IS NOT NULL", (isin,))
-        if Decimal(f) != 1}
+def factors(db, isin, members=None):
+    """{ex_date: Decimal factor} for one security (all its ISINs): splits,
+    bonuses, rights and restructures."""
+    members = members or _members(db, isin)
+    out = {}
+    for d, f in db.execute("SELECT ex_date, factor FROM corporate_actions WHERE isin IN (%s) AND factor IS NOT NULL"
+                           % _in(members), tuple(members)):
+        if Decimal(f) != 1:
+            out[d] = out.get(d, Decimal(1)) * Decimal(f)  # a bonus and a split on one day both apply
+    return out
 
 
 def adjusted(db, isin, series=("EQ", "BE", "BZ")):
-    """[(date, close, adjusted close)] in rupees, back-adjusted: the latest
-    price is unchanged, each earlier price is multiplied by the factors of
-    every ex-date after it."""
-    q = "SELECT date, close FROM prices WHERE isin=? AND series IN (%s) ORDER BY date" % ",".join("?" * len(series))
-    rows = [(d, Decimal(c) / 100) for d, c in db.execute(q, (isin,) + tuple(series)) if c is not None]
-    later = sorted(factors(db, isin).items(), reverse=True)  # newest ex-date first
+    """[(date, close, adjusted close)] in rupees for the whole security (every
+    ISIN in its chain), back-adjusted: the latest price is unchanged, each
+    earlier price is multiplied by the factors of every ex-date after it."""
+    members = _members(db, isin)
+    q = "SELECT date, close FROM prices WHERE isin IN (%s) AND series IN (%s) ORDER BY date" % (
+        _in(members), ",".join("?" * len(series)))
+    rows = [(d, Decimal(c) / 100) for d, c in db.execute(q, tuple(members) + tuple(series)) if c is not None]
+    later = sorted(factors(db, isin, members).items(), reverse=True)  # newest ex-date first
     out, mult, i = [], Decimal(1), 0
     for d, c in reversed(rows):
         while i < len(later) and later[i][0] > d:
@@ -205,7 +259,9 @@ def unexplained_jumps(db, threshold=JUMP):
     """One-day moves beyond the threshold, after adjustment, with no event that day."""
     out = []
     events = {(i, d) for i, d in db.execute("SELECT isin, ex_date FROM corporate_actions WHERE isin IS NOT NULL")}
-    for (isin,) in db.execute("SELECT DISTINCT isin FROM prices WHERE series IN ('EQ','BE','BZ')").fetchall():
+    link_map = links(db)
+    latest = {i for (i,) in db.execute("SELECT DISTINCT isin FROM prices WHERE series IN ('EQ','BE','BZ')")} - set(link_map)
+    for isin in sorted(latest):
         prev = None
         for d, c, adj in adjusted(db, isin):
             if prev and prev[1] and abs(adj / prev[1] - 1) > threshold and (isin, d) not in events:

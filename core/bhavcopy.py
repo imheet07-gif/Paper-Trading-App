@@ -185,19 +185,22 @@ def store_day(db, rows, delivery=None):
               deliv_bp=delivery.get((r["symbol"], r["series"]), (None, None))[1]) for r in rows])
 
 
-def ingest_day(db, d, get=http_get):
-    """Fetch, parse and store one date. Returns rows stored (0 for a day with no file)."""
-    if done(db, d, "prices"):
-        return None
+def fetch_day(d, get=http_get):
+    """Download one date's files: (prices bytes or None, delivery bytes or None)."""
     u = urls(d)
     blob = get(u["prices"])
+    return blob, (get(u["delivery"]) if blob is not None else None)
+
+
+def store_fetched(db, d, blob, deliv_blob):
+    """Parse and store one date's downloads. Returns rows stored (0 for no file)."""
+    u = urls(d)
     if blob is None:
         db.execute("INSERT OR REPLACE INTO fetched VALUES (?,?,?,?,?)", (d.isoformat(), "prices", "missing", 0, u["prices"]))
         db.commit()
         return 0
     text = unzip_one(blob)
     rows = parse_udiff(text) if d >= UDIFF_FROM else parse_old(text)
-    deliv_blob = get(u["delivery"])
     delivery = parse_mto(deliv_blob.decode("utf-8", "replace")) if deliv_blob else {}
     store_day(db, rows, delivery)
     db.execute("INSERT OR REPLACE INTO fetched VALUES (?,?,?,?,?)", (d.isoformat(), "prices", "ok", len(rows), u["prices"]))
@@ -207,17 +210,43 @@ def ingest_day(db, d, get=http_get):
     return len(rows)
 
 
-def backfill(db, start, end, pause=0.4, get=http_get, log=print):
-    d, n = start, 0
+def ingest_day(db, d, get=http_get):
+    """Fetch, parse and store one date. None if already done, else rows stored."""
+    if done(db, d, "prices"):
+        return None
+    return store_fetched(db, d, *fetch_day(d, get))
+
+
+def backfill(db, start, end, pause=0.4, get=http_get, log=print, workers=1):
+    """Every weekday in [start, end] not yet fetched. Downloads run on
+    `workers` threads; this thread alone writes to the database."""
+    todo, d = [], start
     while d <= end:
-        if d.weekday() < 5:
-            got = ingest_day(db, d, get)
-            if got is not None:
-                n += 1
-                if log and (got == 0 or n % 25 == 0):
-                    log("%s %s" % (d, "no file" if got == 0 else "%d rows" % got))
-                time.sleep(pause)
+        if d.weekday() < 5 and not done(db, d, "prices"):
+            todo.append(d)
         d += dt.timedelta(days=1)
+
+    def job(day):
+        got = fetch_day(day, get)
+        time.sleep(pause)
+        return got
+
+    if workers <= 1:
+        results = ((day, job(day)) for day in todo)
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        pool = ThreadPoolExecutor(max_workers=workers)
+        results = zip(todo, pool.map(job, todo))
+    n = 0
+    try:
+        for day, (blob, deliv) in results:
+            got = store_fetched(db, day, blob, deliv)
+            n += 1
+            if log and (got == 0 or n % 50 == 0):
+                log("%s %s" % (day, "no file" if got == 0 else "%d rows" % got))
+    finally:
+        if workers > 1:
+            pool.shutdown(wait=True)
     return n
 
 
@@ -230,7 +259,8 @@ def main(argv=None):
     b = sub.add_parser("backfill")
     b.add_argument("--start", required=True)
     b.add_argument("--end", default=dt.date.today().isoformat())
-    b.add_argument("--pause", type=float, default=0.4, help="seconds between days, to be polite to NSE")
+    b.add_argument("--pause", type=float, default=0.4, help="seconds each download thread waits between days")
+    b.add_argument("--workers", type=int, default=4, help="parallel downloads (keep it small: NSE is shared)")
     sub.add_parser("status")
     s = sub.add_parser("series")
     s.add_argument("isin")
@@ -240,7 +270,7 @@ def main(argv=None):
         start, end = dt.date.fromisoformat(a.start), dt.date.fromisoformat(a.end)
         if start < ISIN_FROM:
             print("note: files before %s have no ISIN; those days store no rows" % ISIN_FROM, file=sys.stderr)
-        n = backfill(db, start, end, a.pause)
+        n = backfill(db, start, end, a.pause, workers=a.workers)
         print("fetched %d new day(s)" % n)
     elif a.cmd == "status":
         r = db.execute("SELECT MIN(date), MAX(date), COUNT(DISTINCT date), COUNT(DISTINCT isin), COUNT(*) FROM prices").fetchone()
