@@ -68,6 +68,20 @@ SIGNALS = {
 }
 
 
+def insider_buying(p):
+    import event_signals
+    return event_signals.insider_buying(p)
+
+
+def results_reaction(p):
+    import event_signals
+    return event_signals.results_reaction(p)
+
+
+SIGNALS["insider_buying"] = insider_buying
+SIGNALS["results_reaction"] = results_reaction
+
+
 DESCRIPTIONS = {
     "momentum_12_1": "Return over the past 12 months, skipping the most recent month",
     "momentum_6_1": "Return over the past 6 months, skipping the most recent month",
@@ -76,6 +90,8 @@ DESCRIPTIONS = {
     "delivery_accumulation": "Delivery share over 20 days above its one-year normal, while the price rose",
     "momentum_quality": "12-1 momentum divided by one-year volatility: steadier trends first",
     "momentum_lowvol": "Average of the ranks of momentum_quality and low_volatility",
+    "insider_buying": "Net open-market buying by promoters, directors and key managers disclosed in the last 90 days, in days of normal traded value. Failed dev (FINDINGS.md)",
+    "results_reaction": "Two-session return around the latest quarterly results, above the market's, while it is under a quarter old. Failed dev (FINDINGS.md)",
 }
 
 

@@ -45,7 +45,7 @@ def run_backtest(spec, top, regime, slippage_bps, period, note="", db_path=None,
     import regimes as regimes_mod
     import signals as signals_mod
 
-    if period not in ("dev", "validation"):
+    if period not in ("dev", "dev_2016", "validation"):
         raise ValueError("the app tests on dev or validation only; the holdout is opened by hand")
     db_path = db_path or panel_mod.bhavcopy.DEFAULT_DB
     start, end = backtest.PERIODS[period]
@@ -136,7 +136,7 @@ def main(argv=None):
     b.add_argument("--top", type=int, default=20)
     b.add_argument("--regime", default="none")
     b.add_argument("--slippage-bps", type=float, default=15.0)
-    b.add_argument("--period", default="dev", choices=["dev", "validation"])
+    b.add_argument("--period", default="dev", choices=["dev", "dev_2016", "validation"])
     b.add_argument("--note", default="")
     v = sub.add_parser("save-strategy")
     v.add_argument("result_id")

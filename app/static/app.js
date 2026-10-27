@@ -309,7 +309,7 @@
     var st = S.state, el = $("tab-lab");
     var sigOpts = st.signals.map(function (s) { return "<option>" + esc(s) + "</option>"; }).join("");
     var regOpts = st.regimes.map(function (s) { return "<option>" + esc(s) + "</option>"; }).join("");
-    var weights = st.signals.filter(function (s) { return s !== "momentum_lowvol"; }).map(function (s) {
+    var weights = st.signals.filter(function (s) { return s !== "momentum_lowvol" && (st.event_signals || []).indexOf(s) < 0; }).map(function (s) {
       return "<label>" + esc(s) + " <input type='number' min='0' max='100' step='1' value='" + (s === "momentum_quality" ? 1 : 0) + "' data-w='" + esc(s) + "'></label>";
     }).join("");
     el.innerHTML = "<div class='card'><h2>Test a strategy</h2><p class='muted small'>Every test is logged and counted. " +
@@ -324,6 +324,7 @@
       "<label>Market timing <select id='lab-regime'>" + regOpts + "</select></label>" +
       "<label>Slippage, bps per side <input type='number' id='lab-slip' value='15' min='0' max='200'></label>" +
       "<div class='row'><label><input type='radio' name='period' value='dev' checked> dev 2013-2020</label>" +
+      "<label><input type='radio' name='period' value='dev_2016'> dev 2016-2020 (insider data starts 2016)</label>" +
       "<label><input type='radio' name='period' value='validation'> validation 2021-2023</label></div>" +
       "<label class='full'>Why this test <input type='text' id='lab-note' maxlength='200' style='flex:1' placeholder='the idea being tested'></label>" +
       "<div id='val-confirm' class='full note' hidden><label><input type='checkbox' id='lab-confirm'> I understand a validation run uses up a look at unseen data and is logged as one.</label></div>" +

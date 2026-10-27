@@ -16,6 +16,9 @@ The rules that keep a backtest from lying:
 And the protocol that keeps the researcher from lying:
 
   dev        2013-01-01 to 2020-12-31   build and tune here
+  dev_2016   2016-01-01 to 2020-12-31   the same dev years, for event
+                                        signals whose data (insider
+                                        disclosures) is complete from 2016
   validation 2021-01-01 to 2023-12-31   check what dev chose, rarely
   holdout    2024-01-01 onward          only with --open-holdout; every
                                         opening is appended to
@@ -51,6 +54,7 @@ import signals as signals_mod  # noqa: E402
 
 PERIODS = {
     "dev": ("2013-01-01", "2020-12-31"),
+    "dev_2016": ("2016-01-01", "2020-12-31"),  # inside dev: insider disclosures are complete from 2016
     "validation": ("2021-01-01", "2023-12-31"),
     "holdout": ("2024-01-01", None),
 }

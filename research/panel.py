@@ -110,7 +110,10 @@ def load(db_path=bhavcopy.DEFAULT_DB, start=None, end=None):
             lo = dates.searchsorted(pd.Timestamp(ex))
             issue.iloc[lo:lo + ISSUE_DAYS, issue.columns.get_loc(s)] = True
     db.close()
-    return Panel(frames, names, eq, issue)
+    out = Panel(frames, names, eq, issue)
+    out.db_path = db_path  # event signals read their events from the same store
+    out.link_map = link_map
+    return out
 
 
 def universe(p, min_price=20.0, min_value=2e7, value_days=60, min_history=250):

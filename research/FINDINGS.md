@@ -65,10 +65,48 @@ Likely cause: the Nifty 500 crossed its 200-day average repeatedly in
 market-timing filter is not adopted. Drawdowns will be handled by position
 sizing and diversifying signals instead.
 
+## 2026-10-27: event signals on dev
+
+Data: NSE insider disclosures (corporates-pit, 337,344 transactions,
+complete 2016 to April 2026) and results filings (corporates-financial-results,
+complete 2013 to 2024). Both keyed on the moment NSE published them, never
+the trade or period date. Settings fixed before testing: promoters,
+promoter group, directors and KMP; market purchases and sales only; 63
+trading days; results reaction over the two sessions around the release,
+against the equal-weight eligible universe.
+
+| signal | period | IC | t | top-bot | CAGR | Sharpe | max DD | excess |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| insider_buying | dev_2016 | 0.023 | 1.32 | 0.93% | 12.8% | 0.36 | -63.8% | +4.1% |
+| momentum_quality (same years) | dev_2016 | 0.032 | 1.56 | 1.40% | 20.0% | 0.60 | -38.6% | +11.3% |
+| results_reaction | dev | 0.003 | 0.42 | 0.05% | 6.3% | 0.11 | -63.5% | -2.5% |
+
+**Neither passes dev; no validation look is spent on them.**
+
+- insider_buying ranks in the right direction but weakly (t 1.32), and a
+  top 20 of the heaviest buyers draws down more than the market. Its top
+  names were checked against the disclosures (Bajaj Holdings and Tanla
+  promoters buying through spring 2019) and are real: the data is right,
+  the edge is small. Much Indian promoter buying is creeping acquisition
+  in already-controlled companies, which says little about the next month.
+- results_reaction shows no drift at all in India's liquid universe over
+  2013 to 2020 (deciles not ordered). The first run found 16% of results
+  rows naming an ISIN retired years earlier by a split; after remapping
+  them through the symbol the result was unchanged.
+
+Not tried, to keep the variant count honest: buys only, other windows,
+size thresholds, or combining either with momentum. Any of those is a new
+pre-registered idea, not a tweak of these.
+
+Live data: NSE's structured insider feed stops in May 2026 and the results
+feed in February 2025, when SEBI's Integrated Filing took over; results now
+arrive as "Integrated Filing- Financial" announcements. A signal built on
+either would need a new live source before it could run in the scan.
+
 ## Where this leaves us
 
 - Validated: the momentum_quality ranking. Candidate core for the scan.
 - Not adopted: trend and breadth timing filters.
-- Next: event signals that should be independent of momentum (insider and
-  promoter buying, results-day drift, mutual fund accumulation), and risk
-  control by sizing rather than timing.
+- Not adopted: insider buying and results-day drift (failed dev).
+- Next: risk control by sizing rather than timing, and mutual fund
+  accumulation as the remaining independent idea.

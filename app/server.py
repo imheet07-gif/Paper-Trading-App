@@ -41,7 +41,8 @@ STATIC = os.path.join(HERE, "static")
 JOBS_PY = os.path.join(ROOT, "research", "jobs.py")
 
 SIGNALS = ["momentum_quality", "momentum_12_1", "momentum_6_1", "high_52w", "low_volatility",
-           "delivery_accumulation", "momentum_lowvol"]
+           "delivery_accumulation", "momentum_lowvol", "insider_buying", "results_reaction"]
+EVENT_SIGNALS = ["insider_buying", "results_reaction"]  # score only stocks with a recent event
 REGIMES = ["none", "trend200_cash", "trend200_half", "breadth40_half"]
 NAME = re.compile(r"^[A-Za-z0-9_]{1,40}$")
 RESULT_ID = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
@@ -107,7 +108,7 @@ def build_args(kind, params):
         return args
     if kind == "backtest":
         period = p.get("period", "dev")
-        if period not in ("dev", "validation"):
+        if period not in ("dev", "dev_2016", "validation"):
             raise ValueError("the app tests on dev or validation only")
         if period == "validation" and p.get("confirm_validation") is not True:
             raise ValueError("a validation run counts as a look: confirm it")
@@ -185,7 +186,7 @@ def state():
     strategies = read_json(STRATEGIES, {})
     out["strategies"] = [{"name": k, "status": v.get("status"), "description": v.get("description")}
                          for k, v in strategies.items() if not k.startswith("_")]
-    out["signals"], out["regimes"] = SIGNALS, REGIMES
+    out["signals"], out["regimes"], out["event_signals"] = SIGNALS, REGIMES, EVENT_SIGNALS
     out["has_scan"] = os.path.exists(os.path.join(SCAN_DIR, "latest.json"))
     out["has_dashboard"] = os.path.exists(os.path.join(ROOT, "private", "dashboard.html"))
     return out

@@ -67,7 +67,7 @@ def ic_report(scores, fwd, elig, dates):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="IC and backtest for candidate signals.")
-    ap.add_argument("--period", default="dev", choices=["dev", "validation"])
+    ap.add_argument("--period", default="dev", choices=["dev", "dev_2016", "validation"])
     ap.add_argument("--signals", nargs="*", default=sorted(signals_mod.SIGNALS))
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--regime", nargs="*", default=["none"], choices=sorted(regimes_mod.REGIMES),
