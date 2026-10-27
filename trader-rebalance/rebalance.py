@@ -46,6 +46,7 @@ from decimal import ROUND_DOWN, Decimal
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "core"))
+import instruments  # noqa: E402
 from money import D, inr, paise  # noqa: E402
 
 DEFAULTS = {"cash_buffer_pct": 10, "max_position_pct": 25, "max_order_inr": 50000, "min_order_inr": 1000,
@@ -174,13 +175,23 @@ def charges_for(cfg, side, qty, price):
         raise RebalanceError("charges: %s (core/charges.json)" % e.args[0])
 
 
-def plan(portfolio, prices, weights, cfg, band=None, sell_untracked=False):
+def plan(portfolio, prices, weights, cfg, band=None, sell_untracked=False, registry=None):
     """Pure function: the drift table and the proposed order sheet."""
     c = dict(DEFAULTS)
     c.update(cfg or {})
     band = _dec(c["rebalance_band_pct"] if band is None else band, "band")
     cash = _dec((portfolio or {}).get("cash", 0) or 0, "cash")
     held, isins = holdings_of(portfolio)
+    isin_notes = []
+    for s in sorted(set(held) | set(weights)):
+        try:
+            found, note = instruments.resolve(registry, s, isins.get(s))
+        except ValueError as e:
+            raise RebalanceError(str(e))
+        if found:
+            isins[s] = found
+        if note:
+            isin_notes.append(note)
     need = sorted(set(held) | set(weights), key=lambda s: (-weights.get(s, ZERO), s))
     missing = [s for s in need if not prices.get(s)]
     if missing:
@@ -301,7 +312,8 @@ def plan(portfolio, prices, weights, cfg, band=None, sell_untracked=False):
     return {"account_value": paise(total), "cash": paise(cash), "cash_buffer": paise(buf), "cap": paise(cap),
             "band": band, "rows": rows, "orders": lines, "notes": notes,
             "charges": charges_total if c.get("broker") else None, "charges_verified": not unverified,
-            "cash_after": paise(cash_after)}
+            "cash_after": paise(cash_after), "registry": registry.get("built") if registry else None,
+            "isin_notes": isin_notes}
 
 
 def _n(x):
@@ -335,6 +347,10 @@ def report(res):
         lines.append("Nothing is outside the band. No trades.")
     for n in res["notes"]:
         lines.append("Note: " + n)
+    if res["registry"] is None:
+        lines.append("Note: ISINs not checked: no instrument registry (core/instruments.py build writes data/instruments.json).")
+    for n in res["isin_notes"]:
+        lines.append("Note: ISIN not checked: " + n)
     lines.append("")
     lines.append("Not checked here: tick sizes, price bands and circuit limits. Sale proceeds settle T+1; "
                  "whether you can spend them today is your broker's rule.")
@@ -364,6 +380,8 @@ def main(argv=None):
     ap.add_argument("--sell-untracked", action="store_true", help="sell holdings that are not in the targets")
     ap.add_argument("--write", nargs="?", const="trader/orders.json", metavar="PATH",
                     help="write the order sheet (default trader/orders.json)")
+    ap.add_argument("--instruments", default=instruments.DEFAULT_OUT,
+                    help="instrument registry for ISINs (default data/instruments.json)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     try:
@@ -372,7 +390,8 @@ def main(argv=None):
         pdoc = read_json(a.prices, "prices") or {}
         prices = parse_prices(pdoc)
         weights = parse_targets(read_json(a.targets, "targets"), cfg.get("blocked"))
-        res = plan(portfolio, prices, weights, cfg, a.band, a.sell_untracked)
+        res = plan(portfolio, prices, weights, cfg, a.band, a.sell_untracked,
+                   instruments.load_registry(a.instruments))
         if a.write and res["orders"]:
             d = os.path.dirname(a.write)
             if d:

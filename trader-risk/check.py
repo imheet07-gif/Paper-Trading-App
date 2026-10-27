@@ -49,6 +49,7 @@ from decimal import Decimal
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "core"))
+import instruments  # noqa: E402
 from money import D, inr, paise  # noqa: E402
 
 DEFAULTS = {
@@ -159,7 +160,7 @@ def est_charges(cfg, side, qty, price, exchange):
     return c["total"], c["verified"]
 
 
-def check(orders, cfg, portfolio=None, prices=None, today=None):
+def check(orders, cfg, portfolio=None, prices=None, today=None, registry=None):
     """Pure function. Returns {"results": [...], "pass": n, "block": n, "warnings": [...]}."""
     c = dict(DEFAULTS)
     c.update(cfg or {})
@@ -179,6 +180,14 @@ def check(orders, cfg, portfolio=None, prices=None, today=None):
         reasons, warns = [], []
         sym = _sym(o.get("symbol"))
         isin = _sym(o.get("isin"))
+        if sym:
+            try:
+                isin, note = instruments.resolve(registry, sym, isin)
+                isin = isin or ""
+                if note:
+                    warns.append("ISIN not checked: " + note)
+            except ValueError as e:
+                reasons.append("isin: %s" % e)
         side = str(o.get("side", "")).strip().lower()
         exchange = _sym(o.get("exchange") or "NSE")
         product = str(o.get("product", "delivery")).strip().lower()
@@ -291,13 +300,15 @@ def check(orders, cfg, portfolio=None, prices=None, today=None):
                 acct["values"][sym] = max(acct["values"].get(sym, ZERO) - value, ZERO)
                 acct["shares"][sym] = held - qty
         results.append({
-            "index": i, "symbol": sym, "side": side, "qty": qty,
+            "index": i, "symbol": sym, "isin": isin or None, "side": side, "qty": qty,
             "value_inr": str(paise(value)) if value is not None else None,
             "est_charges": str(charge) if charge is not None else None,
             "fingerprint": fingerprint(o), "verdict": verdict,
             "reasons": reasons, "warnings": warns,
         })
 
+    if registry is None:
+        top_warn.append("ISINs not checked: no instrument registry (core/instruments.py build writes data/instruments.json)")
     if unverified:
         top_warn.append("charge rates are UNVERIFIED: not yet matched to a contract note (core/charges.json)")
     return {
@@ -357,6 +368,8 @@ def main(argv=None):
     ap.add_argument("--today", help="YYYY-MM-DD (default: today)")
     ap.add_argument("--out", default="trader/state/risk.json", help="where the verdicts are recorded")
     ap.add_argument("--no-write", action="store_true", help="do not record the verdicts")
+    ap.add_argument("--instruments", default=instruments.DEFAULT_OUT,
+                    help="instrument registry for ISINs (default data/instruments.json)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     try:
@@ -368,7 +381,7 @@ def main(argv=None):
         portfolio = read_json(a.portfolio, "portfolio", required=False)
         pdoc = read_json(a.prices, "prices", required=False) or {}
         prices = pdoc.get("prices", pdoc) if isinstance(pdoc, dict) else {}
-        res = check(orders, cfg, portfolio, prices, a.today)
+        res = check(orders, cfg, portfolio, prices, a.today, instruments.load_registry(a.instruments))
         if isinstance(pdoc, dict) and pdoc.get("as_of"):
             res["prices_as_of"] = pdoc["as_of"]
         if not a.no_write:

@@ -47,6 +47,7 @@ from decimal import ROUND_DOWN, Decimal
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "core"))
+import instruments  # noqa: E402
 from money import D, inr, paise  # noqa: E402
 
 DEFAULTS = {
@@ -262,7 +263,22 @@ def whole_shares(slices, prices, order, cap, money, cost=None):
     return shares
 
 
-def size(rows, cfg, budget=None, prices=None, top=None, rates=None):
+def resolve_isins(rows, registry):
+    """Fill each row's ISIN from the instrument registry and check the ones given.
+    Returns the notes for symbols the registry does not know."""
+    notes = []
+    for r in rows:
+        try:
+            r["isin"], note = instruments.resolve(registry, r["symbol"], r["isin"])
+        except ValueError as e:
+            raise SizeError(str(e))
+        r["isin"] = r["isin"] or ""
+        if note:
+            notes.append(note)
+    return notes
+
+
+def size(rows, cfg, budget=None, prices=None, top=None, rates=None, registry=None):
     """Pure function: weights + rules + prices -> the full sizing result (a dict)."""
     budget = D(budget if budget is not None else (cfg.get("budget") or 0))
     if budget <= 0:
@@ -278,6 +294,8 @@ def size(rows, cfg, budget=None, prices=None, top=None, rates=None):
     exchange = str(cfg.get("exchange") or "NSE").upper()
     prices = prices or {}
 
+    rows = [dict(r) for r in rows]
+    isin_notes = resolve_isins(rows, registry)
     keep, dropped = normalise(rows, cfg.get("blocked"), top)
     if not keep:
         raise SizeError("nothing to size: no weights left after the blocked list")
@@ -346,6 +364,7 @@ def size(rows, cfg, budget=None, prices=None, top=None, rates=None):
         "broker": broker, "exchange": exchange, "positions": positions, "invested": invested,
         "charges": total_charges if broker else None, "charges_verified": verified if broker else None,
         "idle": investable - invested - total_charges, "dropped": dropped,
+        "registry": registry.get("built") if registry else None, "isin_notes": isin_notes,
     }
 
 
@@ -430,6 +449,10 @@ def report(result, orders, source="", prices_as_of=""):
         lines.append("Charges not estimated: no \"broker\" in the config (core/charges.json has the rates).")
     for d in r["dropped"]:
         lines.append("Dropped %s: %s" % (d["symbol"], d["reason"]))
+    if r["registry"] is None:
+        lines.append("ISINs not checked: no instrument registry (core/instruments.py build writes data/instruments.json).")
+    for n in r["isin_notes"]:
+        lines.append("ISIN not checked: " + n)
     lines.append("")
     lines.append("Order sheet (delivery, market, whole shares; nothing has been placed):")
     for o in orders:
@@ -462,6 +485,8 @@ def main(argv=None):
     ap.add_argument("--prices", default="trader/prices.json", help="prices JSON (default trader/prices.json)")
     ap.add_argument("--write", nargs="?", const="trader/orders.json", metavar="PATH",
                     help="write the order sheet (default trader/orders.json)")
+    ap.add_argument("--instruments", default=instruments.DEFAULT_OUT,
+                    help="instrument registry for ISINs (default data/instruments.json; core/instruments.py build)")
     ap.add_argument("--json", action="store_true", help="print JSON instead of the table")
     a = ap.parse_args(argv)
     try:
@@ -476,7 +501,8 @@ def main(argv=None):
                 source = data.get("source", "")
         prices, as_of = load_prices(a.prices)
         budget = _dec(a.budget, "--budget") if a.budget is not None else None
-        result = size(rows, cfg, budget, prices, a.top)
+        registry = instruments.load_registry(a.instruments)
+        result = size(rows, cfg, budget, prices, a.top, registry=registry)
         orders = orders_from(result, source)
         if a.write:
             write_orders(a.write, orders, result, cfg, source, as_of)

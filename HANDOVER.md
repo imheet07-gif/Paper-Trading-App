@@ -128,7 +128,7 @@ check. Open items, each a task for whoever has the source file:
 | Price bands and circuit limits | A line can PASS trader-risk and still be rejected or sit unfilled at the band | NSE's daily price band file, stored with its source line, and a check in `trader-risk` |
 | F&O lot sizes and margins | F&O lines are blocked unless `allow_options`, and never sized | NSE's lot size file; out of scope until someone wants F&O |
 | Same-day use of sale proceeds | Sells are counted as freeing cash for later buys in the same sheet; settlement is T+1 and same-day credit is the broker's rule | the broker's own page, recorded in `core/charges.json` style with a source line |
-| Symbol to ISIN | ISINs are carried through if the targets or portfolio give them; the skills have no instrument registry of their own | wire `core/instruments.py` into the skills once a registry file is built locally |
+| Symbol to ISIN | Closed on branch `second-agent/skill-ports-2`: budget, risk and rebalance read `data/instruments.json` (`core/instruments.py build` from NSE's equity list), fill ISINs, refuse a wrong one, and say when no registry was built | build the registry on the owner's machine |
 | Orders entered today | The user enters orders by hand, so `max_orders_per_day` counts one sheet, not the day | read the day's tradebook import |
 | Charges rates | Estimated with `core/charges.py`; shown UNVERIFIED until every block in `core/charges.json` is matched to a contract note | match a buy-day contract note |
 | Metrics source for the screener | The user's own CSV only | the open XBRL financials and Screener.in export tasks |
