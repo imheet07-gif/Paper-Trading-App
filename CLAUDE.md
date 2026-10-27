@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 India edition of trader-skill: Claude skills for NSE/BSE equities. The plan
-and phase status are in README.md. Personal use for now, but built to ship
+and phase status are in README.md. Two agents share the work: read
+HANDOVER.md for the task split and how to coordinate before starting. Personal use for now, but built to ship
 later as a Claude plugin anyone can install: nothing may assume one user or
 one broker. Brokers plug in through importers that produce the same
 broker-neutral holdings, trades and charges.
