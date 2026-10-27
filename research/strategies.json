@@ -1,0 +1,20 @@
+{
+  "_about": "Strategies the daily scan may run. Every parameter the backtest used is here, so the scan trades exactly what was validated and nothing else. Change a value only by validating the new version first; record why in research/FINDINGS.md.",
+  "momentum_quality_top20": {
+    "status": "validated on dev and validation; paper trading only",
+    "signal": "momentum_quality",
+    "description": "Each month, the 20 eligible stocks with the highest 12-month return (skipping the last month) per unit of one-year volatility, equal weight.",
+    "top": 20,
+    "rebalance": "last NSE trading day of each month, orders at the next open",
+    "regime": "none",
+    "universe": {"min_price": 20.0, "min_value": 20000000.0, "value_days": 60, "min_history": 250},
+    "slippage_bps": 15.0,
+    "trim_band": 0.02,
+    "evidence": {
+      "dev 2013-2020": "CAGR 26.1% against 8.8% for the equal-weight universe; Sharpe 0.81 against 0.20; worst drawdown -38.5% against -58.2%; IC 0.045 (t 2.50)",
+      "validation 2021-2023": "CAGR 47.4% against 34.6%; Sharpe 1.49 against 1.41; worst drawdown -33.4% against -23.2%; 2022 -7% against +2%; IC 0.056 (t 2.74), deciles 0.99 orderly",
+      "known weaknesses": "Deeper drawdowns than the market in rotations (2016, 2022); the edge is in return more than in risk. Market-timing filters failed validation and are not used.",
+      "holdout 2024 onward": "not yet opened"
+    }
+  }
+}

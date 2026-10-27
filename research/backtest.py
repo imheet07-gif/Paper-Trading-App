@@ -95,6 +95,14 @@ def locked(H, L, C, i, k, direction, min_move):
     return move >= min_move if direction > 0 else move <= -min_move
 
 
+def select_top(scores, elig, i, top):
+    """The strategy's picks at row i: the `top` highest scores among eligible
+    securities. The backtest and the daily scan both call this, so the scan
+    can only ever trade what was validated."""
+    row = scores.iloc[i].where(elig.iloc[i]).dropna()
+    return list(row.sort_values(ascending=False).index[:top])
+
+
 def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None):
     """Simulate. exposure: Series of the share of capital to invest, read at
     each rebalance date (default fully invested); the rest stays in cash.
@@ -189,9 +197,7 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None):
         # 3. rebalance at the close: tomorrow's orders
         if d in rebal:
             ok = elig.iloc[i]
-            row = scores.iloc[i].where(ok)
-            row = row.dropna()
-            pending = list(row.sort_values(ascending=False).index[:cfg.top])
+            pending = select_top(scores, elig, i, cfg.top)
             invest = float(exposure.iloc[i]) if exposure is not None and not np.isnan(exposure.iloc[i]) else 1.0
             bench_members = [col[s] for s in ok[ok].index]
 

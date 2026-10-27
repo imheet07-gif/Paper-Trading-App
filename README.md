@@ -32,6 +32,9 @@ skills are still the US originals, documented in
 | `core/bhavcopy.py` | NSE daily prices and delivery data for every listed security (delisted ones included, so backtests have no survivorship bias) into a local SQLite store, from 2012, both bhavcopy formats. Prices in integer paise, exactly as published. |
 | `core/corporate_actions.py` | NSE corporate actions turned into adjustment factors (bonus, split, consolidation, rights at theoretical ex-rights price, demergers from the price move) and checked against the actual ex-date move; unexplained jumps reported. |
 | `research/backtest.py` | Backtests a signal on the NSE history with the rules that keep it honest: delisted stocks included, next-day-open fills, no trading into locked circuits, real charges and slippage, a point-in-time universe, and fixed dev / validation / holdout periods with every run logged (deflated Sharpe). numpy and pandas. |
+| `research/scan.py` | The daily scan (v0.2, paper only). `update` fetches the latest NSE data (retrying files not published yet); `run` refuses stale data, ranks today's universe with a validated strategy, writes an evidence card per candidate (inputs behind the score, liquidity against the position, delivery, circuit hits, corporate actions, trade-for-trade days, red flags) and, on the last trading day of a month only, an order sheet. Writes `private/scan/DATE.html` and `-orders.csv`. Uses the backtest's own selection function, so it trades exactly what was validated. |
+| `research/paper.py` | Paper ledger in exact rupees (`trader/paper.json`): fills the order sheet at the next open the way a day limit order would, with the verified charges. |
+| `research/strategies.json` | The strategies the scan may run, with every parameter and the evidence behind them. |
 | `research/regimes.py` | Market regime filters (index trend, breadth), with NSE index series joined across the 2015 renames (CNX 500 became Nifty 500). |
 | `research/FINDINGS.md` | Dated record of every experiment, including the failures. |
 | `research/signals.py` | Candidate signals: 12-1 and 6-1 momentum, 52-week high, low volatility, momentum per unit of volatility, and NSE delivery accumulation. None is trusted until it passes validation. |
@@ -50,6 +53,9 @@ python3 core/bhavcopy.py backfill --start 2012-01-01
 python3 core/corporate_actions.py fetch --start 2012-01-01
 python3 core/corporate_actions.py check
 python3 research/backtest.py --signal momentum_12_1 --period dev
+python3 research/scan.py update                       # each trading evening, after about 7 pm IST
+python3 research/scan.py run --capital 1000000        # first run starts the paper ledger
+python3 research/scan.py run                          # later runs
 python3 -m unittest discover -s tests
 ```
 
@@ -67,8 +73,8 @@ already do it well.
 | Market history | NSE bhavcopy and delivery data from 2012, corporate action factors checked against prices, ISINs joined across splits | done |
 | Backtester | Honest simulation and the dev / validation / holdout protocol | done |
 | Price signals | Momentum, 52-week high, low volatility, delivery accumulation, regime filters | first pass done: momentum per unit of volatility validated, timing filters failed (research/FINDINGS.md) |
-| Event signals | Results dates and earnings drift, insider (SEBI PIT) and promoter buying, pledges, bulk and block deals, mutual fund accumulation | next |
-| Evidence cards and daily scan | Each candidate with its reasons, sources, scorecard and red flags, for manual review; order sheets only | after |
+| Event signals | Results dates and earnings drift, insider (SEBI PIT) and promoter buying, pledges, bulk and block deals, mutual fund accumulation | next, alongside paper trading |
+| Evidence cards and daily scan | Each candidate with its reasons, sources, scorecard and red flags, for manual review; order sheets only | v0.2 built: paper trading from the 2026-10-30 rebalance |
 | Paper forward test | 3 to 6 months on paper before any real money | last |
 | Later | Portfolio X-ray and optimiser, Indian tax module, more brokers | parked |
 

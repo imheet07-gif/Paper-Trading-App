@@ -16,7 +16,11 @@ broker-neutral holdings, trades and charges.
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
-  protocol. Never open the holdout without the user asking; every run is
+  protocol, `scan.py` is the daily scan and `paper.py` its paper ledger
+  (`trader/paper.json`). The scan runs only strategies in
+  `research/strategies.json` and selects with `backtest.select_top`, so it
+  trades exactly what was validated; changing a strategy means validating
+  the new version first. Never open the holdout without the user asking; every run is
   logged to `research/runs.jsonl`, which is committed so the count of
   variants tried survives.
 - `dashboard/` the personal dashboard: `build.py` writes one self-contained

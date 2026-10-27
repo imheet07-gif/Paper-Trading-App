@@ -108,6 +108,19 @@ class Store(unittest.TestCase):
         missing = self.db.execute("SELECT date FROM fetched WHERE kind='prices' AND status='missing'").fetchall()
         self.assertEqual(missing, [("2024-12-30",)])  # no fixture for that day: recorded, not retried
 
+    def test_recent_unpublished_day_is_retried_not_marked_missing(self):
+        other = ca.connect(os.path.join(self.tmp.name, "r.db"))
+        # run on 2025-01-03 itself: 2024-12-30 has no file but is recent, so nothing is recorded for it
+        bc.backfill(other, dt.date(2024, 12, 30), dt.date(2025, 1, 3), pause=0, get=fake_nse(), log=None,
+                    today=dt.date(2025, 1, 3))
+        self.assertEqual(other.execute("SELECT COUNT(*) FROM fetched WHERE date='2024-12-30'").fetchone()[0], 0)
+        # a week later the same gap is settled: recorded as missing
+        bc.backfill(other, dt.date(2024, 12, 30), dt.date(2025, 1, 3), pause=0, get=fake_nse(), log=None,
+                    today=dt.date(2025, 1, 10))
+        self.assertEqual(other.execute("SELECT status FROM fetched WHERE date='2024-12-30' AND kind='prices'").fetchone(),
+                         ("missing",))
+        other.close()
+
     def test_rerun_fetches_nothing(self):
         before = len(self.calls)
         bc.backfill(self.db, dt.date(2024, 12, 30), dt.date(2025, 1, 3), pause=0, get=fake_nse(self.calls), log=None)

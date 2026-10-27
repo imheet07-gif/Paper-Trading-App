@@ -236,9 +236,22 @@ def fetch_day(d, get=http_get):
     return blob, (get(u["delivery"]) if blob is not None else None)
 
 
-def store_fetched(db, d, blob, deliv_blob):
-    """Parse and store one date's downloads. Returns rows stored (0 for no file)."""
+SETTLE_DAYS = 7  # a file still missing this many days later is a holiday, not a late upload
+
+
+def settled(d, today=None):
+    """True once a date is old enough that a missing file means no trading."""
+    return ((today or dt.date.today()) - d).days >= SETTLE_DAYS
+
+
+def store_fetched(db, d, blob, deliv_blob, today=None):
+    """Parse and store one date's downloads. Returns rows stored, 0 for a
+    day with no file, or None when a recent day is not published yet (NSE
+    posts files in the evening): nothing is recorded, so the next run
+    fetches it again."""
     u = urls(d)
+    if not settled(d, today) and (blob is None or deliv_blob is None):
+        return None
     if blob is None:
         db.execute("INSERT OR REPLACE INTO fetched VALUES (?,?,?,?,?)", (d.isoformat(), "prices", "missing", 0, u["prices"]))
         db.commit()
@@ -261,7 +274,7 @@ def ingest_day(db, d, get=http_get):
     return store_fetched(db, d, *fetch_day(d, get))
 
 
-def backfill(db, start, end, pause=0.4, get=http_get, log=print, workers=1):
+def backfill(db, start, end, pause=0.4, get=http_get, log=print, workers=1, today=None):
     """Every weekday in [start, end] not yet fetched. Downloads run on
     `workers` threads; this thread alone writes to the database."""
     todo, d = [], start
@@ -284,7 +297,11 @@ def backfill(db, start, end, pause=0.4, get=http_get, log=print, workers=1):
     n = 0
     try:
         for day, (blob, deliv) in results:
-            got = store_fetched(db, day, blob, deliv)
+            got = store_fetched(db, day, blob, deliv, today)
+            if got is None:
+                if log:
+                    log("%s not published yet; will retry" % day)
+                continue
             n += 1
             if log and (got == 0 or n % 50 == 0):
                 log("%s %s" % (day, "no file" if got == 0 else "%d rows" % got))
@@ -294,7 +311,7 @@ def backfill(db, start, end, pause=0.4, get=http_get, log=print, workers=1):
     return n
 
 
-def backfill_indices(db, start, end, pause=0.4, get=http_get, workers=4):
+def backfill_indices(db, start, end, pause=0.4, get=http_get, workers=4, today=None):
     """Index closes for every trading day already in the store that lacks them."""
     todo = [dt.date.fromisoformat(d) for (d,) in db.execute(
         "SELECT date FROM fetched f WHERE kind='prices' AND status='ok' AND date BETWEEN ? AND ? AND NOT EXISTS "
@@ -311,6 +328,8 @@ def backfill_indices(db, start, end, pause=0.4, get=http_get, workers=4):
     with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
         for day, blob in zip(todo, pool.map(job, todo)):
             rows = parse_indices(blob.decode("utf-8", "replace")) if blob else []
+            if not rows and not settled(day, today):
+                continue  # not published yet: retry next run
             db.executemany("INSERT OR REPLACE INTO index_prices VALUES (:date,:name,:open,:high,:low,:close,:pe,:pb,"
                            ":div_yield)", rows)
             db.execute("INSERT OR REPLACE INTO fetched VALUES (?,?,?,?,?)",
