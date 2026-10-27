@@ -93,9 +93,9 @@ class Holdings(unittest.TestCase):
         self.assertEqual(len(self.h["mutual_funds"]), 1)  # the Combined sheet is not double counted
 
     def test_values_are_decimals_without_noise(self):
-        itc = self.h["equity"][0]
-        self.assertEqual(itc["previous_close"], Decimal("285.3"))
-        self.assertEqual(itc["average_price"], Decimal("250.125"))
+        infy = self.h["equity"][0]
+        self.assertEqual(infy["previous_close"], Decimal("285.3"))
+        self.assertEqual(infy["average_price"], Decimal("250.125"))
         mf = self.h["mutual_funds"][0]
         self.assertEqual((mf["quantity"], mf["category"]), (Decimal("100.123"), "Equity - Flexi Cap"))
 
@@ -145,9 +145,9 @@ class Tradebook(unittest.TestCase):
 
     def test_fills_group_into_orders(self):
         o = zc.orders(zc.parse_tradebook(zc.read_any(self.xlsx))["trades"])
-        sail = [x for x in o if x["symbol"] == "RELIANCE"][0]
-        self.assertEqual((sail["qty"], sail["fills"]), (10, 2))
-        self.assertEqual(sail["price"], Decimal("178.5360"))  # (3 x 178.55 + 7 x 178.53) / 10
+        rel = [x for x in o if x["symbol"] == "RELIANCE"][0]
+        self.assertEqual((rel["qty"], rel["fills"]), (10, 2))
+        self.assertEqual(rel["price"], Decimal("178.5360"))  # (3 x 178.55 + 7 x 178.53) / 10
 
     def test_day_charges_one_dp_per_scrip(self):
         r = zc.day_charges(zc.parse_tradebook(zc.read_any(self.xlsx))["trades"], "2026-08-06")
