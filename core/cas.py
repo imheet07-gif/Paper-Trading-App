@@ -158,10 +158,19 @@ def main(argv=None):
     h.add_argument("--reconcile", metavar="BROKER_EXPORT", help="a Zerodha Console holdings export to compare with")
     h.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
+    if not os.path.isfile(a.pdf):  # checked before the password prompt; casparser's message is only the path
+        folder = os.path.dirname(os.path.abspath(a.pdf))
+        pdfs = sorted(f for f in os.listdir(folder) if f.lower().endswith(".pdf")) if os.path.isdir(folder) else []
+        print("error: no file at %s" % a.pdf, file=sys.stderr)
+        if pdfs:
+            print("PDFs in %s: %s" % (folder, ", ".join(pdfs)), file=sys.stderr)
+        elif os.path.isdir(folder):
+            print("%s has no PDF in it" % folder, file=sys.stderr)
+        return 2
     try:
         cas = normalise(read_pdf(a.pdf, _password()))
     except Exception as e:  # casparser raises its own types for a wrong password or an unknown layout
-        print("error: could not read the CAS: %s" % e, file=sys.stderr)
+        print("error: could not read the CAS (%s): %s" % (type(e).__name__, e), file=sys.stderr)
         return 2
     if a.json and not a.reconcile:
         print(json.dumps(cas, default=_js, indent=1))
