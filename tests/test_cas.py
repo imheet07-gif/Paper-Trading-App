@@ -5,6 +5,7 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr
+from unittest import mock
 from decimal import Decimal
 
 from _load import FIX, load
@@ -88,6 +89,15 @@ class Safety(unittest.TestCase):
     def test_missing_library_says_how_to_install(self):
         with self.assertRaisesRegex(RuntimeError, "pip install casparser"):
             cas.read_pdf("x.pdf", "pw")
+
+    def test_a_missing_file_names_the_pdfs_that_are_there_without_asking_for_the_password(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "cas.pdf.pdf"), "wb").close()  # Finder hides the doubled extension
+            err = io.StringIO()
+            with redirect_stderr(err), mock.patch.object(cas, "_password", side_effect=AssertionError):
+                self.assertEqual(cas.main(["holdings", os.path.join(d, "cas.pdf")]), 2)
+            self.assertIn("no file at", err.getvalue())
+            self.assertIn("cas.pdf.pdf", err.getvalue())
 
     def test_mask(self):
         self.assertEqual(cas.mask("1208160000000001"), "************0001")
