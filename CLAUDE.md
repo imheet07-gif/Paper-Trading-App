@@ -10,9 +10,11 @@ broker-neutral holdings, trades and charges.
 ## Layout
 
 - `trader-*/` the eleven skills, each a `SKILL.md` plus one stdlib CLI.
-  `trader-budget`, `trader-risk`, `trader-rebalance` and `trader-screener`
-  are ported to India (rupees, whole shares, an order sheet for manual
-  entry; gaps in HANDOVER.md). The rest are still the US originals until
+  `trader-budget`, `trader-risk`, `trader-rebalance`, `trader-screener`,
+  `trader-alerts`, `trader-news` and `trader-broker` (a paper trader only:
+  no broker connection, no live mode) are ported to India (rupees, whole
+  shares, an order sheet for manual entry; gaps in HANDOVER.md). The rest
+  are still the US originals until
   Phase 2 ports them; do not assume their data sources (SEC, NYSE, Alpaca,
   US tax) apply to India.
 - `core/` shared India modules. Skills import them with
