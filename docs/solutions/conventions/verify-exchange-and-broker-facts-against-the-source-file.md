@@ -12,7 +12,7 @@ applies_when:
   - A number from a secondary source (blog, broker help page, search snippet) will feed charges, tax or signals
   - A new data source or file format is added to the market store
 related_components: [testing_framework]
-tags: [nse, zerodha, data-verification, fixtures, charges, holidays, parsers]
+tags: [nse, zerodha, data-verification, fixtures, charges, holidays, parsers, primary-keys, isin]
 ---
 
 # Verify every exchange and broker fact against the publisher's own file before building on it
@@ -58,7 +58,11 @@ sign the answer has to come from the publisher, not from consensus.
 5. **Make an unknown an error, not a default.** A year without a holiday
    list, a broker without rates or an unparseable date raises; it is never
    filled with a guess.
-6. **When a check fails, record which fact was wrong and why** (commit
+6. **Check a key is unique, and an identifier is current, before keying
+   on it.** Count distinct values against rows in the real data and look
+   at what a repeated value actually holds. Check that an ISIN a feed
+   gives actually traded on the row's date.
+7. **When a check fails, record which fact was wrong and why** (commit
    message, `research/FINDINGS.md` for research results, or a learning
    here), so the next reader does not repeat the assumption.
 
@@ -90,6 +94,16 @@ error; the numbers simply looked plausible.
   research universe takes INE (company) ISINs only, with a test that an
   INF ISIN is never eligible (`tests/test_research.py`,
   `test_funds_and_etfs_are_never_eligible`).
+
+- Insider trades: NSE's `pid` looked like a row id but is the company.
+  Keyed on it, 340,822 rows collapsed to 112,807 with no error. The row
+  id is `did`, and even `did` repeats when NSE lists a disclosure twice a
+  minute apart (`core/events.py` keeps the earliest listing;
+  `tests/test_events.py`).
+- Results filings: 16% of NSE results rows name an ISIN that a split
+  retired years earlier (Godfrey Phillips in 2019 still carries its
+  pre-2014 ISIN). Rebuild now takes the ISIN trading under the symbol on
+  the release date.
 
 ## Related
 
