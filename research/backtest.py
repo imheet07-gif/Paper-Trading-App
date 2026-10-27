@@ -345,7 +345,8 @@ def main(argv=None):
     trials = past_sharpes(period=a.period) + [m.get("sharpe", float("nan"))]
     dsr = deflated_sharpe(m["sharpe"], m["days"], m["skew"], m["kurtosis"], trials) if m else float("nan")
     entry = {"at": dt.datetime.now().isoformat(timespec="seconds"), "signal": a.signal, "period": a.period,
-             "config": cfg.as_dict(), "sharpe": m.get("sharpe"), "cagr": m.get("cagr"), "bench_sharpe": b.get("sharpe"),
+             "config": cfg.as_dict(), "sharpe": m.get("sharpe"), "cagr": m.get("cagr"), "max_drawdown": m.get("max_drawdown"),
+             "bench_sharpe": b.get("sharpe"),
              "note": a.note}
     log_run(entry)
     if a.period == "holdout":
