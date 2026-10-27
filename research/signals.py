@@ -49,6 +49,14 @@ def momentum_quality(p):
     return momentum_12_1(p) / vol
 
 
+def momentum_lowvol(p):
+    """Average of the percentile ranks of momentum per unit of volatility
+    and of low volatility: trend, but in calmer stocks."""
+    a = momentum_quality(p).rank(axis=1, pct=True)
+    b = low_volatility(p).rank(axis=1, pct=True)
+    return (a + b) / 2
+
+
 SIGNALS = {
     "momentum_12_1": momentum_12_1,
     "momentum_6_1": momentum_6_1,
@@ -56,4 +64,5 @@ SIGNALS = {
     "low_volatility": low_volatility,
     "delivery_accumulation": delivery_accumulation,
     "momentum_quality": momentum_quality,
+    "momentum_lowvol": momentum_lowvol,
 }

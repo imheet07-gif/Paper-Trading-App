@@ -32,6 +32,8 @@ skills are still the US originals, documented in
 | `core/bhavcopy.py` | NSE daily prices and delivery data for every listed security (delisted ones included, so backtests have no survivorship bias) into a local SQLite store, from 2012, both bhavcopy formats. Prices in integer paise, exactly as published. |
 | `core/corporate_actions.py` | NSE corporate actions turned into adjustment factors (bonus, split, consolidation, rights at theoretical ex-rights price, demergers from the price move) and checked against the actual ex-date move; unexplained jumps reported. |
 | `research/backtest.py` | Backtests a signal on the NSE history with the rules that keep it honest: delisted stocks included, next-day-open fills, no trading into locked circuits, real charges and slippage, a point-in-time universe, and fixed dev / validation / holdout periods with every run logged (deflated Sharpe). numpy and pandas. |
+| `research/regimes.py` | Market regime filters (index trend, breadth), with NSE index series joined across the 2015 renames (CNX 500 became Nifty 500). |
+| `research/FINDINGS.md` | Dated record of every experiment, including the failures. |
 | `research/signals.py` | Candidate signals: 12-1 and 6-1 momentum, 52-week high, low volatility, momentum per unit of volatility, and NSE delivery accumulation. None is trusted until it passes validation. |
 | `core/instruments.py` | One record per stock keyed by ISIN, joining NSE's equity list with Kite instrument tokens, tick and lot sizes (Angel One's scrip list optional, for its free historical data). Mismatches between sources are reported. |
 
@@ -62,10 +64,10 @@ already do it well.
 | step | work | status |
 | --- | --- | --- |
 | Foundations | Instruments, calendar, charges verified against a broker ledger, Zerodha and CAS imports, FIFO lots, overview page | done |
-| Market history | NSE bhavcopy and delivery data from 2012, corporate action factors checked against prices, ISINs joined across splits | in progress |
-| Backtester | Honest simulation and the dev / validation / holdout protocol | built, running on real data next |
-| Price signals | Momentum, 52-week high, low volatility, delivery accumulation, regime filter (breadth, index trend) | next |
-| Event signals | Results dates and earnings drift, insider (SEBI PIT) and promoter buying, pledges, bulk and block deals, mutual fund accumulation | after |
+| Market history | NSE bhavcopy and delivery data from 2012, corporate action factors checked against prices, ISINs joined across splits | done |
+| Backtester | Honest simulation and the dev / validation / holdout protocol | done |
+| Price signals | Momentum, 52-week high, low volatility, delivery accumulation, regime filters | first pass done: momentum per unit of volatility validated, timing filters failed (research/FINDINGS.md) |
+| Event signals | Results dates and earnings drift, insider (SEBI PIT) and promoter buying, pledges, bulk and block deals, mutual fund accumulation | next |
 | Evidence cards and daily scan | Each candidate with its reasons, sources, scorecard and red flags, for manual review; order sheets only | after |
 | Paper forward test | 3 to 6 months on paper before any real money | last |
 | Later | Portfolio X-ray and optimiser, Indian tax module, more brokers | parked |

@@ -46,6 +46,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "core"))
 import charges as charges_mod  # noqa: E402
 import panel as panel_mod  # noqa: E402
+import regimes as regimes_mod  # noqa: E402
 import signals as signals_mod  # noqa: E402
 
 PERIODS = {
@@ -72,10 +73,12 @@ def cost_rates(rates=None):
 
 class Config:
     def __init__(self, top=20, slippage_bps=15.0, capital=1_000_000.0, dp_charge=15.34, delist_haircut=0.5,
-                 delist_after=20, locked_move=0.02):
+                 delist_after=20, locked_move=0.02, cash_yield=0.06, regime="none"):
         self.top, self.slippage, self.capital = top, slippage_bps / 1e4, capital
         self.dp_charge, self.delist_haircut, self.delist_after = dp_charge, delist_haircut, delist_after
         self.locked_move = locked_move
+        self.cash_yield = cash_yield  # uninvested cash earns about a liquid fund's yield
+        self.regime = regime  # see regimes.py; the share of capital invested at each rebalance
 
     def as_dict(self):
         return dict(self.__dict__)
@@ -92,8 +95,10 @@ def locked(H, L, C, i, k, direction, min_move):
     return move >= min_move if direction > 0 else move <= -min_move
 
 
-def run(p, scores, start, end, cfg=None, rebalance_dates=None):
-    """Simulate. Returns {"nav": Series, "bench": Series, "trades": [...], "stats": {...}}."""
+def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None):
+    """Simulate. exposure: Series of the share of capital to invest, read at
+    each rebalance date (default fully invested); the rest stays in cash.
+    Returns {"nav": Series, "bench": Series, "trades": [...], "stats": {...}}."""
     cfg = cfg or Config()
     buy_cost, sell_cost = cost_rates()
     dates = p.dates
@@ -105,7 +110,8 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None):
     C, O, H, L = close.values, open_.values, p.high.values, p.low.values
 
     cash, units, last_px, missing = cfg.capital, {}, {}, {}
-    pending, navs, bench_navs, trades = None, [], [], []
+    pending, navs, bench_navs, trades, invest = None, [], [], [], 1.0
+    daily_cash = (1 + cfg.cash_yield) ** (1 / 252) - 1
     bench_members, bench_nav = [], 1.0
     stats = {"blocked_buys": 0, "blocked_sells": 0, "no_fill": 0, "delist_exits": 0, "costs": 0.0, "turnover": 0.0}
 
@@ -114,7 +120,7 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None):
         # 1. fill yesterday's orders at today's open
         if pending is not None:
             nav_open = cash + sum(u * (O[i, col[s]] if not np.isnan(O[i, col[s]]) else last_px[s]) for s, u in units.items())
-            target = {s: nav_open / len(pending) for s in pending} if pending else {}
+            target = {s: nav_open * invest / len(pending) for s in pending} if pending else {}
             for s in list(units):
                 px = O[i, col[s]]
                 want = target.get(s, 0.0)
@@ -172,6 +178,7 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None):
             else:
                 missing[s] = 0
                 last_px[s] = c
+        cash *= 1 + daily_cash
         navs.append(cash + sum(u * last_px[s] for s, u in units.items()))
         # benchmark: equal weight of the eligible universe, rebalanced with the strategy, no costs
         if bench_members and i > lo:
@@ -185,6 +192,7 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None):
             row = scores.iloc[i].where(ok)
             row = row.dropna()
             pending = list(row.sort_values(ascending=False).index[:cfg.top])
+            invest = float(exposure.iloc[i]) if exposure is not None and not np.isnan(exposure.iloc[i]) else 1.0
             bench_members = [col[s] for s in ok[ok].index]
 
     idx = dates[lo:hi]
@@ -253,6 +261,7 @@ def main(argv=None):
     ap.add_argument("--period", default="dev", choices=sorted(PERIODS))
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--slippage-bps", type=float, default=15.0)
+    ap.add_argument("--regime", default="none", choices=sorted(regimes_mod.REGIMES))
     ap.add_argument("--db", default=panel_mod.bhavcopy.DEFAULT_DB)
     ap.add_argument("--open-holdout", action="store_true", help="required for the holdout period; logged")
     ap.add_argument("--note", default="", help="why this run (kept in the run log)")
@@ -264,8 +273,8 @@ def main(argv=None):
     load_from = (pd.Timestamp(start) - pd.DateOffset(years=2)).date().isoformat()  # lookback for signals
     p = panel_mod.load(a.db, start=load_from, end=end)
     scores = signals_mod.SIGNALS[a.signal](p)
-    cfg = Config(top=a.top, slippage_bps=a.slippage_bps)
-    res = run(p, scores, start, end, cfg)
+    cfg = Config(top=a.top, slippage_bps=a.slippage_bps, regime=a.regime)
+    res = run(p, scores, start, end, cfg, exposure=regimes_mod.REGIMES[a.regime](p, a.db))
     m, b = metrics(res["nav"]), metrics(res["bench"])
     trials = past_sharpes(period=a.period) + [m.get("sharpe", float("nan"))]
     dsr = deflated_sharpe(m["sharpe"], m["days"], m["skew"], m["kurtosis"], trials) if m else float("nan")
@@ -275,7 +284,8 @@ def main(argv=None):
     log_run(entry)
     if a.period == "holdout":
         log_run(entry, HOLDOUT_LOG)
-    print("%s, %s %s to %s, top %d, slippage %.0f bps" % (a.signal, a.period, start, end or "now", a.top, a.slippage_bps))
+    print("%s, %s %s to %s, top %d, slippage %.0f bps, regime %s" % (
+        a.signal, a.period, start, end or "now", a.top, a.slippage_bps, a.regime))
     for name, x in (("strategy", m), ("equal-weight universe", b)):
         print("  %-22s CAGR %6.1f%%  vol %5.1f%%  Sharpe %5.2f  max drawdown %6.1f%%" % (
             name, x["cagr"] * 100, x["vol"] * 100, x["sharpe"], x["max_drawdown"] * 100))

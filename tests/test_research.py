@@ -16,6 +16,7 @@ if HAVE_PANDAS:
     import backtest  # noqa: E402
     import evaluate  # noqa: E402
     import panel  # noqa: E402
+    import regimes  # noqa: E402
     import signals  # noqa: E402
     import numpy as np  # noqa: E402
 
@@ -66,6 +67,14 @@ class Research(unittest.TestCase):
         db = ca.connect(cls.path)
         cls.days = weekdays(dt.date(2013, 1, 1), 520)
         market(db, cls.days)
+        # an index renamed halfway, as CNX 500 became Nifty 500: rises, then falls below its average
+        level = 100.0
+        for i, d in enumerate(cls.days):
+            level *= 1.002 if i < 400 else 0.99
+            name = "CNX 500" if i < 250 else "Nifty 500"
+            db.execute("INSERT INTO index_prices VALUES (?,?,?,?,?,?,?,?,?)",
+                       (d.isoformat(), name, level, level, level, level, None, None, None))
+        db.commit()
         db.close()
         cls.p = panel.load(cls.path)
 
@@ -154,6 +163,26 @@ class Research(unittest.TestCase):
         many = wide + noise
         rep = evaluate.ic_report(many, many, pd.DataFrame(True, index=wide.index, columns=wide.columns), dates)
         self.assertGreater(rep["ic_mean"], 0.99)
+
+    def test_index_joined_across_rename_and_trend_filter(self):
+        s = regimes.index_close(self.path, "Nifty 500")
+        self.assertEqual(len(s), 520)  # both names, one series
+        t = regimes.trend(self.p, self.path, below=0.0)
+        self.assertTrue(t.iloc[:150].isna().all())  # no 200-day average yet
+        self.assertEqual(t.iloc[399], 1.0)  # rising, above its average
+        self.assertEqual(t.iloc[-1], 0.0)  # fallen below: go to cash
+        half = regimes.trend(self.p, self.path, below=0.5)
+        self.assertEqual(half.iloc[-1], 0.5)
+
+    def test_exposure_keeps_the_rest_in_cash(self):
+        import pandas as pd
+        scores = signals.momentum_12_1(self.p)
+        start = self.days[310].isoformat()
+        zero = pd.Series(0.0, index=self.p.dates)
+        res = backtest.run(self.p, scores, start, None, backtest.Config(top=2, cash_yield=0.06), exposure=zero)
+        self.assertEqual([t for t in res["trades"] if t[2] == "buy"], [])
+        years = len(res["nav"]) / 252
+        self.assertAlmostEqual(res["nav"].iloc[-1], 1.06 ** years, places=3)  # all cash, at the cash yield
 
     def test_holdout_needs_the_flag(self):
         with open(os.devnull, "w") as null:

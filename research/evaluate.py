@@ -29,6 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import backtest  # noqa: E402
 import panel as panel_mod  # noqa: E402
+import regimes as regimes_mod  # noqa: E402
 import signals as signals_mod  # noqa: E402
 
 HORIZON = 21  # trading days, about a month
@@ -69,6 +70,8 @@ def main(argv=None):
     ap.add_argument("--period", default="dev", choices=["dev", "validation"])
     ap.add_argument("--signals", nargs="*", default=sorted(signals_mod.SIGNALS))
     ap.add_argument("--top", type=int, default=20)
+    ap.add_argument("--regime", nargs="*", default=["none"], choices=sorted(regimes_mod.REGIMES),
+                    help="one or more; each signal is backtested under each")
     ap.add_argument("--db", default=panel_mod.bhavcopy.DEFAULT_DB)
     ap.add_argument("--note", default="")
     a = ap.parse_args(argv)
@@ -79,26 +82,31 @@ def main(argv=None):
     fwd = forward_returns(p)
     lo, hi = p.dates.searchsorted(pd.Timestamp(start)), p.dates.searchsorted(pd.Timestamp(end), "right")
     rebal = panel_mod.month_ends(p.dates[lo:hi])[:-1]  # the last month has no full forward return
-    cfg = backtest.Config(top=a.top)
+    exposures = {r: regimes_mod.REGIMES[r](p, a.db) for r in a.regime}
     print("%s %s to %s: %d month ends, median universe %d stocks" % (
         a.period, start, end, len(rebal), int(elig.loc[rebal].sum(axis=1).median())))
-    print("%-22s %7s %6s %6s %9s %6s | %7s %6s %7s %7s" % (
-        "signal", "IC", "t", "IC>0", "top-bot", "mono", "CAGR", "Sharpe", "maxDD", "excess"))
+    print("%-22s %-15s %7s %6s %6s %9s %6s | %7s %6s %7s %7s" % (
+        "signal", "regime", "IC", "t", "IC>0", "top-bot", "mono", "CAGR", "Sharpe", "maxDD", "excess"))
     bench = None
     for name in a.signals:
         scores = signals_mod.SIGNALS[name](p)
         ic = ic_report(scores, fwd, elig, rebal)
-        res = backtest.run(p, scores, start, end, cfg)
-        m = backtest.metrics(res["nav"])
-        bench = bench or backtest.metrics(res["bench"])
-        backtest.log_run({"at": dt.datetime.now().isoformat(timespec="seconds"), "signal": name, "period": a.period,
-                          "config": cfg.as_dict(), "sharpe": m.get("sharpe"), "cagr": m.get("cagr"),
-                          "bench_sharpe": bench.get("sharpe"), "ic": ic, "note": a.note or "evaluate.py"})
-        print("%-22s %7.3f %6.2f %5.0f%% %8.2f%% %6.2f | %6.1f%% %6.2f %6.1f%% %6.1f%%" % (
-            name, ic["ic_mean"], ic["ic_t"], ic["ic_positive"] * 100, ic["top_minus_bottom"] * 100, ic["monotonic"],
-            m["cagr"] * 100, m["sharpe"], m["max_drawdown"] * 100, (m["cagr"] - bench["cagr"]) * 100))
-    print("%-22s %7s %6s %6s %9s %6s | %6.1f%% %6.2f %6.1f%%" % (
-        "equal-weight universe", "", "", "", "", "", bench["cagr"] * 100, bench["sharpe"], bench["max_drawdown"] * 100))
+        for regime in a.regime:
+            cfg = backtest.Config(top=a.top, regime=regime)
+            res = backtest.run(p, scores, start, end, cfg, exposure=exposures[regime])
+            m = backtest.metrics(res["nav"])
+            bench = bench or backtest.metrics(res["bench"])
+            backtest.log_run({"at": dt.datetime.now().isoformat(timespec="seconds"), "signal": name,
+                              "period": a.period, "config": cfg.as_dict(), "sharpe": m.get("sharpe"),
+                              "cagr": m.get("cagr"), "max_drawdown": m.get("max_drawdown"),
+                              "bench_sharpe": bench.get("sharpe"), "ic": ic, "note": a.note or "evaluate.py"})
+            print("%-22s %-15s %7.3f %6.2f %5.0f%% %8.2f%% %6.2f | %6.1f%% %6.2f %6.1f%% %6.1f%%" % (
+                name, regime, ic["ic_mean"], ic["ic_t"], ic["ic_positive"] * 100, ic["top_minus_bottom"] * 100,
+                ic["monotonic"], m["cagr"] * 100, m["sharpe"], m["max_drawdown"] * 100,
+                (m["cagr"] - bench["cagr"]) * 100))
+    print("%-22s %-15s %7s %6s %6s %9s %6s | %6.1f%% %6.2f %6.1f%%" % (
+        "equal-weight universe", "", "", "", "", "", "", bench["cagr"] * 100, bench["sharpe"],
+        bench["max_drawdown"] * 100))
     print("IC: monthly rank correlation with next-month return; t > 2 is the usual bar. top-bot: monthly return of the")
     print("top decile minus the bottom. mono: how orderly the deciles are (1 = perfectly). Right side: top %d backtest" % a.top)
     print("with costs; excess is CAGR over the equal-weight universe.")
