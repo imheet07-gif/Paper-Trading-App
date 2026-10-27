@@ -1,7 +1,9 @@
+import io
 import os
 import re
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 
 from _load import ROOT, load
 from test_zerodha_console import fixture_xlsx
@@ -14,9 +16,10 @@ class Dashboard(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         d = self.tmp.name
         self.out = os.path.join(d, "dash.html")
-        code = dash.main(["--holdings", fixture_xlsx(d, "console_holdings"),
-                          "--tradebook", fixture_xlsx(d, "console_tradebook"), fixture_xlsx(d, "console_tradebook"),
-                          "--pnl", fixture_xlsx(d, "console_pnl"), "--out", self.out])
+        with redirect_stdout(io.StringIO()):
+            code = dash.main(["--holdings", fixture_xlsx(d, "console_holdings"),
+                             "--tradebook", fixture_xlsx(d, "console_tradebook"), fixture_xlsx(d, "console_tradebook"),
+                             "--pnl", fixture_xlsx(d, "console_pnl"), "--out", self.out])
         self.assertEqual(code, 0)
         with open(self.out, encoding="utf-8") as fh:
             self.page = fh.read()

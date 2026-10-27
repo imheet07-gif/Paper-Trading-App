@@ -26,6 +26,8 @@ The India-specific work so far lives in `core/`.
 | `core/cas.py` | Reads a CAS PDF from NSDL, CDSL, CAMS or KFintech (via casparser, offline) into broker-neutral holdings, drops personal details, masks account numbers, and reconciles it against a broker's holdings export. Password from a prompt, never stored. |
 | `core/lots.py` | FIFO lots from any broker's trades: realized gains by financial year, short or long term, with sells that have no recorded buy reported apart rather than given an invented cost. Open lots reconcile against holdings. |
 | `dashboard/build.py` | Builds your portfolio dashboard as one self-contained HTML file: headline numbers, allocation, holdings with their checks, realized gains by year, modelled charges, and everything that needs a look. No network requests; opens offline in any browser, phone included. |
+| `core/bhavcopy.py` | NSE daily prices and delivery data for every listed security (delisted ones included, so backtests have no survivorship bias) into a local SQLite store, from 2012, both bhavcopy formats. Prices in integer paise, exactly as published. |
+| `core/corporate_actions.py` | NSE corporate actions turned into adjustment factors (bonus, split, consolidation, rights at theoretical ex-rights price, demergers from the price move) and checked against the actual ex-date move; unexplained jumps reported. |
 | `core/instruments.py` | One record per stock keyed by ISIN, joining NSE's equity list with Kite instrument tokens, tick and lot sizes (Angel One's scrip list optional, for its free historical data). Mismatches between sources are reported. |
 
 ```bash
@@ -37,6 +39,9 @@ python3 core/zerodha_console.py holdings private/holdings.xlsx
 python3 core/zerodha_console.py verify-charges private/tradebook-EQ.xlsx private/pnl-EQ.xlsx
 python3 core/cas.py holdings private/cas.pdf --reconcile private/holdings.xlsx
 python3 dashboard/build.py --holdings private/holdings.xlsx --tradebook private/tradebook-*.xlsx --pnl private/pnl.xlsx
+python3 core/bhavcopy.py backfill --start 2012-01-01
+python3 core/corporate_actions.py fetch --start 2012-01-01
+python3 core/corporate_actions.py check
 python3 -m unittest discover -s tests
 ```
 
