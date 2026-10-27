@@ -149,6 +149,7 @@ class Charges(unittest.TestCase):
         self.assertEqual(c["stt"], Decimal("100.00"))
         self.assertEqual(c["stamp_duty"], Decimal("15.00"))
         self.assertEqual(c["exchange_txn"], Decimal("3.07"))
+        self.assertEqual(c["assumptions"], [])
         self.assertEqual(c["sebi_fee"], Decimal("0.10"))
         self.assertEqual(c["gst"], Decimal("0.57"))
         self.assertEqual(c["dp_charge"], Decimal("0.00"))
@@ -192,6 +193,23 @@ class Charges(unittest.TestCase):
         self.assertEqual([r["charges"]["dp_charge"] for r in z["rows"]], [Decimal("15.34"), Decimal("0.00")])
         a = charges.batch_charges(trades, "testbroker", with_test_broker(self.rates))
         self.assertEqual([r["charges"]["dp_charge"] for r in a["rows"]], [Decimal("20.00"), Decimal("20.00")])
+
+    def test_contract_note_rounds_stt_once_per_day(self):
+        # two fills of Rs 400: STT 0.40 each; per fill that rounds to 0 + 0, per day to Rs 1
+        trades = [{"date": "2026-08-06", "symbol": "A", "side": "sell", "qty": 4, "price": "100"},
+                  {"date": "2026-08-06", "symbol": "A", "side": "sell", "qty": 4, "price": "100"}]
+        note = charges.contract_note(trades, "zerodha", self.rates)["2026-08-06"]
+        self.assertEqual(note["stt"], Decimal("1"))
+        self.assertEqual(note["exchange_txn"], Decimal("0.0246"))  # 800 x 0.00307%, 4 decimals
+        self.assertEqual(note["dp_charge"], Decimal("15.34"))  # one scrip
+
+    def test_contract_note_bse_exclusive_rate(self):
+        t = {"date": "2026-08-06", "symbol": "B", "side": "sell", "qty": 1000, "price": "10", "exchange": "BSE"}
+        unknown = charges.contract_note([t], "zerodha", self.rates)["2026-08-06"]
+        self.assertEqual(unknown["exchange_txn"], Decimal("0.3750"))
+        self.assertIn("B: BSE exclusive flag unknown", unknown["assumptions"][0])
+        excl = charges.contract_note([dict(t, bse_exclusive=True)], "zerodha", self.rates)["2026-08-06"]
+        self.assertEqual((excl["exchange_txn"], excl["assumptions"]), (Decimal("0.2750"), []))
 
     def test_round_trip_cost_percent(self):
         r = charges.round_trip("zerodha", 100, "1000", rates=self.rates)

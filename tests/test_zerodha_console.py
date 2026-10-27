@@ -195,5 +195,44 @@ class Tradebook(unittest.TestCase):
         self.assertIn("dp_charge", out)
 
 
+class PnL(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.tb = fixture_xlsx(self.tmp.name, "console_tradebook")
+        self.pnl = fixture_xlsx(self.tmp.name, "console_pnl")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_ledger_heads_and_dp_lines(self):
+        p = zc.parse_pnl(zc.read_any(self.pnl))
+        self.assertEqual((p["from"], p["to"]), ("2026-04-01", "2026-10-27"))
+        self.assertEqual(p["charges"]["stt"], Decimal("22"))
+        self.assertEqual(p["charges"]["gst"], Decimal("0.1366"))  # central + state + integrated
+        self.assertEqual(p["unmapped"], {"IPFT": Decimal("0.0005")})
+        self.assertEqual([(d["symbol"], d["date"]) for d in p["dp"]],
+                         [("RELIANCE", "2026-08-06"), ("TCS", "2026-08-06")])
+        self.assertEqual(p["other"][0]["debit"], Decimal("29.5"))  # AMC is not a trade charge
+
+    def test_verify_reproduces_the_ledger(self):
+        r = zc.verify_charges(zc.parse_tradebook(zc.read_any(self.tb))["trades"], zc.parse_pnl(zc.read_any(self.pnl)))
+        self.assertEqual({x["head"]: x["diff"] for x in r["lines"] if x["diff"]}, {})
+        self.assertEqual(r["days"], ["2026-04-10", "2026-08-06"])  # the April buy brings stamp duty
+        self.assertIn("TCS: BSE exclusive flag unknown", r["assumptions"][0])
+
+    def test_exclusive_rate_changes_the_bse_charge(self):
+        trades = zc.parse_tradebook(zc.read_any(self.tb))["trades"]
+        pnl = zc.parse_pnl(zc.read_any(self.pnl))
+        r = zc.verify_charges(trades, pnl, bse_exclusive={"TCS"})
+        diff = {x["head"]: x["diff"] for x in r["lines"]}
+        # 10,006 x 0.001% = 0.10006, seen through the day totals at 4 decimals (0.4300 vs 0.3300)
+        self.assertEqual(diff["exchange_txn"], Decimal("0.1000"))
+        self.assertEqual(r["assumptions"], [])
+
+    def test_not_a_pnl_file(self):
+        with self.assertRaises(ValueError):
+            zc.parse_pnl({"x": [["hello"]]})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,5 @@
 {
-  "_about": "Rates for equity cash-market trades. Percent values are percent of turnover (qty x price). Every block says where it came from. page_checked is the date the rate was read from the broker's own page; verified stays false until a real contract note is reproduced to the paisa by a test.",
+  "_about": "Rates for equity cash-market trades. Percent values are percent of turnover (qty x price). Every block says where it came from. verified is the date a real broker ledger or contract note was reproduced by these rates, or false.",
   "statutory": {
     "_source": "Statutory, same at every broker: STT (Finance Act), stamp duty (Indian Stamp Act, 2020 uniform rates), SEBI turnover fee. Read directly from https://zerodha.com/charges on 2026-10-27.",
     "verified": false,
@@ -25,19 +25,24 @@
     },
     "sebi_fee_per_crore": "10",
     "gst_pct": "18",
-    "page_checked": "2026-10-27"
+    "page_checked": "2026-10-27",
+    "evidence": "Same ledger: delivery sell STT is 0.1% of the day's turnover, rounded to the rupee once for the day. Buy side (stamp duty, buy STT) not yet seen on a ledger, so this block stays unverified."
   },
   "exchange_txn_pct": {
-    "_source": "Exchange transaction charges as Zerodha passes them through, read directly from https://zerodha.com/charges on 2026-10-27 (NSE 0.00307%, BSE 0.00375%, equity delivery and intraday).",
-    "verified": false,
+    "_source": "Exchange transaction charges as Zerodha passes them through. NSE 0.00307% from https://zerodha.com/charges (read 2026-10-27). BSE: Rs 375 per crore for group A, B and other non-exclusive scrips, Rs 275 per crore for exclusive scrips (bseindia.com/members/TFEquity.aspx and Zerodha support); the exclusive flag is per scrip in BSE's scrip master.",
+    "verified": "2026-10-27",
     "NSE": "0.00307",
-    "BSE": "0.00375",
-    "page_checked": "2026-10-27"
+    "BSE": {
+      "non_exclusive": "0.00375",
+      "exclusive": "0.00275"
+    },
+    "page_checked": "2026-10-27",
+    "evidence": "Reproduced exactly against a real Zerodha Console P&L ledger for one trading day of NSE and BSE delivery sells (checked 2026-10-27): NSE at 0.00307%, BSE at the non-exclusive rate except one B-group scrip at the exclusive rate. SEBI fee exact on the same day."
   },
   "brokers": {
     "zerodha": {
       "_source": "https://zerodha.com/charges, read directly 2026-10-27: delivery brokerage zero; intraday 0.03% or Rs 20 per executed order, whichever is lower; DP Rs 15.34 per scrip on the sell day (Rs 3.5 CDSL + Rs 9.5 Zerodha + Rs 2.34 GST), irrespective of quantity. Female first holders get Rs 0.25 off the CDSL fee (not modelled).",
-      "verified": false,
+      "verified": "2026-10-27",
       "brokerage": {
         "delivery": {
           "pct": "0",
@@ -52,7 +57,8 @@
       },
       "dp_charge_incl_gst": "15.34",
       "dp_charge_basis": "per_scrip_per_day",
-      "page_checked": "2026-10-27"
+      "page_checked": "2026-10-27",
+      "evidence": "Same ledger: one DP charge of Rs 15.34 per scrip sold that day, exact. The ledger also shows Brokerage 0.01 and an IPFT line of 0.0002 on a zero-brokerage delivery day; neither is modelled."
     }
   }
 }

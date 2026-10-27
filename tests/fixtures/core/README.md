@@ -14,9 +14,9 @@ copy of these rows in the test itself, so the files stay as published.
 
 ## Zerodha Console exports (personal data, so synthetic)
 
-`console_holdings.json`, `console_tradebook.json` and
-`console_tradebook.sample.csv` copy the exact layout of Console's holdings
-and equity tradebook exports as checked against a real export on
+`console_holdings.json`, `console_tradebook.json`, `console_pnl.json` and
+`console_tradebook.sample.csv` copy the exact layout of Console's holdings,
+equity tradebook and P&L exports as checked against a real export on
 2026-10-27: title rows, header row position, column names (Title Case in
 XLSX, snake_case in CSV) and spreadsheet float noise such as
 178.54999999999998. Every value, client ID and trade ID is made up. The CSV

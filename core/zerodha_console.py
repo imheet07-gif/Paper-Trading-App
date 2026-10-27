@@ -14,6 +14,11 @@ including dates the export turns into spreadsheet serial numbers.
   python3 core/zerodha_console.py holdings holdings.xlsx
   python3 core/zerodha_console.py tradebook tradebook-EQ.xlsx
   python3 core/zerodha_console.py charges tradebook-EQ.xlsx --date 2026-08-06
+  python3 core/zerodha_console.py verify-charges tradebook-EQ.xlsx pnl-EQ.xlsx
+
+verify-charges models every day of the tradebook the way a contract note
+bills it and compares the result, head by head, with the charges ledger in
+Console's P&L export (including its per-scrip DP charge lines).
 
 Holdings come with warnings for anything that needs a person: a quantity
 held at zero average price (usually a demerger or other corporate action
@@ -333,6 +338,98 @@ def day_charges(trades, date, broker="zerodha"):
     return charges.batch_charges(rows, broker)
 
 
+# ---------------------------------------------------------------- P&L statement
+
+PNL_TITLE = r"P&L Statement for Equity from (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})"
+OTHER_TITLE = r"Other Debits and Credits for EQ from"
+# ledger account heads -> charge components
+HEADS = {
+    "brokerage": "brokerage",
+    "exchange_transaction_charges": "exchange_txn",
+    "securities_transaction_tax": "stt",
+    "sebi_turnover_fees": "sebi_fee",
+    "stamp_duty": "stamp_duty",
+    "central_gst": "gst",
+    "state_gst": "gst",
+    "integrated_gst": "gst",
+}
+DP_LINE = r"DP Charges for Sale of (\S+) on (\d{2})/(\d{2})/(\d{4})"
+
+
+def _rows_under(rows, first):
+    """Rows under the header whose first cell is `first`, as dicts by normalised header."""
+    for i, r in enumerate(rows):
+        keys = [key(c) for c in r]
+        if first in keys:
+            start = keys.index(first)
+            out = []
+            for row in rows[i + 1:]:
+                cells = list(row) + [None] * (len(keys) - len(row))
+                if not _text(cells[start]):
+                    break
+                out.append({h: cells[j] for j, h in enumerate(keys) if h})
+            return out
+    return []
+
+
+def parse_pnl(sheets):
+    """Console's equity P&L export -> charges by component, DP charges by day, other debits."""
+    out = {"from": None, "to": None, "charges": {}, "unmapped": {}, "dp": [], "other": []}
+    found = False
+    for rows in sheets.values():
+        m = _title(rows, PNL_TITLE)
+        if m:
+            found = True
+            out["from"], out["to"] = m.group(1), m.group(2)
+            for r in _rows_under(rows, "account_head"):
+                head = re.sub(r"_z$", "", key(r.get("account_head")))
+                amt = num(r.get("amount")) or Decimal(0)
+                comp = HEADS.get(head)
+                if comp:
+                    out["charges"][comp] = out["charges"].get(comp, Decimal(0)) + amt
+                elif amt:
+                    out["unmapped"][_text(r.get("account_head"))] = amt
+        if _title(rows, OTHER_TITLE):
+            found = True
+            for r in _rows_under(rows, "particulars"):
+                text = _text(r.get("particulars"))
+                debit = num(r.get("debit")) or Decimal(0)
+                credit = num(r.get("credit")) or Decimal(0)
+                dm = re.match(DP_LINE, text)
+                if dm:
+                    out["dp"].append({"symbol": dm.group(1), "date": "%s-%s-%s" % (dm.group(4), dm.group(3), dm.group(2)),
+                                      "amount": debit - credit})
+                else:
+                    out["other"].append({"particulars": text, "date": when(r.get("posting_date")),
+                                         "debit": debit, "credit": credit})
+    if not found:
+        raise ValueError("no Console P&L statement found (looked for its title row)")
+    return out
+
+
+def verify_charges(trades, pnl, broker="zerodha", bse_exclusive=()):
+    """Model the tradebook's charges and compare them with the P&L ledger, head by head."""
+    import charges
+    lo, hi = pnl["from"] or "0000", pnl["to"] or "9999"
+    rows = [{"date": t["date"], "symbol": t["symbol"], "side": t["side"], "qty": t["qty"], "price": t["price"],
+             "exchange": t["exchange"],
+             "bse_exclusive": (t["symbol"] in bse_exclusive) if t["exchange"] == "BSE" and bse_exclusive else None}
+            for t in trades if lo <= t["date"] <= hi]
+    notes = charges.contract_note(rows, broker)
+    model = {}
+    for n in notes.values():
+        for k in ("brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "gst", "dp_charge"):
+            model[k] = model.get(k, Decimal(0)) + n[k]
+    actual = dict(pnl["charges"])
+    actual["dp_charge"] = sum((d["amount"] for d in pnl["dp"]), Decimal(0))
+    lines = []
+    for k in ("brokerage", "stt", "exchange_txn", "sebi_fee", "stamp_duty", "gst", "dp_charge"):
+        a, m = actual.get(k, Decimal(0)), model.get(k, Decimal(0))
+        lines.append({"head": k, "ledger": a, "model": m, "diff": a - m})
+    assumptions = sorted({x for n in notes.values() for x in n["assumptions"]})
+    return {"lines": lines, "unmapped": pnl["unmapped"], "assumptions": assumptions, "days": sorted(notes)}
+
+
 # ---------------------------------------------------------------- CLI
 
 def _js(o):
@@ -348,11 +445,29 @@ def main(argv=None):
         p = sub.add_parser(name)
         p.add_argument("file")
         p.add_argument("--json", action="store_true")
+    v = sub.add_parser("verify-charges", help="compare modelled charges with a P&L statement's ledger")
+    v.add_argument("tradebook")
+    v.add_argument("pnl")
+    v.add_argument("--bse-exclusive", nargs="*", default=[], metavar="SYMBOL",
+                   help="BSE scrips charged at BSE's exclusive-scrip rate")
     c = sub.add_parser("charges", help="expected contract-note charges for one day of the tradebook")
     c.add_argument("file")
     c.add_argument("--date", required=True)
     a = ap.parse_args(argv)
     try:
+        if a.cmd == "verify-charges":
+            from money import inr
+            r = verify_charges(parse_tradebook(read_any(a.tradebook))["trades"], parse_pnl(read_any(a.pnl)),
+                               bse_exclusive=set(a.bse_exclusive))
+            print("Charges on %d trading day(s), modelled vs the P&L ledger:" % len(r["days"]))
+            print("  %-13s %12s %12s %10s" % ("head", "ledger", "model", "diff"))
+            for x in r["lines"]:
+                print("  %-13s %12s %12s %10s" % (x["head"], x["ledger"], x["model"], x["diff"]))
+            for k, v in r["unmapped"].items():
+                print("  not modelled: %s %s" % (k, v))
+            for x in r["assumptions"]:
+                print("  assumed:", x)
+            return 0
         sheets = read_any(a.file)
         if a.cmd == "holdings":
             h = parse_holdings(sheets)
