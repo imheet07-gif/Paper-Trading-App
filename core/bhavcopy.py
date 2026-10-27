@@ -8,6 +8,9 @@ Sources, all public NSE archives:
   bhavcopy, UDiFF format content/cm/BhavCopy_NSE_CM_0_0_0_YYYYMMDD_F_0000.csv.zip
                          (from 2024-07-08)
   delivery position      archives/equities/mto/MTO_DDMMYYYY.DAT
+  index closes           content/indices/ind_close_all_DDMMYYYY.csv
+                         (Nifty 50, Nifty 500, sector and size indices, India
+                         VIX, with P/E, P/B and dividend yield; from 2013)
 
 Every listed security is kept, including the ones that later delist, so a
 backtest sees the market as it was (no survivorship bias). Prices are
@@ -19,6 +22,7 @@ adjust its previous close on an ex-date either, so splits and bonuses show
 as price jumps until corporate_actions.py applies its factors.
 
   python3 core/bhavcopy.py backfill --start 2012-01-01 --end 2026-10-27
+  python3 core/bhavcopy.py indices --start 2013-01-01
   python3 core/bhavcopy.py status
   python3 core/bhavcopy.py series INE002A01018
 
@@ -54,6 +58,9 @@ CREATE TABLE IF NOT EXISTS prices (
   volume INTEGER, value INTEGER, trades INTEGER, deliv_qty INTEGER, deliv_bp INTEGER,
   PRIMARY KEY (date, isin, series));
 CREATE INDEX IF NOT EXISTS prices_isin ON prices (isin, date);
+CREATE TABLE IF NOT EXISTS index_prices (
+  date TEXT NOT NULL, name TEXT NOT NULL, open REAL, high REAL, low REAL, close REAL,
+  pe REAL, pb REAL, div_yield REAL, PRIMARY KEY (date, name));
 CREATE TABLE IF NOT EXISTS fetched (
   date TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, rows INTEGER, url TEXT,
   PRIMARY KEY (date, kind));
@@ -127,6 +134,32 @@ def parse_mto(text):
     return out
 
 
+def _real(s):
+    s = (s or "").strip()
+    try:
+        return float(s) if s and s != "-" else None
+    except ValueError:
+        return None
+
+
+def parse_indices(text):
+    """Index close file -> rows. Answers that are not CSV (an HTML error page) give no rows."""
+    if not text.lstrip().startswith("Index Name"):
+        return []
+    out = []
+    for r in csv.DictReader(io.StringIO(text)):
+        r = _clean(r)
+        try:
+            d = dt.datetime.strptime(r["Index Date"], "%d-%m-%Y").date().isoformat()
+        except (KeyError, ValueError):
+            continue
+        out.append({"date": d, "name": r["Index Name"], "open": _real(r.get("Open Index Value")),
+                    "high": _real(r.get("High Index Value")), "low": _real(r.get("Low Index Value")),
+                    "close": _real(r.get("Closing Index Value")), "pe": _real(r.get("P/E")),
+                    "pb": _real(r.get("P/B")), "div_yield": _real(r.get("Div Yield"))})
+    return out
+
+
 def unzip_one(blob):
     with zipfile.ZipFile(io.BytesIO(blob)) as z:
         return z.read(z.namelist()[0]).decode("utf-8", "replace")
@@ -141,7 +174,8 @@ def urls(d):
     else:
         mon = MONTHS[d.month - 1]
         p = "%s/content/historical/EQUITIES/%d/%s/cm%02d%s%dbhav.csv.zip" % (ARCHIVE, d.year, mon, d.day, mon, d.year)
-    return {"prices": p, "delivery": "%s/archives/equities/mto/MTO_%s.DAT" % (ARCHIVE, d.strftime("%d%m%Y"))}
+    return {"prices": p, "delivery": "%s/archives/equities/mto/MTO_%s.DAT" % (ARCHIVE, d.strftime("%d%m%Y")),
+            "indices": "%s/content/indices/ind_close_all_%s.csv" % (ARCHIVE, d.strftime("%d%m%Y"))}
 
 
 def http_get(url, tries=4):
@@ -250,6 +284,32 @@ def backfill(db, start, end, pause=0.4, get=http_get, log=print, workers=1):
     return n
 
 
+def backfill_indices(db, start, end, pause=0.4, get=http_get, workers=4):
+    """Index closes for every trading day already in the store that lacks them."""
+    todo = [dt.date.fromisoformat(d) for (d,) in db.execute(
+        "SELECT date FROM fetched f WHERE kind='prices' AND status='ok' AND date BETWEEN ? AND ? AND NOT EXISTS "
+        "(SELECT 1 FROM fetched g WHERE g.date=f.date AND g.kind='indices') ORDER BY date",
+        (start.isoformat(), end.isoformat()))]
+
+    def job(day):
+        blob = get(urls(day)["indices"])
+        time.sleep(pause)
+        return blob
+
+    from concurrent.futures import ThreadPoolExecutor
+    n = 0
+    with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
+        for day, blob in zip(todo, pool.map(job, todo)):
+            rows = parse_indices(blob.decode("utf-8", "replace")) if blob else []
+            db.executemany("INSERT OR REPLACE INTO index_prices VALUES (:date,:name,:open,:high,:low,:close,:pe,:pb,"
+                           ":div_yield)", rows)
+            db.execute("INSERT OR REPLACE INTO fetched VALUES (?,?,?,?,?)",
+                       (day.isoformat(), "indices", "ok" if rows else "missing", len(rows), urls(day)["indices"]))
+            db.commit()
+            n += 1
+    return n
+
+
 # ---------------------------------------------------------------- CLI
 
 def main(argv=None):
@@ -261,6 +321,10 @@ def main(argv=None):
     b.add_argument("--end", default=dt.date.today().isoformat())
     b.add_argument("--pause", type=float, default=0.4, help="seconds each download thread waits between days")
     b.add_argument("--workers", type=int, default=4, help="parallel downloads (keep it small: NSE is shared)")
+    ix = sub.add_parser("indices", help="index closes for trading days already stored")
+    ix.add_argument("--start", default="2013-01-01")
+    ix.add_argument("--end", default=dt.date.today().isoformat())
+    ix.add_argument("--workers", type=int, default=4)
     sub.add_parser("status")
     s = sub.add_parser("series")
     s.add_argument("isin")
@@ -272,6 +336,9 @@ def main(argv=None):
             print("note: files before %s have no ISIN; those days store no rows" % ISIN_FROM, file=sys.stderr)
         n = backfill(db, start, end, a.pause, workers=a.workers)
         print("fetched %d new day(s)" % n)
+    elif a.cmd == "indices":
+        n = backfill_indices(db, dt.date.fromisoformat(a.start), dt.date.fromisoformat(a.end), workers=a.workers)
+        print("fetched index closes for %d day(s)" % n)
     elif a.cmd == "status":
         r = db.execute("SELECT MIN(date), MAX(date), COUNT(DISTINCT date), COUNT(DISTINCT isin), COUNT(*) FROM prices").fetchone()
         m = db.execute("SELECT COUNT(*) FROM fetched WHERE kind='prices' AND status='missing'").fetchone()[0]

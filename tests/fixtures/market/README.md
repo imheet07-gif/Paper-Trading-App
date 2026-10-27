@@ -8,6 +8,7 @@ Rows cut from public NSE files, downloaded 2026-10-27:
 | `mto_YYYYMMDD.dat` | delivery position `archives/equities/mto/MTO_DDMMYYYY.DAT`: header lines plus the same two stocks |
 | `old_20150101.csv` | old-format bhavcopy `content/historical/EQUITIES/2015/JAN/cm01JAN2015bhav.csv.zip`: header and two rows |
 | `old_20050103_no_isin.csv` | old-format bhavcopy for 2005-01-03: header and one row, from before NSE added the ISIN column |
+| `ind_close_all_01072024.csv` | index closes `content/indices/ind_close_all_01072024.csv`: header plus Nifty 50, Nifty 500 and India VIX |
 | `nse_corporate_actions.json` | `www.nseindia.com/api/corporates-corporateActions?index=equities`: the two stocks' 2024-25 rows plus one each of a split, rights issue, demerger, AGM and special dividend |
 
 Tests zip the CSVs again where the real file is a zip.

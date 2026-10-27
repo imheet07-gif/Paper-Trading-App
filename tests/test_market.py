@@ -72,6 +72,13 @@ class Parsing(unittest.TestCase):
         d = bc.parse_mto(read("mto_20250101.dat"))
         self.assertEqual(d[("SURYAROSNI", "EQ")], (298403, 3571))
 
+    def test_indices(self):
+        rows = {r["name"]: r for r in bc.parse_indices(read("ind_close_all_01072024.csv"))}
+        self.assertEqual(rows["Nifty 50"]["close"], 24141.95)
+        self.assertEqual(rows["Nifty 50"]["date"], "2024-07-01")
+        self.assertIsNone(rows["India VIX"]["pe"])
+        self.assertEqual(bc.parse_indices("<!DOCTYPE html><html>"), [])
+
     def test_url_switches_format(self):
         self.assertIn("/historical/EQUITIES/2024/JUL/cm05JUL2024bhav", bc.urls(dt.date(2024, 7, 5))["prices"])
         self.assertIn("BhavCopy_NSE_CM_0_0_0_20240708_F_0000", bc.urls(dt.date(2024, 7, 8))["prices"])
