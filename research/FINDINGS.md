@@ -174,3 +174,26 @@ update refreshes every event source.
 - Not adopted: insider buying and results-day drift (failed dev).
 - Next: risk control by sizing rather than timing, and mutual fund
   accumulation as the remaining independent idea.
+
+## 2026-10-27: position sizing, settings fixed before testing (second agent; no runs yet)
+
+`research/backtest.py` now takes `--sizing equal|inverse_vol`,
+`--max-weight` (cap on one stock's share of the invested money) and
+`--cash-buffer` (share always in cash). The defaults reproduce every
+earlier run exactly. Volatility for inverse_vol is the one-year
+(252-session) standard deviation of daily returns to the rebalance close,
+the same measure momentum_quality divides by, so nothing is looked up
+after the fact.
+
+Variants, fixed now, all on `momentum_quality`, top 20, monthly, dev only:
+
+1. `--sizing inverse_vol --max-weight 0.10`
+2. `--sizing equal --cash-buffer 0.05`
+3. `--sizing inverse_vol --max-weight 0.10 --cash-buffer 0.05`
+
+Plus the equal-weight baseline rerun on the same code for comparison.
+Judged on dev Sharpe and worst drawdown against that baseline, and on
+the deflated Sharpe with every logged dev run counted. At most one of
+them, unchanged, gets the single validation look; if none beats the
+baseline on dev, none is validated and that is recorded here.
+Not run yet: this session cannot reach NSE to build the market store.

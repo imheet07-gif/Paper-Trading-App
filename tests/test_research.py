@@ -184,6 +184,39 @@ class Research(unittest.TestCase):
         years = len(res["nav"]) / 252
         self.assertAlmostEqual(res["nav"].iloc[-1], 1.06 ** years, places=3)  # all cash, at the cash yield
 
+    def test_target_weights_equal_inverse_vol_cap_and_buffer(self):
+        eq = backtest.target_weights(["A", "B", "C", "D"], {}, backtest.Config())
+        self.assertEqual(eq, {"A": 0.25, "B": 0.25, "C": 0.25, "D": 0.25})
+        vol = {"A": 0.10, "B": 0.20, "C": 0.40, "D": float("nan")}
+        iv = backtest.target_weights(["A", "B", "C", "D"], vol, backtest.Config(sizing="inverse_vol"))
+        # 1/0.1 : 1/0.2 : 1/0.4 : 1/median(0.2) = 10 : 5 : 2.5 : 5
+        self.assertAlmostEqual(iv["A"], 10 / 22.5)
+        self.assertAlmostEqual(iv["C"], 2.5 / 22.5)
+        self.assertAlmostEqual(iv["D"], iv["B"])
+        self.assertAlmostEqual(sum(iv.values()), 1.0)
+        capped = backtest.target_weights(["A", "B", "C", "D"], vol,
+                                         backtest.Config(sizing="inverse_vol", max_weight=0.3, cash_buffer=0.1))
+        self.assertAlmostEqual(capped["A"], 0.27)  # 30% of the 90% invested
+        self.assertAlmostEqual(sum(capped.values()), 0.9)
+        self.assertTrue(all(x <= 0.27 + 1e-12 for x in capped.values()))
+        all_capped = backtest.target_weights(["A", "B"], {}, backtest.Config(max_weight=0.2))
+        self.assertAlmostEqual(sum(all_capped.values()), 0.4)  # the rest stays in cash
+        with self.assertRaises(ValueError):
+            backtest.Config(sizing="kelly")
+        with self.assertRaises(ValueError):
+            backtest.Config(cash_buffer=1.0)
+
+    def test_cash_buffer_and_cap_leave_money_in_cash(self):
+        scores = signals.momentum_12_1(self.p)
+        start = self.days[310].isoformat()
+        full = backtest.run(self.p, scores, start, None, backtest.Config(top=2))
+        held = backtest.run(self.p, scores, start, None, backtest.Config(top=2, cash_buffer=0.5))
+        self.assertTrue(held["trades"])
+        first_full = sum(t[3] * t[4] for t in full["trades"] if t[2] == "buy" and t[0] == full["trades"][0][0])
+        first_held = sum(t[3] * t[4] for t in held["trades"] if t[2] == "buy" and t[0] == held["trades"][0][0])
+        self.assertAlmostEqual(first_held / first_full, 0.5, places=2)
+        self.assertEqual(backtest.Config(sizing="inverse_vol", max_weight=0.1).as_dict()["max_weight"], 0.1)
+
     def test_composite_is_weighted_average_of_ranks(self):
         eq = signals.composite(self.p, {"momentum_quality": 1, "low_volatility": 1})
         blend = signals.momentum_lowvol(self.p)
