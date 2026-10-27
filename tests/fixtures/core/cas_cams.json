@@ -1,0 +1,50 @@
+{
+ "_about": "casparser cas_cams output shape (model_dump by_alias, mode=json) with made-up values; built with casparser's own models",
+ "data": {
+  "statement_period": {
+   "from": "01-Apr-2026",
+   "to": "30-Sep-2026"
+  },
+  "folios": [
+   {
+    "folio": "9876543 / 21",
+    "amc": "PPFAS Mutual Fund",
+    "name": null,
+    "PAN": "AAAAA0000A",
+    "KYC": "OK",
+    "PANKYC": "OK",
+    "schemes": [
+     {
+      "scheme": "Parag Parikh Flexi Cap Fund - Direct Plan - Growth",
+      "advisor": null,
+      "rta_code": "PP001",
+      "rta": "CAMS",
+      "type": null,
+      "isin": "INF879O01027",
+      "amfi": "122639",
+      "nominees": [],
+      "open": "0",
+      "close": "50.5",
+      "close_calculated": "50.5",
+      "valuation": {
+       "date": "2026-09-30",
+       "nav": "89.3",
+       "cost": "4000",
+       "value": "4509.65"
+      },
+      "transactions": []
+     }
+    ]
+   }
+  ],
+  "investor_info": {
+   "name": "TEST INVESTOR",
+   "email": "test@example.com",
+   "address": "1 Test Road",
+   "mobile": "0000000000"
+  },
+  "cas_type": "DETAILED",
+  "file_type": "CAMS",
+  "parse_warnings": []
+ }
+}

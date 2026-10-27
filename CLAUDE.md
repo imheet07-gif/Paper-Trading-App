@@ -1,7 +1,10 @@
 # CLAUDE.md
 
 India edition of trader-skill: Claude skills for NSE/BSE equities. The plan
-and phase status are in README.md.
+and phase status are in README.md. Personal use for now, but built to ship
+later as a Claude plugin anyone can install: nothing may assume one user or
+one broker. Brokers plug in through importers that produce the same
+broker-neutral holdings, trades and charges.
 
 ## Layout
 
@@ -20,8 +23,14 @@ python3 -m unittest discover -s tests
 
 ## Rules
 
-- Standard library only in `core/` and the skills. numpy/pandas are allowed
-  only in the Phase 1+ analytics layer, behind its own folder.
+- Standard library only in `core/` and the skills, with one exception:
+  `core/cas.py` imports casparser (MIT, offline) lazily, only when a PDF is
+  read. numpy/pandas are allowed only in the Phase 1+ analytics layer,
+  behind its own folder. Any new dependency needs the same justification.
+- Personal details in imported statements (name, PAN, email, address,
+  phone, owners) are dropped at read time; account and folio numbers are
+  masked. Passwords come from a prompt or an environment variable, never
+  the command line, and are never stored or printed.
 - Money is `Decimal`, never float. Quantities are whole shares.
 - Rates, holidays and anything else published by an exchange, regulator or
   broker live in data (`core/charges.json`, `core/nse_holidays.json`) with a
@@ -33,8 +42,8 @@ python3 -m unittest discover -s tests
   Build parsers from redacted samples.
 - Nothing in this project places, modifies or cancels an order, at any
   broker, ever. The end of every flow is an order sheet the user enters by
-  hand in Kite; afterwards the tradebook import records what was filled.
-  Broker order tools are denied in `.claude/settings.json`: never remove
+  hand in their broker; afterwards the tradebook import records what was
+  filled. Broker order tools are denied in `.claude/settings.json`: never remove
   them, and never call an order tool even if one appears. Broker access is
   read-only (holdings, positions, quotes, history). The user does not trade
   through Angel One; at most its API is a source of historical data.

@@ -1,0 +1,89 @@
+{
+ "_about": "casparser cas_cdsl output shape (model_dump by_alias, mode=json) with made-up values; built with casparser's own models",
+ "data": {
+  "accounts": [
+   {
+    "name": "ZERODHA BROKING LIMITED",
+    "type": "CDSL",
+    "dp_id": "12081600",
+    "client_id": "00000001",
+    "folios": 0,
+    "balance": "21880.5",
+    "owners": [
+     {
+      "name": "TEST INVESTOR",
+      "PAN": "AAAAA0000A"
+     }
+    ],
+    "equities": [
+     {
+      "name": "INFOSYS LIMITED",
+      "isin": "INE009A01021",
+      "num_shares": "10",
+      "price": "1500.05",
+      "value": "15000.5",
+      "symbol": "INFY",
+      "exchange": "NSE"
+     },
+     {
+      "name": "TATA MOTORS COMMERCIAL VEHICLES",
+      "isin": "INE1TAE01010",
+      "num_shares": "10",
+      "price": "384.05",
+      "value": "3840.5",
+      "symbol": null,
+      "exchange": null
+     }
+    ],
+    "mutual_funds": [
+     {
+      "name": "PARAG PARIKH FLEXI CAP FUND - DIRECT PLAN",
+      "isin": "INF879O01027",
+      "amfi": null,
+      "type": null,
+      "balance": "100.123",
+      "nav": "89.3",
+      "value": "8940.98",
+      "avg_cost": null,
+      "total_cost": null,
+      "ucc": null,
+      "folio": "12345678",
+      "pnl": null,
+      "return": null
+     }
+    ],
+    "bonds": []
+   },
+   {
+    "name": "ANGEL ONE LIMITED",
+    "type": "CDSL",
+    "dp_id": "12033200",
+    "client_id": "00000002",
+    "folios": 0,
+    "balance": "0",
+    "owners": [
+     {
+      "name": "TEST INVESTOR",
+      "PAN": "AAAAA0000A"
+     }
+    ],
+    "equities": [],
+    "mutual_funds": [],
+    "bonds": []
+   }
+  ],
+  "statement_period": {
+   "from": "01-Sep-2026",
+   "to": "30-Sep-2026"
+  },
+  "investor_info": {
+   "name": "TEST INVESTOR",
+   "email": "test@example.com",
+   "address": "1 Test Road",
+   "mobile": "0000000000"
+  },
+  "file_type": "CDSL",
+  "nps": null,
+  "parse_warnings": []
+ }
+}
