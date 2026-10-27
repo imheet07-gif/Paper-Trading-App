@@ -23,16 +23,20 @@ import corporate_actions as ca  # noqa: E402
 
 SERIES = ("EQ", "BE", "BZ")
 FIELDS = ("open", "high", "low", "close", "volume", "value", "deliv")
+ISSUE_DAYS = 252  # trading days a failed corporate action check keeps a security out
 
 
 class Panel:
     """Frames indexed by trading date (DatetimeIndex), columns = security id."""
 
-    def __init__(self, frames, names, eq):
+    def __init__(self, frames, names, eq, data_issue=None):
         for k, v in frames.items():
             setattr(self, k, v)
         self.names = names  # id -> latest symbol
         self.eq = eq  # True where the security traded in the EQ series that day
+        # True where a corporate action failed its price check within the past year:
+        # the adjusted prices there cannot be trusted, so the security is not eligible
+        self.data_issue = data_issue if data_issue is not None else eq & False
         self.dates = self.close.index
 
     def returns(self):
@@ -99,20 +103,28 @@ def load(db_path=bhavcopy.DEFAULT_DB, start=None, end=None):
     frames["volume"] = wide["volume"] / m
     frames["value"] = wide["value"]
     frames["deliv"] = wide["deliv"]
+    issue = pd.DataFrame(False, index=dates, columns=ids)
+    for isin, ex in ca.failed_checks(db):
+        s = sid(isin)
+        if s in issue.columns:
+            lo = dates.searchsorted(pd.Timestamp(ex))
+            issue.iloc[lo:lo + ISSUE_DAYS, issue.columns.get_loc(s)] = True
     db.close()
-    return Panel(frames, names, eq)
+    return Panel(frames, names, eq, issue)
 
 
 def universe(p, min_price=20.0, min_value=2e7, value_days=60, min_history=250):
     """Boolean frame: eligible to buy at each date's close, using only data to that date.
 
     EQ series that day (trade-for-trade and surveillance series excluded),
+    no failed corporate action check in the past year,
     unadjusted close at least min_price, median traded value over
     value_days at least min_value rupees, and min_history days of prices.
     """
     med_value = p.value.rolling(value_days, min_periods=int(value_days * 0.8)).median()
     history = p.close.notna().cumsum()
-    return p.eq & (p.raw_close >= min_price) & (med_value >= min_value) & (history >= min_history)
+    return (p.eq & (p.raw_close >= min_price) & (med_value >= min_value) & (history >= min_history)
+            & ~p.data_issue)
 
 
 def month_ends(dates):

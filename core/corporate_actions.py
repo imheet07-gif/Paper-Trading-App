@@ -64,13 +64,20 @@ def parse_subject(subject):
     """Free-text subject -> {"kind", "ratio"?, "fv"?, "premium"?, "dividend"?}."""
     s = " ".join(subject.split())
     out = {"kind": "other"}
-    m = re.search(r"Bonus\s+" + NUM + r"\s*:\s*" + NUM, s, re.I)
-    if m:
-        return {"kind": "bonus", "ratio": (Decimal(m.group(1)), Decimal(m.group(2)))}
-    m = re.search(r"(?:Split|Sub-Division|Consolidation)[^F]*From\s*" + MONEY + r".*?To\s*" + MONEY, s, re.I)
-    if m:
-        kind = "consolidation" if re.search(r"Consolidation", s, re.I) else "split"
-        return {"kind": kind, "fv": (Decimal(m.group(1)), Decimal(m.group(2)))}
+    bonus = re.search(r"Bonus\s*" + NUM + r"\s*:\s*" + NUM, s, re.I)
+    # "Split From Rs.10/- To Re.1/-", "Split Rs.10/- To Rs.5/-", "From 10/- To Face Value 2/-"
+    split = re.search(r"(Split|Sub-Division|Consolidation)\D*?(?:From\s*)?(?:R[se]\.?\s*)?" + NUM +
+                      r".*?\bTo\s*(?:Face Value\s*)?(?:R[se]\.?\s*)?" + NUM, s, re.I)
+    if bonus or split:
+        p = {}
+        if bonus:
+            p["ratio"] = (Decimal(bonus.group(1)), Decimal(bonus.group(2)))
+        if split:
+            p["fv"] = (Decimal(split.group(2)), Decimal(split.group(3)))
+        consolidation = bool(split) and split.group(1).lower() == "consolidation"
+        p["kind"] = "+".join(k for k, on in (("bonus", bool(bonus)),
+                                              ("consolidation" if consolidation else "split", bool(split))) if on)
+        return p
     m = re.search(r"Rights\s+" + NUM + r"\s*:\s*" + NUM + r"\s*@\s*Premium\s*" + MONEY, s, re.I)
     if m:
         return {"kind": "rights", "ratio": (Decimal(m.group(1)), Decimal(m.group(2))), "premium": Decimal(m.group(3))}
@@ -86,12 +93,15 @@ def parse_subject(subject):
 def factor(parsed, prev_close=None, face_value=None):
     """(factor or None, method). prev_close and face_value in rupees, needed for rights."""
     k = parsed["kind"]
-    if k == "bonus":
-        a, b = parsed["ratio"]
-        return b / (a + b), "bonus"
-    if k in ("split", "consolidation"):
-        old, new = parsed["fv"]
-        return new / old, k
+    if "ratio" in parsed and k != "rights" or "fv" in parsed:
+        f = Decimal(1)
+        if "ratio" in parsed:  # bonus a:b
+            a, b = parsed["ratio"]
+            f *= b / (a + b)
+        if "fv" in parsed:  # face value from old to new
+            old, new = parsed["fv"]
+            f *= new / old
+        return f, k
     if k == "rights":
         if prev_close is None or face_value is None:
             return None, "rights: needs previous close and face value"
@@ -109,6 +119,26 @@ def connect(path=bhavcopy.DEFAULT_DB):
     db = bhavcopy.connect(path)
     db.executescript(SCHEMA)
     return db
+
+
+RAW_CACHE = os.path.join(bhavcopy.ROOT, "data", "corporate_actions_raw.json")
+
+
+def save_raw(rows, path=RAW_CACHE):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(rows, fh)
+
+
+def load_raw(path=RAW_CACHE):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def rebuild(db, rows):
+    """Re-parse every action from the raw rows: after a parser fix, no refetch needed."""
+    db.execute("DELETE FROM corporate_actions")
+    return store(db, rows)
 
 
 def fetch(start, end, get=bhavcopy.http_get, pause=1.0):
@@ -160,8 +190,10 @@ def chain(isin, link_map):
     return members
 
 
-def _members(db, isin):
-    return chain(isin, links(db)) if isin else []
+def _members(db, isin, link_map=None):
+    if not isin:
+        return []
+    return chain(isin, link_map if link_map is not None else links(db))
 
 
 def _in(members):
@@ -189,6 +221,7 @@ def resolve_isin(db, symbol, reported, ex_date):
 
 
 def store(db, rows):
+    """Parse and insert actions, then check every security-day's combined factor against prices."""
     n = 0
     link_map = links(db)
     for r in rows:
@@ -204,31 +237,70 @@ def store(db, rows):
         isin = members[-1] if members else None  # stored against the security's latest ISIN
         f, method, note = None, None, None
         before, on = (_price_before(db, members, ex), _price_on(db, members, ex)) if members else (None, None)
-        if p["kind"] in ("bonus", "split", "consolidation", "rights"):
+        if "ratio" in p or "fv" in p:
             fv = Decimal(r["faceVal"]) if (r.get("faceVal") or "").replace(".", "", 1).isdigit() else None
             f, method = factor(p, Decimal(before[1]) / 100 if before else None, fv)
         elif p["kind"] == "restructure" and before and on and on[0] == ex:
             f, method = Decimal(on[1]) / Decimal(before[1]), "price-implied"
-        if f is not None and f != 1 and before and on and on[0] == ex:
-            day = Decimal(on[1]) / Decimal(before[1]) / f - 1
-            if abs(day) > NORMAL_DAY and method != "price-implied":
-                note = "adjusted ex-date move %+.1f%%: factor may be wrong" % (day * 100)
-        elif f is not None and f != 1 and isin:
-            note = "no trade on the ex-date: factor not checked against prices"
         if isin is None:
             note = "symbol not found in prices"
         db.execute("INSERT OR REPLACE INTO corporate_actions VALUES (?,?,?,?,?,?,?,?,?,?,?)", (
             ex, r["symbol"], r.get("isin"), isin, r.get("series"), r["subject"], p["kind"],
             str(f) if f is not None else None, method, str(p["dividend"]) if p.get("dividend") else None, note))
         n += 1
+    verify(db, link_map)
     db.commit()
     return n
 
 
-def factors(db, isin, members=None):
+def verify(db, link_map):
+    """Check each security-day: the product of its factors against the actual move.
+
+    Several events on one day (a bonus and a split listed separately) are
+    checked together. A price-implied restructure factor is dropped when
+    the same day has a stated factor, so the move is not counted twice.
+    """
+    groups = {}
+    for rowid, ex, isin, f, method in db.execute(
+            "SELECT rowid, ex_date, isin, factor, method FROM corporate_actions "
+            "WHERE isin IS NOT NULL AND factor IS NOT NULL"):
+        groups.setdefault((isin, ex), []).append((rowid, Decimal(f), method))
+    for (isin, ex), items in groups.items():
+        stated = [x for x in items if x[2] != "price-implied"]
+        if stated and len(stated) < len(items):
+            for rowid, _, method in items:
+                if method == "price-implied":
+                    db.execute("UPDATE corporate_actions SET factor=NULL, check_note=? WHERE rowid=?",
+                               ("price-implied factor dropped: a stated factor exists for the same day", rowid))
+            items = stated
+        combined = Decimal(1)
+        for _, f, _ in items:
+            combined *= f
+        if combined == 1:
+            continue
+        members = chain(isin, link_map)
+        before, on = _price_before(db, members, ex), _price_on(db, members, ex)
+        note = None
+        if not (before and on and on[0] == ex):
+            note = "no trade on the ex-date: factor not checked against prices"
+        elif all(m != "price-implied" for _, _, m in items):
+            day = Decimal(on[1]) / Decimal(before[1]) / combined - 1
+            if abs(day) > NORMAL_DAY:
+                note = "adjusted ex-date move %+.1f%%: factor may be wrong" % (day * 100)
+        for rowid, _, _ in items:
+            db.execute("UPDATE corporate_actions SET check_note=? WHERE rowid=?", (note, rowid))
+
+
+def failed_checks(db):
+    """[(latest ISIN, ex_date)] whose stated factors did not match the prices."""
+    return db.execute("SELECT DISTINCT isin, ex_date FROM corporate_actions WHERE check_note LIKE 'adjusted%' "
+                      "AND isin IS NOT NULL").fetchall()
+
+
+def factors(db, isin, members=None, link_map=None):
     """{ex_date: Decimal factor} for one security (all its ISINs): splits,
     bonuses, rights and restructures."""
-    members = members or _members(db, isin)
+    members = members or _members(db, isin, link_map)
     out = {}
     for d, f in db.execute("SELECT ex_date, factor FROM corporate_actions WHERE isin IN (%s) AND factor IS NOT NULL"
                            % _in(members), tuple(members)):
@@ -237,11 +309,11 @@ def factors(db, isin, members=None):
     return out
 
 
-def adjusted(db, isin, series=("EQ", "BE", "BZ")):
+def adjusted(db, isin, series=("EQ", "BE", "BZ"), link_map=None):
     """[(date, close, adjusted close)] in rupees for the whole security (every
     ISIN in its chain), back-adjusted: the latest price is unchanged, each
     earlier price is multiplied by the factors of every ex-date after it."""
-    members = _members(db, isin)
+    members = _members(db, isin, link_map)
     q = "SELECT date, close FROM prices WHERE isin IN (%s) AND series IN (%s) ORDER BY date" % (
         _in(members), ",".join("?" * len(series)))
     rows = [(d, Decimal(c) / 100) for d, c in db.execute(q, tuple(members) + tuple(series)) if c is not None]
@@ -263,7 +335,7 @@ def unexplained_jumps(db, threshold=JUMP):
     latest = {i for (i,) in db.execute("SELECT DISTINCT isin FROM prices WHERE series IN ('EQ','BE','BZ')")} - set(link_map)
     for isin in sorted(latest):
         prev = None
-        for d, c, adj in adjusted(db, isin):
+        for d, c, adj in adjusted(db, isin, link_map=link_map):
             if prev and prev[1] and abs(adj / prev[1] - 1) > threshold and (isin, d) not in events:
                 out.append((isin, d, (adj / prev[1] - 1)))
             prev = (d, adj)
@@ -277,12 +349,18 @@ def main(argv=None):
     f = sub.add_parser("fetch")
     f.add_argument("--start", required=True)
     f.add_argument("--end", default=dt.date.today().isoformat())
+    sub.add_parser("rebuild", help="re-parse the cached raw actions (after a parser change)")
     sub.add_parser("check")
     a = ap.parse_args(argv)
     db = connect(a.db)
     if a.cmd == "fetch":
         rows = fetch(dt.date.fromisoformat(a.start), dt.date.fromisoformat(a.end))
-        print("stored %d price-relevant actions from %d rows" % (store(db, rows), len(rows)))
+        save_raw(rows)
+        print("stored %d price-relevant actions from %d rows" % (rebuild(db, rows), len(rows)))
+        return 0
+    if a.cmd == "rebuild":
+        rows = load_raw()
+        print("stored %d price-relevant actions from %d cached rows" % (rebuild(db, rows), len(rows)))
         return 0
     for row in db.execute("SELECT ex_date, symbol, kind, factor, method, check_note FROM corporate_actions "
                           "WHERE check_note IS NOT NULL ORDER BY ex_date"):

@@ -147,6 +147,15 @@ class CorporateActions(unittest.TestCase):
         self.assertEqual(p("Rights 5:41 @ Premium Rs 109/-")["premium"], Decimal(109))
         self.assertEqual(p("Interim Dividend - Rs 12 Per Share Special Dividend - Rs 6 Per Share")["dividend"], Decimal(18))
         self.assertEqual(p("Demerger")["kind"], "restructure")
+        # bonus and split in one subject: both apply (seen on NSE in several spellings)
+        for s, kind, f in (("Bonus 1:1 And Face Value Split From Rs.10/- To Re.1/-", "bonus+split", Decimal("0.05")),
+                           ("Bonus 1:2 And Face Value Split Rs.10/- To Rs.5/-", "bonus+split", Decimal(1) / 3),
+                           ("Bonus 1 : 1 / Face Value Split From 10/- To Face Value 2/-", "bonus+split", Decimal("0.1")),
+                           ("Consolidation Of Shares From Rs 1/- Per Share To Rs 10/- Per Share", "consolidation",
+                            Decimal(10))):
+            got = p(s)
+            self.assertEqual(got["kind"], kind, s)
+            self.assertAlmostEqual(ca.factor(got)[0], f, places=20)
         self.assertEqual(p("Annual General Meeting")["kind"], "other")
         self.assertEqual(p("Distribution - Rs 2 Per Unit Consisting Of Interest Rs 1.20 Per Unit")["kind"], "other")
 
@@ -224,6 +233,26 @@ class IsinChains(unittest.TestCase):
     def test_split_checked_across_the_isin_change(self):
         r = self.db.execute("SELECT isin, factor, check_note FROM corporate_actions").fetchone()
         self.assertEqual(r, ("INE000X01029", "0.2", None))  # stored on the latest ISIN, move checked: +1%
+
+    def test_two_events_on_one_day_are_checked_together(self):
+        # a 1:1 bonus and a 10 -> 1 split listed as separate rows: factor 0.05 in all
+        self.db.execute("DELETE FROM corporate_actions")
+        # Rs 1,010 before; Rs 50.50 after is exactly 1,010 x 0.05
+        self.db.execute("UPDATE prices SET close=5050, open=5050 WHERE date>='2025-01-03' AND date<'2026-01-01'")
+        ca.store(self.db, [
+            {"exDate": "03-Jan-2025", "symbol": "XYZ", "isin": "INE000X01011", "faceVal": "1", "series": "EQ",
+             "subject": "Bonus 1:1"},
+            {"exDate": "03-Jan-2025", "symbol": "XYZ", "isin": "INE000X01011", "faceVal": "1", "series": "EQ",
+             "subject": "Face Value Split (Sub-Division) - From Rs 10/- Per Share To Re 1/- Per Share"}])
+        notes = [n for (n,) in self.db.execute("SELECT check_note FROM corporate_actions")]
+        self.assertEqual(notes, [None, None])  # each alone would fail; together the move is 0%
+        self.assertEqual(ca.failed_checks(self.db), [])
+
+    def test_failed_check_is_listed(self):
+        self.db.execute("DELETE FROM corporate_actions")
+        ca.store(self.db, [{"exDate": "03-Jan-2025", "symbol": "XYZ", "isin": "INE000X01011", "faceVal": "5",
+                            "series": "EQ", "subject": "Bonus 1:1"}])  # real move was a 5x split
+        self.assertEqual(ca.failed_checks(self.db), [("INE000X01029", "2025-01-03")])
 
     def test_adjusted_history_is_continuous(self):
         s = ca.adjusted(self.db, "INE000X01011")
