@@ -95,23 +95,28 @@ table, `CLAUDE.md` layout list, `research/signals.py` (`SIGNALS`,
 
 ## Tasks
 
-Proposed split: the owner's agent keeps research, the scan and the app;
-the second agent takes new data sources and the Phase 2 skill ports, which
-live in their own files. Change the owner column freely.
+Split as of 2026-10-27: the second agent takes the build and research
+work; the owner's agent is kept for light upkeep (reviewing pull requests,
+the paper test, small fixes), because its budget is low. Change the owner
+column freely.
 
 | task | files | owner | status |
 | --- | --- | --- | --- |
+| Position sizing and risk control (per-stock cap, cash buffer, volatility sizing) for `momentum_quality`, tested on dev only; one validation look for the finished version, recorded in FINDINGS.md | `research/backtest.py`, `research/paper.py` | second agent | open |
+| SAST Regulation 29 promoter open-market buying as a signal (`sast` table, `promoter=1 AND mode='Open market' AND side='Acquisition'`, usable the session after `disclosed_at`), settings fixed before testing, dev test | `research/event_signals.py`, `research/signals.py` | second agent | open |
 | Shareholding patterns ingest: NSE `api/corporate-share-holdings-master` answers with `broadcastDate`, store promoter, FII, MF and public stakes and pledges per quarter, keyed on publication time | `core/shareholding.py`, tests, fixtures | second agent | open |
 | Results XBRL financials: find where NSE serves the XBRL for each results filing (the announcement has `hasXbrl` but only the PDF link), parse with the standard library | `core/financials.py`, tests, fixtures | second agent | open |
-| Screener.in export importer: the owner's own Excel exports, read locally, for manual review only (not point-in-time, never for backtests) | `core/screener_export.py` | second agent | waiting for a sample file from the owner |
 | Bulk and block deals, collected daily from `nsearchives.nseindia.com/content/equities/bulk.csv` and `block.csv` (no history available) | `core/deals.py`, a line in `research/scan.py` update | second agent | open |
 | Port `trader-news` and `trader-alerts` to India (NSE announcements, NSE calendar, read-only quotes) | `trader-news/`, `trader-alerts/` | second agent | done on branch `second-agent/skill-ports-2` (on top of the first ports); alerts read prices from the store or a file, no live quotes yet |
 | Port `trader-budget`, `trader-risk`, `trader-rebalance` and `trader-screener` to India (rupees, whole shares, an order sheet for manual entry, verified charges). Offline only: tick sizes, price bands and circuit limits, lot sizes and other NSE facts not yet in `core/` data are left out and listed in each SKILL.md | `trader-budget/`, `trader-risk/`, `trader-rebalance/`, `trader-screener/`, their tests | second agent | done on branch `second-agent/india-skill-ports`, PR into `phase0-foundations`; gaps listed below |
-| Position sizing and risk control (caps, cash buffer, volatility sizing) tested on dev | `research/` | owner's agent | open |
-| SAST Regulation 29 promoter open-market buying as a signal, dev test | `research/event_signals.py` | owner's agent | open |
-| Paper forward test from 2026-10-30, scan and app upkeep | `research/scan.py`, `research/paper.py`, `app/` | owner's agent | running |
+| Screener.in export importer: the owner's own Excel exports, read locally, for manual review only (not point-in-time, never for backtests) | `core/screener_export.py` | second agent | waiting for a sample file from the owner |
+| Paper forward test from 2026-10-30, small fixes, reviewing the second agent's pull requests | `research/scan.py`, `research/paper.py`, `app/` | owner's agent | running |
 | Mutual fund accumulation (AMC monthly portfolios; AMC sites are not on the cloud allow-list) | to be decided | unassigned | open |
-| Indian tax module (FIFO lots exist in `core/lots.py`; TMCV/TMPV and ITC Hotels cost splits from the companies' notices) | `core/tax.py`, `trader-tax/` | unassigned | parked |
+| Indian tax module (FIFO lots exist in `core/lots.py`; TMCV/TMPV and ITC Hotels cost splits from the companies' notices; the owner's Zerodha tax P&L exports are the check) | `core/tax.py`, `trader-tax/` | unassigned | parked |
+
+Suggested order for the second agent: position sizing, then the SAST
+signal, then shareholding, then XBRL financials. The first two use data
+already in the store.
 
 ## Gaps in the ported skills
 
