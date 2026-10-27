@@ -1,0 +1,38 @@
+{
+  "_about": "Rates for equity cash-market trades. Percent values are percent of turnover (qty x price). Every block says where it came from and whether it has been matched to a real contract note. Nothing here is verified until a contract note test passes: run charges.py against one and set verified to the date.",
+  "statutory": {
+    "_source": "Statutory, same at every broker. STT: Finance Act; stamp duty: Indian Stamp Act (2020 uniform rates); SEBI turnover fee: SEBI. Read 2026-10-27 from zerodha.com/charges via search results.",
+    "verified": false,
+    "stt_pct": {"delivery": {"buy": "0.1", "sell": "0.1"}, "intraday": {"buy": "0", "sell": "0.025"}},
+    "stamp_pct": {"delivery": {"buy": "0.015", "sell": "0"}, "intraday": {"buy": "0.003", "sell": "0"}},
+    "sebi_fee_per_crore": "10",
+    "gst_pct": "18"
+  },
+  "exchange_txn_pct": {
+    "_source": "Exchange transaction charges as passed through by Zerodha. Zerodha's pages showed 0.00297, 0.00307 and 0.00322 for NSE across versions on 2026-10-27, so this is the value to confirm first from a contract note.",
+    "verified": false,
+    "NSE": "0.00297",
+    "BSE": "0.00375"
+  },
+  "brokers": {
+    "zerodha": {
+      "_source": "zerodha.com/charges, read via search results 2026-10-27. DP charge from memory of the published rate (Rs 13 + GST per scrip per day): confirm on a contract note or DP statement.",
+      "verified": false,
+      "brokerage": {
+        "delivery": {"pct": "0", "cap": null, "floor": null},
+        "intraday": {"pct": "0.03", "cap": "20", "floor": null}
+      },
+      "dp_charge_incl_gst": "15.34",
+      "dp_charge_basis": "per_scrip_per_day"
+    },
+    "angelone": {
+      "_source": "angelone.in pricing update (effective 2025-11-17, page updated 2026-05-20): delivery brokerage lower of Rs 20 or 0.1%, minimum Rs 5. DP charge Rs 23.6 incl GST per delivery sell order (non-BSDA) from angelone.in support. Intraday not configured yet: confirm the rate before adding it.",
+      "verified": false,
+      "brokerage": {
+        "delivery": {"pct": "0.1", "cap": "20", "floor": "5"}
+      },
+      "dp_charge_incl_gst": "23.6",
+      "dp_charge_basis": "per_sell_order"
+    }
+  }
+}

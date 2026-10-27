@@ -1,0 +1,8 @@
+# Personal data never enters the repo: holdings, tradebooks, CAS, contract notes, keys.
+private/
+trader/
+data/
+*.local.json
+.env
+__pycache__/
+*.pyc

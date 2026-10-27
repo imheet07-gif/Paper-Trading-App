@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "india-trader",
+  "description": "Indian-market edition of the Trader skill pack",
+  "owner": {
+    "name": "imheet07-gif"
+  },
+  "plugins": [
+    {
+      "name": "india-trader",
+      "description": "Claude skills for Indian equities (NSE/BSE): portfolio analysis, sizing, risk checks, Indian tax lots and broker tickets for Zerodha and Angel One, built on trader-skill. Never places an order without your yes.",
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/imheet07-gif/paper-trading-app"
+    }
+  ]
+}
