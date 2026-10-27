@@ -85,7 +85,7 @@ class Cli(unittest.TestCase):
             self.assertEqual(code, 0, err)
             self.assertIn("! 06 Aug 19:42 IST  RPOWER", text)
             self.assertIn("read the PDF before acting", text)
-            self.assertNotIn("—", text)
+            self.assertNotIn(chr(0x2014), text)
             code, text, _ = run(["--symbols", "RPOWER", "GPIL", "--offline", ANN, "--now", NOW, "--days", "5",
                                  "--state", st])
             self.assertEqual(code, 1)
