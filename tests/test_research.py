@@ -217,6 +217,28 @@ class Research(unittest.TestCase):
         self.assertAlmostEqual(first_held / first_full, 0.5, places=2)
         self.assertEqual(backtest.Config(sizing="inverse_vol", max_weight=0.1).as_dict()["max_weight"], 0.1)
 
+    def test_evaluate_reports_a_signal_too_sparse_to_rank(self):
+        import io
+        import pandas as pd
+        from contextlib import redirect_stdout
+        logged = []
+        sparse = pd.DataFrame(float("nan"), index=self.p.dates, columns=self.p.close.columns)
+        sparse.iloc[300:, 0] = 1.0  # one stock scored: never 50, so no IC
+        signals.SIGNALS["_sparse"] = lambda p: sparse
+        real_log, real_load = backtest.log_run, panel.load
+        backtest.log_run = logged.append  # never write the real run log from a test
+        panel.load = lambda *a, **k: self.p
+        try:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = evaluate.main(["--period", "dev", "--signals", "_sparse", "--db", self.path])
+        finally:
+            backtest.log_run, panel.load = real_log, real_load
+            del signals.SIGNALS["_sparse"]
+        self.assertEqual(code, 0)
+        self.assertIn("n/a", out.getvalue())
+        self.assertIsNone(logged[0]["ic"])
+
     def test_composite_is_weighted_average_of_ranks(self):
         eq = signals.composite(self.p, {"momentum_quality": 1, "low_volatility": 1})
         blend = signals.momentum_lowvol(self.p)
