@@ -77,6 +77,12 @@ class Xbrl(unittest.TestCase):
         self.assertTrue(all(set(v) <= set(sh.KEEP) for v in f["categories"].values()))
         self.assertNotIn("Name", json.dumps(f))
 
+    def test_round_percents_are_plain_numbers(self):
+        cats = {"ShareholdingOfPromoterAndPromoterGroupMember": {"ShareholdingAsAPercentageOfTotalNumberOfShares": "0.5"},
+                "PublicShareholdingMember": {"ShareholdingAsAPercentageOfTotalNumberOfShares": "0.50"}}
+        d = sh.detail({"categories": cats, "flags": {}})
+        self.assertEqual((d["promoter"], d["public"]), ("50", "50"))  # never "5E+1"
+
     def test_missing_values_and_bad_files(self):
         d = sh.detail({"categories": {}, "flags": {}})
         self.assertIsNone(d["promoter"])

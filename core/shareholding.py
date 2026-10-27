@@ -193,7 +193,7 @@ def detail(facts):
     for member, name in CATEGORIES.items():
         v = cats.get(member, {}).get("ShareholdingAsAPercentageOfTotalNumberOfShares")
         try:
-            out[name] = str((Decimal(v) * HUNDRED).normalize()) if v not in (None, "") else None
+            out[name] = format((Decimal(v) * HUNDRED).normalize(), "f") if v not in (None, "") else None
         except Exception:
             out[name] = None
     total = cats.get("ShareholdingPatternMember", {}).get("NumberOfShares")
