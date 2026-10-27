@@ -51,7 +51,6 @@ from money import D, inr, inr_short  # noqa: E402
 STRATEGIES = os.path.join(HERE, "strategies.json")
 OUT_DIR = os.path.join(ROOT, "private", "scan")
 INSTRUMENTS = instruments_mod.DEFAULT_OUT
-PUBLISHED_BY = dt.time(19, 0)  # NSE end-of-day files are normally up by this time, IST
 NIFTY500_LIST = "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv"
 EQUITY_LIST = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 KITE_INSTRUMENTS = "https://api.kite.trade/instruments"
@@ -74,12 +73,7 @@ def load_strategy(name):
 
 def expected_session(now_ist):
     """The latest NSE session whose files should be published by now."""
-    d = now_ist.date()
-    if not (cal.is_trading_day(d) and now_ist.time() >= PUBLISHED_BY):
-        d -= dt.timedelta(days=1)
-        while not cal.is_trading_day(d):
-            d -= dt.timedelta(days=1)
-    return d
+    return cal.latest_published_session(now_ist)
 
 
 def last_stored(db):

@@ -23,6 +23,10 @@ broker-neutral holdings, trades and charges.
   the new version first. Never open the holdout without the user asking; every run is
   logged to `research/runs.jsonl`, which is committed so the count of
   variants tried survives.
+- `app/` the local app (`server.py`, standard library; `static/` page,
+  styles and charts in plain JavaScript, nothing loaded from outside). It
+  runs only `research/jobs.py` tasks with arguments checked against fixed
+  lists; never add a task that places orders or opens the holdout.
 - `dashboard/` the personal dashboard: `build.py` writes one self-contained
   HTML file (no external scripts, fonts or requests) to `private/`.
 - `docs/solutions/` documented solutions to past problems (bugs, best

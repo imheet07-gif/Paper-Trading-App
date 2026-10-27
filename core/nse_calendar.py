@@ -167,6 +167,21 @@ def next_open(when):
     return dt.datetime.combine(d, NORMAL[0], IST)
 
 
+PUBLISHED_BY = dt.time(19, 0)  # NSE end-of-day files are normally up by this time, IST
+
+
+def latest_published_session(when):
+    """The latest session whose end-of-day files should be published by `when`:
+    today after 7 pm IST on a trading day, otherwise the previous session."""
+    t = to_ist(when)
+    d = t.date()
+    if not (is_trading_day(d) and t.time() >= PUBLISHED_BY):
+        d -= dt.timedelta(days=1)
+        while not is_trading_day(d):
+            d -= dt.timedelta(days=1)
+    return d
+
+
 def settlement_date(trade_date):
     """T+1: the next trading day after the trade date."""
     return next_trading_day(trade_date)

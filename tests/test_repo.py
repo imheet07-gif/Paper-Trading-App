@@ -39,7 +39,7 @@ class Repo(unittest.TestCase):
         local = (".env", "private", "trader", "data", "__pycache__")  # git-ignored, may exist locally
         root = sorted(d for d in os.listdir(ROOT) if not d.startswith(".git") and d not in local)
         self.assertEqual(root, sorted([".claude", ".claude-plugin", "CLAUDE.md", "CONCEPTS.md", "LICENSE", "README.md",
-                                       "core", "dashboard", "docs", "research", "tests"] + SKILLS))
+                                       "app", "core", "dashboard", "docs", "research", "tests"] + SKILLS))
 
     def test_core_modules_present(self):
         for f in CORE:

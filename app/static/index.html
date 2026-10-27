@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="app-token" content="__TOKEN__">
+<title>India Trader</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">India Trader <span class="muted">paper trading only</span></div>
+  <nav id="tabs">
+    <button data-tab="today" class="on">Today</button>
+    <button data-tab="lab">Strategy lab</button>
+    <button data-tab="paper">Paper portfolio</button>
+    <button data-tab="runs">Runs log</button>
+    <a id="mydash" href="/files/dashboard.html" target="_blank" hidden>My portfolio</a>
+  </nav>
+  <button id="theme" type="button" class="ghost">Light / dark</button>
+</header>
+<main>
+  <section id="status" class="bar"></section>
+  <section id="job" class="card" hidden>
+    <div class="row"><h2 id="job-title">Task</h2><span id="job-state" class="pill"></span></div>
+    <pre id="job-log"></pre>
+  </section>
+
+  <div id="tab-today" class="tab"></div>
+  <div id="tab-lab" class="tab" hidden></div>
+  <div id="tab-paper" class="tab" hidden></div>
+  <div id="tab-runs" class="tab" hidden></div>
+</main>
+<footer>Not financial advice. Runs on this computer from public NSE data. Nothing here places an order; the
+order sheet is for entering by hand.</footer>
+<div id="tip" role="tooltip"></div>
+<script src="/app.js"></script>
+</body>
+</html>

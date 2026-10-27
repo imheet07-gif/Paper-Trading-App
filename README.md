@@ -18,6 +18,25 @@ a backtester with a fixed validation protocol. The eleven `trader-*`
 skills are still the US originals, documented in
 [docs/trader-skill-README.md](docs/trader-skill-README.md).
 
+## Start here: the app
+
+```bash
+python3 -m pip install numpy pandas
+python3 app/server.py        # then open http://127.0.0.1:8765
+```
+
+Everything has a button: **Update data** (the evening NSE download),
+**Run scan** (today's ranking, evidence cards, and on rebalance days the
+order sheet), the **Strategy lab** (test one signal or a scoring matrix of
+several with weights you fix in advance, on 2013-2020, with a growth
+chart against the market, drawdown, yearly returns, information
+coefficient and how many variations have been tried; save a tested idea
+as a candidate), the **Paper portfolio** (value against the Nifty 500,
+positions, fills) and the **Runs log** (every test ever run). It runs
+entirely on your computer, needs no Claude and no account, and cannot
+place an order. A validation look (2021-2023) asks for confirmation; the
+2024 onward holdout is not reachable from the app.
+
 ## What works today
 
 | tool | what it does |
@@ -32,6 +51,8 @@ skills are still the US originals, documented in
 | `core/bhavcopy.py` | NSE daily prices and delivery data for every listed security (delisted ones included, so backtests have no survivorship bias) into a local SQLite store, from 2012, both bhavcopy formats. Prices in integer paise, exactly as published. |
 | `core/corporate_actions.py` | NSE corporate actions turned into adjustment factors (bonus, split, consolidation, rights at theoretical ex-rights price, demergers from the price move) and checked against the actual ex-date move; unexplained jumps reported. |
 | `research/backtest.py` | Backtests a signal on the NSE history with the rules that keep it honest: delisted stocks included, next-day-open fills, no trading into locked circuits, real charges and slippage, a point-in-time universe, and fixed dev / validation / holdout periods with every run logged (deflated Sharpe). numpy and pandas. |
+| `app/server.py` | The local app above. Standard library only; listens on 127.0.0.1, checks the Host header, needs a startup token for any task, and runs only the fixed commands in `research/jobs.py`, one at a time. |
+| `research/jobs.py` | The tasks the app can run: update, scan, backtest (one signal or a fixed-weight composite, dev or validation), save a tested configuration as a candidate strategy. |
 | `research/scan.py` | The daily scan (v0.2, paper only). `update` fetches the latest NSE data (retrying files not published yet); `run` refuses stale data, ranks today's universe with a validated strategy, writes an evidence card per candidate (inputs behind the score, liquidity against the position, delivery, circuit hits, corporate actions, trade-for-trade days, red flags) and, on the last trading day of a month only, an order sheet. Writes `private/scan/DATE.html` and `-orders.csv`. Uses the backtest's own selection function, so it trades exactly what was validated. |
 | `research/paper.py` | Paper ledger in exact rupees (`trader/paper.json`): fills the order sheet at the next open the way a day limit order would, with the verified charges. |
 | `research/strategies.json` | The strategies the scan may run, with every parameter and the evidence behind them. |
