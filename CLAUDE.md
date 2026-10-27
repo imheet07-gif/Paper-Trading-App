@@ -21,6 +21,13 @@ broker-neutral holdings, trades and charges.
   variants tried survives.
 - `dashboard/` the personal dashboard: `build.py` writes one self-contained
   HTML file (no external scripts, fonts or requests) to `private/`.
+- `docs/solutions/` documented solutions to past problems (bugs, best
+  practices, workflow patterns), organized by category with YAML
+  frontmatter (`module`, `tags`, `problem_type`); relevant when
+  implementing or debugging in documented areas.
+- `CONCEPTS.md` shared domain vocabulary (securities, ISIN chains,
+  corporate actions and factors); relevant when orienting to the codebase
+  or discussing domain concepts.
 - `tests/` unittest, offline only. `tests/_load.py` loads a script by folder.
   Fixtures under `tests/fixtures/`, cut from real published files; each
   fixture folder's README names its sources and date.
