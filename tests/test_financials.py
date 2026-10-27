@@ -1,0 +1,102 @@
+import json
+import os
+import tempfile
+import unittest
+
+from _load import FIX, load
+
+fi = load("core", "financials")
+DIR = os.path.join(FIX, "financials")
+
+
+def xml(name):
+    with open(os.path.join(DIR, name), "rb") as fh:
+        return fh.read()
+
+
+class Parse(unittest.TestCase):
+    def test_older_format_with_undeclared_contexts(self):
+        p = fi.parse(xml("INDAS_TCS_2020-03_consolidated.xml"))
+        self.assertEqual((p["symbol"], p["isin"], p["nature"]), ("TCS", None, "Consolidated"))  # no ISIN filed then
+        self.assertEqual((p["period_start"], p["period_end"]), ("2020-01-01", "2020-03-31"))  # the quarter, not the year
+        self.assertEqual((p["revenue"], p["net_profit"], p["net_profit_owners"]),
+                         ("399460000000", "80930000000", "80490000000"))
+        self.assertEqual((p["pbt"], p["tax"], p["eps_basic"], p["eps_diluted"]),
+                         ("105120000000", "24190000000", "21.45", "21.45"))
+        self.assertEqual(p["rounding"], "Crores")
+        self.assertIsNone(p["interest_earned"])
+
+    def test_declared_contexts(self):
+        p = fi.parse(xml("INDAS_INFY_2022-06_standalone.xml"))
+        self.assertEqual((p["symbol"], p["nature"], p["period_start"], p["period_end"]),
+                         ("INFY", "Standalone", "2022-04-01", "2022-06-30"))
+        self.assertEqual((p["revenue"], p["other_income"], p["total_income"]),
+                         ("295270000000", "6480000000", "301750000000"))
+        self.assertEqual((p["net_profit"], p["eps_basic"], p["eps_diluted"]), ("49010000000", "11.65", "11.64"))
+        self.assertIsNone(p["net_profit_owners"])  # standalone: no owners line
+
+    def test_bank_format(self):
+        p = fi.parse(xml("BANKING_HDFCBANK_2020-06_consolidated.xml"))
+        self.assertEqual((p["symbol"], p["period_start"], p["period_end"]), ("HDFCBANK", None, "2020-06-30"))
+        self.assertIsNone(p["revenue"])  # banks report interest, not revenue from operations
+        self.assertEqual((p["interest_earned"], p["interest_expended"]), ("323516100000", "156084900000"))
+        self.assertEqual((p["operating_profit"], p["provisions"]), ("136840200000", "43445100000"))
+        self.assertEqual((p["pbt"], p["net_profit"], p["net_profit_owners"], p["eps_basic"]),
+                         ("93395100000", "69408800000", "69272400000", "12.6"))
+
+    def test_no_clear_quarter_is_an_error(self):
+        with self.assertRaises(ValueError):
+            fi.parse(b"<not xml")
+        blob = xml("INDAS_INFY_2022-06_standalone.xml").replace(b"2022-04-01</", b"2021-04-01</")
+        with self.assertRaisesRegex(ValueError, "no quarter"):
+            fi.parse(blob)  # a twelve-month period is not taken for a quarter
+
+
+class FetchAndStore(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.results = os.path.join(self.tmp.name, "results")
+        os.makedirs(self.results)
+        base = "https://nsearchives.nseindia.com/corporate/xbrl/"
+        rows = [{"seqNumber": "1", "symbol": "TCS", "isin": "INE467B01029", "broadCastDate": "16-Apr-2020 20:27:28",
+                 "xbrl": base + "INDAS_54905_240070_16042020082728_WEB.xml"},
+                {"seqNumber": "2", "symbol": "INFY", "isin": "INE000A01099", "broadCastDate": "24-Jul-2022 18:21:00",
+                 "xbrl": base + "INDAS_600774_2315_24072022182100_WEB.xml"},
+                {"seqNumber": "3", "symbol": "HDFCBANK", "isin": "INE040A01034", "broadCastDate": "19-Jul-2020 20:40:08",
+                 "xbrl": base + "BANKING_57945_291264_19072020084008_WEB.xml"},
+                {"seqNumber": "4", "symbol": "NOXBRL", "isin": "INE000X01010", "broadCastDate": "19-Jul-2020 20:40:08",
+                 "xbrl": "-"}]
+        with open(os.path.join(self.results, "2020-07.json"), "w") as fh:
+            json.dump(rows, fh)
+        self.files = {"INDAS_54905_240070_16042020082728_WEB.xml": xml("INDAS_TCS_2020-03_consolidated.xml"),
+                      "INDAS_600774_2315_24072022182100_WEB.xml": xml("INDAS_INFY_2022-06_standalone.xml"),
+                      "BANKING_57945_291264_19072020084008_WEB.xml": xml("BANKING_HDFCBANK_2020-06_consolidated.xml")}
+        self.calls = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def get(self, url):
+        self.calls.append(url)
+        return self.files.get(url.rsplit("/", 1)[-1])
+
+    def test_filter_fetch_cache_and_store(self):
+        rows = fi.filings(self.results)
+        self.assertEqual([r[1] for r in rows], ["TCS", "INFY", "HDFCBANK"])  # no link, no row
+        self.assertEqual([r[1] for r in fi.filings(self.results, since="2021-01-01")], ["INFY"])
+        self.assertEqual([r[1] for r in fi.filings(self.results, symbols=["tcs"])], ["TCS"])
+        raw = os.path.join(self.tmp.name, "raw")
+        self.assertEqual(fi.fetch(rows, get=self.get, raw=raw, pause=0, log=None), 3)
+        self.assertEqual(fi.fetch(rows, get=self.get, raw=raw, pause=0, log=None), 0)  # cached
+        db = fi.connect(os.path.join(self.tmp.name, "m.db"))
+        counts = fi.rebuild(db, rows, raw=raw, log=None)
+        self.assertEqual((counts["stored"], counts["isin_mismatch"]), (2, 1))  # INFY's feed row has the wrong ISIN
+        got = db.execute("SELECT symbol, isin, period_end, net_profit, eps_basic, broadcast_at FROM financials "
+                         "ORDER BY seq").fetchall()
+        self.assertEqual(got, [("TCS", "INE467B01029", "2020-03-31", "80930000000", "21.45", "2020-04-16T20:27:28"),
+                               ("HDFCBANK", "INE040A01034", "2020-06-30", "69408800000", "12.6", "2020-07-19T20:40:08")])
+        db.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

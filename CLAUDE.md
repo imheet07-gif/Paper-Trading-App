@@ -33,6 +33,12 @@ broker-neutral holdings, trades and charges.
   retail, total shares and NSE's yes/no promoter pledge answers; only
   category totals are read, never per-shareholder rows. Pledged
   quantities are not read yet (no sample with pledges seen).
+- `core/financials.py` quarterly results from the XBRL linked in NSE's
+  results feed (`financials` table: revenue, profit, EPS, and for banks
+  interest and provisions, for the quarter only, in rupees, keyed on the
+  feed's broadcast time; parsed files cached in `data/financials_raw/`).
+  The feed and its links stop in February 2025; where NSE serves the XBRL
+  for later results is still open.
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
