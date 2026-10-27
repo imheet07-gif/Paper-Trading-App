@@ -10,6 +10,7 @@ from _load import load, FIX
 
 rebalance = load("trader-rebalance", "rebalance")
 check = load("trader-risk", "check")
+inst = load("core", "instruments")
 
 D = os.path.join(FIX, "trader-rebalance")
 
@@ -123,6 +124,24 @@ class Drift(unittest.TestCase):
         self.assertGreaterEqual(res["cash_after"], res["cash_buffer"])
 
 
+class Isins(unittest.TestCase):
+    def reg(self):
+        with open(os.path.join(FIX, "core", "EQUITY_L.sample.csv"), encoding="utf-8-sig") as fh:
+            return inst.build(fh.read())
+
+    def test_lines_carry_the_registry_isin(self):
+        pf, px, w, cfg = setup(cash_add=20000)
+        res = rebalance.plan(pf, px, w, cfg, registry=self.reg())
+        self.assertEqual(res["orders"][0]["isin"], "INE002A01018")
+        self.assertEqual(len(res["isin_notes"]), 1)  # ITC is not in the sample list
+
+    def test_a_wrong_isin_in_the_portfolio_is_refused(self):
+        pf, px, w, cfg = setup()
+        pf["positions"][1]["isin"] = "INE002A01018"  # TCS with Reliance's ISIN
+        with self.assertRaisesRegex(rebalance.RebalanceError, "TCS is listed on NSE"):
+            rebalance.plan(pf, px, w, cfg, registry=self.reg())
+
+
 class Cli(unittest.TestCase):
     def test_write_and_exit_codes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -132,7 +151,7 @@ class Cli(unittest.TestCase):
             with open(pf, "w") as fh:
                 json.dump(doc, fh)
             out = os.path.join(d, "orders.json")
-            base = ["--prices", os.path.join(D, "prices.json"), "--targets", os.path.join(D, "targets.json"),
+            base = ["--instruments", "/nonexistent/instruments.json", "--prices", os.path.join(D, "prices.json"), "--targets", os.path.join(D, "targets.json"),
                     "--config", os.path.join(D, "config.json")]
             buf = io.StringIO()
             with redirect_stdout(buf):

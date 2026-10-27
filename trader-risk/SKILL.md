@@ -76,6 +76,11 @@ every run; the user must check them in their broker:
 - **Same-day use of sale proceeds.** Sells are counted as freeing cash for
   later buys in the same sheet; whether the broker lets that money be spent
   the same day (settlement is T+1) is the broker's rule.
+- **ISINs without a registry.** With `data/instruments.json` (built by
+  `core/instruments.py build` from NSE's own equity list), each line gets
+  its ISIN, a line whose ISIN disagrees with NSE's is blocked, and the
+  `blocked` list works by ISIN as well as symbol. Without it, the run warns
+  that ISINs were not checked.
 - **Orders already entered today.** The user enters orders by hand, so the
   sheet limit counts one sheet, not the day.
 

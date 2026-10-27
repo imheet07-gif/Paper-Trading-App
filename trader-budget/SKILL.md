@@ -116,8 +116,11 @@ The user must check them in their broker before entering an order:
 - **Price bands and circuit limits.** A stock locked at its upper or lower
   circuit may not fill at all, or the order may be rejected.
 - **F&O lot sizes.** Only cash-market delivery equity is sized.
-- **ISIN lookups.** A symbol is matched to an ISIN only if the targets carry
-  one; this skill has no instrument registry of its own.
+- **ISINs without a registry.** With `data/instruments.json` (built by
+  `core/instruments.py build` from NSE's own equity list), every symbol gets
+  its ISIN, a given ISIN that disagrees with NSE's is an error, and a symbol
+  NSE's list does not have is named. Without the registry, ISINs are only
+  carried through, and the report says they were not checked.
 - **Live prices.** It reads `trader/prices.json` and never fetches a quote.
 
 ## Rules

@@ -6,9 +6,10 @@ import unittest
 from contextlib import redirect_stdout, redirect_stderr
 from decimal import Decimal
 
-from _load import load, ROOT
+from _load import load, ROOT, FIX
 
 check = load("trader-risk", "check")
+inst = load("core", "instruments")
 size = load("trader-budget", "size")
 
 CFG_PATH = os.path.join(ROOT, "trader-budget", "config.example.json")
@@ -142,6 +143,28 @@ class Limits(unittest.TestCase):
             check.check([buy("TCS", 1)], cfg(broker="nobody"), prices=PRICES, today=TODAY)
 
 
+class Isins(unittest.TestCase):
+    def reg(self):
+        with open(os.path.join(FIX, "core", "EQUITY_L.sample.csv"), encoding="utf-8-sig") as fh:
+            return inst.build(fh.read())
+
+    def test_registry_fills_the_isin_and_blocks_by_it(self):
+        res = check.check([buy("TCS", 1)], cfg(blocked=["INE467B01029"]), prices=PRICES, today=TODAY, registry=self.reg())
+        self.assertEqual(res["results"][0]["isin"], "INE467B01029")
+        self.assertIn("blocked list", reasons(res, 0))
+
+    def test_a_wrong_isin_blocks_the_line(self):
+        res = check.check([buy("TCS", 1, isin="INE002A01018")], cfg(), prices=PRICES, today=TODAY, registry=self.reg())
+        self.assertIn("isin: TCS is listed on NSE with ISIN INE467B01029", reasons(res, 0))
+
+    def test_unknown_symbol_and_no_registry_are_said(self):
+        res = check.check([buy("ITC", 10)], cfg(), prices=PRICES, today=TODAY, registry=self.reg())
+        self.assertEqual(res["results"][0]["verdict"], "PASS")
+        self.assertIn("not in the instrument registry", " ".join(res["results"][0]["warnings"]))
+        res = check.check([buy("ITC", 10)], cfg(), prices=PRICES, today=TODAY)
+        self.assertIn("ISINs not checked", " ".join(res["warnings"]))
+
+
 class Account(unittest.TestCase):
     PF = {"cash": "5000", "positions": [{"symbol": "ITC", "qty": 40,
                                           "lots": [{"date": "2026-10-01", "qty": 40, "cost": "16000"}]}]}
@@ -188,7 +211,7 @@ class Cli(unittest.TestCase):
             out = os.path.join(d, "state", "risk.json")
             buf = io.StringIO()
             with redirect_stdout(buf):
-                code = check.main(["--orders", orders, "--config", CFG_PATH, "--portfolio", os.path.join(d, "none"),
+                code = check.main(["--instruments", "/nonexistent/instruments.json", "--orders", orders, "--config", CFG_PATH, "--portfolio", os.path.join(d, "none"),
                                    "--prices", prices, "--today", TODAY, "--out", out])
             self.assertEqual(code, 0)
             self.assertIn("5 passed, 0 blocked", buf.getvalue())
@@ -204,7 +227,7 @@ class Cli(unittest.TestCase):
             with open(orders, "w") as fh:
                 json.dump({"orders": example_orders() + [buy("RELIANCE", 1)]}, fh)
             with redirect_stdout(io.StringIO()):
-                code = check.main(["--orders", orders, "--config", CFG_PATH, "--portfolio", os.path.join(d, "none"),
+                code = check.main(["--instruments", "/nonexistent/instruments.json", "--orders", orders, "--config", CFG_PATH, "--portfolio", os.path.join(d, "none"),
                                    "--prices", prices, "--today", TODAY, "--no-write"])
             self.assertEqual(code, 1)
 

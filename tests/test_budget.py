@@ -6,9 +6,16 @@ import unittest
 from contextlib import redirect_stdout, redirect_stderr
 from decimal import Decimal
 
-from _load import load, ROOT
+from _load import load, ROOT, FIX
 
 size = load("trader-budget", "size")
+inst = load("core", "instruments")
+
+
+def registry():
+    """A registry built from the real NSE equity list sample (tests/fixtures/core)."""
+    with open(os.path.join(FIX, "core", "EQUITY_L.sample.csv"), encoding="utf-8-sig") as fh:
+        return inst.build(fh.read())
 
 CFG = os.path.join(ROOT, "trader-budget", "config.example.json")
 TARGETS = os.path.join(ROOT, "trader-budget", "targets.example.json")
@@ -148,6 +155,32 @@ class OrderSheet(unittest.TestCase):
         self.assertEqual(size.orders_from(r)[0]["isin"], "INE467B01029")
 
 
+class Isins(unittest.TestCase):
+    def test_registry_fills_isins_and_notes_what_it_does_not_know(self):
+        r = size.size(rows(), cfg(), prices=PRICES, registry=registry())
+        isins = {p["symbol"]: p["isin"] for p in r["positions"]}
+        self.assertEqual(isins["TCS"], "INE467B01029")
+        self.assertEqual(isins["RELIANCE"], "INE002A01018")
+        self.assertEqual(isins["ITC"], "")  # not in the sample list
+        self.assertEqual(len(r["isin_notes"]), 1)
+        self.assertIn("ITC is not in the instrument registry", r["isin_notes"][0])
+        self.assertEqual(size.orders_from(r)[0]["isin"], "INE002A01018")
+
+    def test_a_wrong_isin_is_refused(self):
+        w = size.parse_weights([{"symbol": "TCS", "isin": "INE002A01018", "weight": 1}])
+        with self.assertRaisesRegex(size.SizeError, "TCS is listed on NSE with ISIN INE467B01029"):
+            size.size(w, cfg(max_position_pct=100), prices=PRICES, registry=registry())
+
+    def test_blocking_by_isin_works_on_a_symbol(self):
+        r = size.size(rows(), cfg(blocked=["INE467B01029"]), prices=PRICES, registry=registry())
+        self.assertNotIn("TCS", shares(r))
+
+    def test_without_a_registry_it_says_so(self):
+        r = size.size(rows(), cfg(), prices=PRICES)
+        self.assertIsNone(r["registry"])
+        self.assertIn("ISINs not checked", size.report(r, size.orders_from(r)))
+
+
 class Cli(unittest.TestCase):
     def test_write_and_report(self):
         with tempfile.TemporaryDirectory() as d:
@@ -155,7 +188,7 @@ class Cli(unittest.TestCase):
             with open(prices, "w") as fh:
                 json.dump({"as_of": "2026-10-27", "prices": {k: str(v) for k, v in PRICES.items()}}, fh)
             out = os.path.join(d, "orders.json")
-            code, text, _ = run(["--targets", TARGETS, "--config", CFG, "--prices", prices, "--write", out])
+            code, text, _ = run(["--instruments", "/nonexistent/instruments.json", "--targets", TARGETS, "--config", CFG, "--prices", prices, "--write", out])
             self.assertEqual(code, 0)
             self.assertIn("₹1,00,000", text)
             self.assertIn("BUY 17 RELIANCE on NSE", text)
@@ -169,12 +202,12 @@ class Cli(unittest.TestCase):
             self.assertEqual(doc["prices_as_of"], "2026-10-27")
             self.assertEqual([o["qty"] for o in doc["orders"]], [17, 8, 20, 34, 6])
 
-            code, text, _ = run(["--weights", "TCS=1", "--config", CFG, "--prices", prices, "--json"])
+            code, text, _ = run(["--instruments", "/nonexistent/instruments.json", "--weights", "TCS=1", "--config", CFG, "--prices", prices, "--json"])
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(text)["orders"][0]["qty"], 8)
 
     def test_missing_prices_file(self):
-        code, _, err = run(["--weights", "TCS=1", "--config", CFG, "--prices", "/nonexistent.json"])
+        code, _, err = run(["--instruments", "/nonexistent/instruments.json", "--weights", "TCS=1", "--config", CFG, "--prices", "/nonexistent.json"])
         self.assertEqual(code, 1)
         self.assertIn("no prices", err)
 

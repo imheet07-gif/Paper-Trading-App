@@ -138,6 +138,44 @@ def find(registry, query):
     return [s for s in inst.values() if q in s["name"].upper()][:20]
 
 
+def load_registry(path=DEFAULT_OUT):
+    """The registry `build` wrote, or None when it has not been built."""
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def isin_of(registry, symbol):
+    """The ISIN listed on NSE under `symbol` in the registry, or None.
+
+    NSE's list has one row per symbol; should it ever carry two, the EQ series wins."""
+    sym = (symbol or "").strip().upper()
+    hits = [s for s in registry["instruments"].values() if s["nse_symbol"] == sym]
+    if not hits:
+        return None
+    hits.sort(key=lambda s: s["series"] != "EQ")
+    return hits[0]["isin"]
+
+
+def resolve(registry, symbol, isin=None):
+    """(isin, note): the ISIN for `symbol`, checked against `isin` when one is given.
+
+    Without a registry the given ISIN stands unchecked. A symbol the registry
+    does not know keeps the given ISIN, with a note saying so. A given ISIN
+    that differs from the registry's raises ValueError: one of them is wrong,
+    and guessing which is how a trade lands on the wrong stock."""
+    isin = (isin or "").strip().upper() or None
+    if registry is None:
+        return isin, None
+    listed = isin_of(registry, symbol)
+    if listed is None:
+        return isin, "%s is not in the instrument registry (built %s)" % (symbol, registry.get("built", "?"))
+    if isin and isin != listed:
+        raise ValueError("%s is listed on NSE with ISIN %s, not %s" % (symbol, listed, isin))
+    return listed, None
+
+
 def _read(path):
     if not path:
         return None

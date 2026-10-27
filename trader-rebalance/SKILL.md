@@ -99,6 +99,10 @@ from the publisher's own file. The user must check them in their broker:
   lets the user spend today's sale proceeds today is the broker's rule. If
   not, enter the sells today and the buys after they settle.
 - **Tax.** No capital gains figure; the tax module is parked.
+- **ISINs without a registry.** With `data/instruments.json` (built by
+  `core/instruments.py build` from NSE's own equity list), each line gets
+  its ISIN and a holding whose ISIN disagrees with NSE's is an error.
+  Without it, the report notes that ISINs were not checked.
 
 ## What it never does
 
