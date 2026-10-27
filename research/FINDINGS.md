@@ -101,7 +101,45 @@ pre-registered idea, not a tweak of these.
 Live data: NSE's structured insider feed stops in May 2026 and the results
 feed in February 2025, when SEBI's Integrated Filing took over; results now
 arrive as "Integrated Filing- Financial" announcements. A signal built on
-either would need a new live source before it could run in the scan.
+either would need a new live source before it could run in the scan (see
+the survey below).
+
+## 2026-10-27: where event data lives now (survey, no signal tested)
+
+Broker APIs (Kite Connect, Angel One SmartAPI) carry prices, instruments
+and the account only; filings come from the exchange. Checked against
+NSE's own endpoints, whole months fetched in weekly chunks (the monthly
+answer is not truncated: August 2026 is 21,026 rows either way).
+
+- **Results.** `corporate-announcements` is live to the previous day.
+  - August 2024 (old results feed complete): 1,011 of 1,473 results
+    filings also appeared there as "Financial Result Updates". They
+    appeared a median 72 minutes *before* the results feed's
+    `broadCastDate` (p10 267 minutes, p90 7). The results signal tested
+    above was therefore sometimes timed late. A delay that small cannot
+    explain an IC of 0.003.
+  - August 2026: that heading is gone. Results come as "Outcome of Board
+    Meeting" announcements with the standard text "has submitted to the
+    Exchange, the financial results for the period ended <date>" (1,607
+    rows, 1,574 companies; 1,426 companies in August 2024). The period can
+    be read from the text, and `an_dt` gives the second. "Integrated
+    Filing- Financial" carries only a few dozen a month.
+- **Insider trades (SEBI PIT).** `corporates-pit` answers but is empty
+  after 2 May 2026, even unfiltered. The announcements feed holds only
+  sporadic Regulation 7(2) filings (under "Structural Digital Database"),
+  not the roughly 1,100 a month of 2025. No live replacement found.
+- **Substantial holders (SAST Regulation 29).** `corporate-sast-reg29` is
+  live (686 rows in September 2026) with history from at least January
+  2016.
+  - Its rows are filed when a holder crosses 5% or moves 2% or more.
+  - It carries `promoterType`, `acquisitionMode` (open market,
+    inter-se transfer, preferential allotment), `acqSaleType`, the
+    percentages and a publication `timestamp`, and identifies stocks by
+    symbol only, with no ISIN.
+  - It records bigger, rarer moves than PIT, so a signal built on it
+    (for example open-market promoter acquisitions) is a new idea needing
+    its own dev test, not a feed for insider_buying.
+- Not reachable: BSE's API (403), the old `corporates-sast-reg29` spelling.
 
 ## Where this leaves us
 
