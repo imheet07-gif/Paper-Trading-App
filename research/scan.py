@@ -243,7 +243,7 @@ def run(name="momentum_quality_top20", capital=None, db_path=bhavcopy.DEFAULT_DB
         raise RuntimeError("panel ends %s, store ends %s" % (p.dates[i].date(), day))
     u = strat["universe"]
     elig = panel_mod.universe(p, u["min_price"], u["min_value"], u["value_days"], u["min_history"])
-    scores = signals_mod.SIGNALS[strat["signal"]](p)
+    scores = signals_mod.scores(p, strat)
     closes = {s: D(str(round(float(x), 2))) for s, x in p.close.iloc[i].dropna().items()}
 
     # paper ledger: fill what was ordered at the last rebalance, then value it
@@ -311,9 +311,64 @@ def pct(x):
     return "-" if x is None or (isinstance(x, float) and np.isnan(x)) else "%+.1f%%" % (x * 100)
 
 
+def methodology(res):
+    """How the ranking works, written from the strategy's own parameters."""
+    s = res["strat"]
+    u = s["universe"]
+    sig = signals_mod.describe(s)
+    if s.get("composite"):
+        how = ("Each stock gets a score from 0 to 1 per component: its percentile rank on that signal among all "
+               "stocks that day. The score is the weighted average: %s. Weights were fixed before testing." % sig)
+    else:
+        how = "%s (%s)." % (sig, signals_mod.DESCRIPTIONS.get(s["signal"], ""))
+    example = ""
+    c = res["cards"][0] if res["cards"] else None
+    if c and s.get("signal") == "momentum_quality":
+        example = ("Example: %s's 12-month return skipping the last month is %+.1f%% and its one-year volatility "
+                   "is %.0f%%, so its score is %.1f / %.0f = %.2f, which ranks it #%d." % (
+                       c["symbol"], c["ret_12_1"] * 100, c["vol"] * 100, c["ret_12_1"] * 100, c["vol"] * 100,
+                       c["score"], c["rank"]))
+    return {
+        "score": how,
+        "filters": [
+            "company shares only (ISIN starting INE): ETFs and fund units are excluded",
+            "traded in the EQ series that day (trade-for-trade and surveillance series excluded)",
+            "unadjusted close of at least Rs %.0f" % u["min_price"],
+            "median daily traded value over %d days of at least Rs %.0f crore" % (u["value_days"], u["min_value"] / 1e7),
+            "at least %d trading days of history" % u["min_history"],
+            "no failed corporate action check in the past year",
+        ],
+        "portfolio": "The top %d by score, equal weight, rebalanced on the last NSE trading day of each month; "
+                     "orders are day limit orders at the next open. Market timing: %s." % (
+                         s["top"], "none" if s.get("regime", "none") == "none" else s["regime"]),
+        "flags": "Red flags on each card are for your manual check. They do not change the score or the rank.",
+        "example": example,
+    }
+
+
+def _plain(o):
+    if isinstance(o, Decimal):
+        return str(o)
+    if isinstance(o, (np.floating, np.integer)):
+        return o.item()
+    raise TypeError(type(o))
+
+
 def write_outputs(res, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     base = os.path.join(out_dir, res["date"])
+    res["method"] = methodology(res)
+    led = res["ledger"]
+    summary = {k: res[k] for k in ("strategy", "date", "rebalance", "next_rebalance", "nav", "fills", "orders",
+                                   "cards", "held", "universe", "method")}
+    summary.update({"status": res["strat"]["status"], "description": res["strat"]["description"],
+                    "evidence": res["strat"]["evidence"], "values": led["values"], "cash": led["cash"],
+                    "capital": led["capital"], "started": led["started"], "positions": led["positions"],
+                    "unfilled": led["unfilled"][-20:], "all_fills": led["fills"][-200:]})
+    with open(base + ".json", "w", encoding="utf-8") as fh:
+        json.dump(summary, fh, default=_plain)
+    with open(os.path.join(out_dir, "latest.json"), "w", encoding="utf-8") as fh:
+        json.dump(summary, fh, default=_plain)
     if res["orders"]:
         with open(base + "-orders.csv", "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
@@ -394,12 +449,17 @@ def render(res):
                  "rebalance, not before.</p></section>" % (held, s["top"])) if held else ""
 
     ev = "".join("<tr><td>%s</td><td>%s</td></tr>" % (esc(k), esc(v)) for k, v in s["evidence"].items())
+    m = res.get("method") or methodology(res)
+    method_html = ("<section class='card'><h2>How this ranking works</h2><p><b>Score.</b> %s</p>"
+                   "<p><b>Who is eligible.</b></p><ul>%s</ul><p><b>Portfolio.</b> %s</p><p>%s</p>%s</section>") % (
+        esc(m["score"]), "".join("<li>%s</li>" % esc(f) for f in m["filters"]), esc(m["portfolio"]),
+        esc(m["flags"]), "<p class='muted'>%s</p>" % esc(m["example"]) if m["example"] else "")
     page = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Signal scan</title>
 <style>%(css)s</style></head><body><main>
 <header><div><h1>Signal scan, %(date)s</h1><div class="muted">%(desc)s Status: %(status)s.</div></div>
 <button id="theme" type="button">Light / dark</button></header>
-%(head)s%(orders)s%(fills)s%(held)s
+%(head)s%(orders)s%(fills)s%(held)s%(method)s
 <section class="card"><h2>Today's top %(top)d, with the evidence</h2><p class="muted">The ranking is recomputed
 every trading day; it only becomes orders on the rebalance day.</p></section>
 %(cards)s
@@ -410,7 +470,7 @@ Nothing here places an order.</footer>
 </main><div id="tip" role="tooltip"></div><script>%(js)s</script></body></html>
 """ % {"css": dash.CSS, "js": dash.JS, "date": esc(res["date"]), "desc": esc(s["description"]),
        "status": esc(s["status"]), "head": head, "orders": order_html, "fills": fills_html, "held": held_html,
-       "top": s["top"], "cards": "".join(cards), "ev": ev}
+       "top": s["top"], "cards": "".join(cards), "ev": ev, "method": method_html}
     return page
 
 

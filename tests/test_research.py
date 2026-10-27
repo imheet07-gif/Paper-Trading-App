@@ -184,6 +184,20 @@ class Research(unittest.TestCase):
         years = len(res["nav"]) / 252
         self.assertAlmostEqual(res["nav"].iloc[-1], 1.06 ** years, places=3)  # all cash, at the cash yield
 
+    def test_composite_is_weighted_average_of_ranks(self):
+        eq = signals.composite(self.p, {"momentum_quality": 1, "low_volatility": 1})
+        blend = signals.momentum_lowvol(self.p)
+        a, b = eq.iloc[400].dropna(), blend.iloc[400].dropna()
+        self.assertEqual(list(a.index), list(b.index))
+        self.assertTrue(((a - b).abs() < 1e-12).all())
+        only = signals.composite(self.p, {"momentum_12_1": 3})
+        self.assertTrue((only.iloc[400].dropna() == signals.momentum_12_1(self.p).rank(axis=1, pct=True).iloc[400].dropna()).all())
+        with self.assertRaises(ValueError):
+            signals.composite(self.p, {"momentum_12_1": -1})
+        with self.assertRaises(KeyError):
+            signals.composite(self.p, {"astrology": 1})
+        self.assertEqual(signals.describe({"composite": {"a": 1, "b": 3}}), "25% a + 75% b")
+
     def test_holdout_needs_the_flag(self):
         with open(os.devnull, "w") as null:
             old, sys.stderr = sys.stderr, null

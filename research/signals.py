@@ -66,3 +66,49 @@ SIGNALS = {
     "momentum_quality": momentum_quality,
     "momentum_lowvol": momentum_lowvol,
 }
+
+
+DESCRIPTIONS = {
+    "momentum_12_1": "Return over the past 12 months, skipping the most recent month",
+    "momentum_6_1": "Return over the past 6 months, skipping the most recent month",
+    "high_52w": "Close as a share of the 52-week high (1.0 = at the high)",
+    "low_volatility": "Calmer stocks first: minus the one-year volatility of daily returns",
+    "delivery_accumulation": "Delivery share over 20 days above its one-year normal, while the price rose",
+    "momentum_quality": "12-1 momentum divided by one-year volatility: steadier trends first",
+    "momentum_lowvol": "Average of the ranks of momentum_quality and low_volatility",
+}
+
+
+def composite(p, weights):
+    """A scoring matrix with weights fixed in advance: the weighted average of
+    each signal's cross-sectional percentile rank (0 to 1) on each date.
+
+    weights: {signal name: weight}. A stock needs every component to score.
+    Weights are chosen before testing and the whole composite is validated as
+    one strategy; tuning weights on results is exactly the overfitting the
+    protocol exists to stop.
+    """
+    if not weights or any(w < 0 for w in weights.values()) or sum(weights.values()) <= 0:
+        raise ValueError("weights must be non-negative and sum to more than zero")
+    total, acc = float(sum(weights.values())), None
+    for name, w in weights.items():
+        if name not in SIGNALS:
+            raise KeyError("unknown signal %r" % name)
+        r = SIGNALS[name](p).rank(axis=1, pct=True) * (w / total)
+        acc = r if acc is None else acc + r
+    return acc
+
+
+def scores(p, spec):
+    """Score frame for a strategy spec: {"signal": name} or {"composite": {name: weight}}."""
+    if spec.get("composite"):
+        return composite(p, spec["composite"])
+    return SIGNALS[spec["signal"]](p)
+
+
+def describe(spec):
+    if spec.get("composite"):
+        w = spec["composite"]
+        tot = sum(w.values())
+        return " + ".join("%.0f%% %s" % (v / tot * 100, k) for k, v in w.items())
+    return spec["signal"]
