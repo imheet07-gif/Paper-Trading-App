@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import io
 import json
 import os
@@ -9,144 +9,118 @@ from contextlib import redirect_stderr, redirect_stdout
 from _load import FIX, load
 
 news = load("trader-news", "news")
-DIR = os.path.join(FIX, "trader-news")
-NOW = "2026-10-14T00:00:00+00:00"
+# real NSE corporate-announcements rows, cut on 2026-10-27 (tests/fixtures/events/README.md)
+ANN = os.path.join(FIX, "events", "announcements_2024-2026.json")
+SYMS = ["BHARTIARTL", "RPOWER", "PARKHOSPS", "GPIL", "UNIVCABLES"]
+NOW = "2026-08-08T09:00"
 
 
-def raw(name):
-    with open(os.path.join(DIR, name), "rb") as fh:
-        return fh.read()
+def rows():
+    with open(ANN, encoding="utf-8") as fh:
+        return json.load(fh)
 
 
-def run(args):
+def run(args, get=None):
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
-        code = news.main(args)
+        code = news.main(args, get=get)
     return code, out.getvalue(), err.getvalue()
 
 
-class Feeds(unittest.TestCase):
-    def test_yahoo_rss(self):
-        items = news.parse_rss(raw("yahoo-AAPL.xml"), "AAPL")
-        self.assertEqual(len(items), 6)
-        first = items[0]
-        self.assertEqual(first["title"], "Apple may have a way to dominate the smart home space")
-        self.assertEqual(first["time"], datetime.datetime(2026, 10, 13, 19, 46, 52,
-                                                          tzinfo=datetime.timezone.utc))
-        self.assertTrue(first["link"].startswith("https://finance.yahoo.com/"))
-        self.assertTrue(first["id"].startswith("rss:"))
+class Parse(unittest.TestCase):
+    def test_nse_rows(self):
+        items = {it["symbol"]: it for it in news.parse(rows())}
+        self.assertEqual(sorted(items), sorted(SYMS))
+        r = items["RPOWER"]
+        self.assertEqual(r["time"], dt.datetime(2026, 8, 6, 19, 42, 43, tzinfo=news.IST))
+        self.assertEqual((r["id"], r["isin"], r["heading"]), ("nse:106729688", "INE614G01033", "Outcome of Board Meeting"))
+        self.assertTrue(r["link"].startswith("https://nsearchives.nseindia.com/corporate/"))
+        self.assertTrue(r["xbrl"])
+        self.assertFalse(items["BHARTIARTL"]["xbrl"])
 
-    def test_sec_atom_8k(self):
-        items = news.parse_sec_atom(raw("sec-8-K-0000320193.xml"), "AAPL")
-        self.assertEqual([i["form"] for i in items], ["8-K/A", "8-K", "8-K"])
-        earn = items[1]
-        self.assertEqual(earn["items"], ["2.02", "9.01"])
-        self.assertTrue(earn["important"])
-        self.assertEqual(earn["title"], "Apple Inc. filed a 8-K: earnings results")
-        self.assertEqual(earn["id"], "sec:0000320193-26-000018")
-        self.assertIn("000032019326000018", earn["link"])
-        # 16:30:28 New York time is 20:30:28 UTC
-        self.assertEqual(earn["time"].isoformat(), "2026-07-30T20:30:28+00:00")
-        self.assertEqual(items[0]["title"], "Apple Inc. filed a 8-K/A: director or officer change")
+    def test_kinds_use_heading_and_summary(self):
+        kinds = {it["symbol"]: it["kind"] for it in news.parse(rows())}
+        self.assertEqual(kinds, {"BHARTIARTL": "results",      # "Financial Result Updates"
+                                 "RPOWER": "results",          # board meeting outcome that carries results
+                                 "PARKHOSPS": "board meeting",  # board meeting outcome that does not
+                                 "GPIL": "results",            # "Integrated Filing- Financial"
+                                 "UNIVCABLES": "press release"})
+        self.assertEqual(news.kind_of("Resignation of Chief Financial Officer", ""), "people")
+        self.assertEqual(news.kind_of("Credit Rating", "ICRA reaffirmed"), "credit rating")
+        self.assertEqual(news.kind_of("Updates", "nothing in particular"), "other")
 
-    def test_times(self):
-        self.assertEqual(news.parse_time("Tue, 13 Oct 2026 20:02:03 +0000").hour, 20)
-        self.assertEqual(news.parse_time("2026-09-01T16:30:35-04:00").hour, 20)
-        self.assertIsNone(news.parse_time("soon"))
-
-    def test_yahoo_symbols(self):
-        self.assertEqual(news.yahoo_symbol("BRK.B"), "BRK-B")
+    def test_bad_rows_are_skipped(self):
+        self.assertEqual(news.parse([{"symbol": "X"}, {"seq_id": "1", "an_dt": "nonsense", "symbol": "X"}]), [])
+        self.assertEqual(len(news.parse({"data": rows()})), 5)
+        with self.assertRaises(news.NewsError):
+            news.parse("oops")
 
 
-class Tagging(unittest.TestCase):
-    def test_touches_and_tags(self):
-        items = news.parse_rss(raw("yahoo-KO.xml"), "KO")
-        watch = {"KO": "Coca-Cola", "CVX": "Chevron", "AAPL": "Apple"}
-        news.tag(items, watch)
-        by = {i["title"][:20]: i for i in items}
-        chevron = by["Coca-Cola or Chevron"]
-        self.assertEqual(chevron["touches"], ["CVX", "KO"])
-        self.assertIn("capital", chevron["tags"])  # dividend
-        self.assertEqual(by["Is Coca-Cola (KO) St"]["touches"], ["KO"])
+class Select(unittest.TestCase):
+    def test_window_watch_list_and_newest_first(self):
+        items = news.parse(rows())
+        now = dt.datetime(2026, 8, 8, 9, 0, tzinfo=news.IST)
+        got = news.select(items, ["RPOWER", "GPIL", "BHARTIARTL"], {}, now, days=3)
+        self.assertEqual([it["symbol"] for it in got], ["GPIL", "RPOWER"])  # 2024 item is outside the window
 
-    def test_earnings_filings_are_tagged(self):
-        items = news.tag(news.parse_sec_atom(raw("sec-8-K-0000021344.xml"), "KO"), {"KO": None})
-        self.assertEqual(items[0]["tags"][0], "earnings")
-        self.assertFalse(items[1]["important"])  # 8.01 other events
-
-    def test_dedupe_merges_the_same_story(self):
-        a = news.parse_rss(raw("yahoo-AAPL.xml"), "AAPL")
-        b = news.parse_rss(raw("yahoo-AAPL.xml"), "GOOGL")
-        items = news.dedupe(news.tag(a + b, {"AAPL": None, "GOOGL": None}))
-        self.assertEqual(len(items), 6)
-        self.assertEqual(items[0]["touches"], ["AAPL", "GOOGL"])
+    def test_seen_items_show_once(self):
+        items = news.parse(rows())
+        now = dt.datetime(2026, 8, 8, 9, 0, tzinfo=news.IST)
+        state = {}
+        first = news.select(items, SYMS, state, now, days=31)
+        news.remember(first, state, now)
+        self.assertEqual(news.select(items, SYMS, state, now, days=31), [])
+        self.assertEqual(len(news.select(items, SYMS, state, now, days=31, show_all=True)), 4)
+        later = now + dt.timedelta(days=news.KEEP_DAYS + 1)
+        news.remember([], state, later)
+        self.assertEqual(state["seen"], {})
 
 
-class Check(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.state = os.path.join(self.tmp.name, "state", "news.json")
-        self.base = ["--offline", DIR, "--state", self.state, "--now", NOW,
-                     "--portfolio", os.path.join(self.tmp.name, "none.json"),
-                     "--targets", os.path.join(self.tmp.name, "none.json")]
+class Cli(unittest.TestCase):
+    def test_offline_report_and_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            st = os.path.join(tmp, "state", "news.json")
+            code, text, err = run(["--symbols", "rpower", "gpil", "--offline", ANN, "--now", NOW, "--days", "5",
+                                   "--state", st])
+            self.assertEqual(code, 0, err)
+            self.assertIn("! 06 Aug 19:42 IST  RPOWER", text)
+            self.assertIn("read the PDF before acting", text)
+            self.assertNotIn("—", text)
+            code, text, _ = run(["--symbols", "RPOWER", "GPIL", "--offline", ANN, "--now", NOW, "--days", "5",
+                                 "--state", st])
+            self.assertEqual(code, 1)
+            self.assertIn("Nothing new from NSE", text)
 
-    def tearDown(self):
-        self.tmp.cleanup()
+    def test_one_date_range_request_to_the_known_endpoint(self):
+        urls = []
 
-    def test_new_items_once_newest_first(self):
-        code, out, err = run(["--tickers", "AAPL", "KO", "--hours", "24", "--json"] + self.base)
-        self.assertEqual(code, 0, err)
-        data = json.loads(out)
-        times = [i["time"] for i in data["items"]]
-        self.assertEqual(times, sorted(times, reverse=True))
-        self.assertEqual(len(data["items"]), 10)  # 6 Apple + 4 Coca-Cola headlines, filings are older
-        code, out, _ = run(["--tickers", "AAPL", "KO", "--hours", "24"] + self.base)
-        self.assertEqual(code, 1)
-        self.assertIn("Nothing new.", out)
+        def get(url):
+            urls.append(url)
+            return json.dumps(rows()).encode()
+        code, text, _ = run(["--symbols", "GPIL", "--now", NOW, "--days", "2", "--dry-run", "--json"], get=get)
+        self.assertEqual(code, 0)
+        self.assertEqual(urls, ["https://www.nseindia.com/api/corporate-announcements?index=equities"
+                                "&from_date=06-08-2026&to_date=08-08-2026"])
+        self.assertEqual(json.loads(text)["items"][0]["kind"], "results")
 
-    def test_filings_show_in_a_wider_window(self):
-        code, out, err = run(["--tickers", "AAPL", "--hours", "2400"] + self.base)
-        self.assertEqual(code, 0, err)
-        self.assertIn("! 2026-07-30 20:30 UTC  AAPL", out)
-        self.assertIn("earnings results", out)
-        self.assertIn("Not financial advice", out)
-        self.assertNotIn(chr(0x2014), out)
+    def test_symbols_from_the_portfolio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pf = os.path.join(tmp, "portfolio.json")
+            with open(pf, "w") as fh:
+                json.dump({"cash": "0", "positions": [{"symbol": "GPIL", "qty": 5}]}, fh)
+            code, text, _ = run(["--portfolio", pf, "--offline", ANN, "--now", NOW, "--dry-run", "--json"])
+            self.assertEqual(json.loads(text)["watch"], ["GPIL"])
 
-    def test_tickers_from_targets(self):
-        targets = os.path.join(self.tmp.name, "targets.json")
-        with open(targets, "w") as fh:
-            json.dump({"weights": [{"ticker": "KO", "name": "Coca-Cola", "weight": 100}]}, fh)
-        args = list(self.base)
-        args[args.index("--targets") + 1] = targets
-        code, out, err = run(["--json", "--dry-run", "--hours", "24"] + args)
-        self.assertEqual(code, 0, err)
-        tickers = {t for i in json.loads(out)["items"] for t in i["touches"]}
-        self.assertEqual(tickers, {"KO"})
-        self.assertFalse(os.path.exists(self.state))
-
-    def test_no_tickers_is_an_error(self):
-        code, _, err = run(self.base)
-        self.assertEqual(code, 2)
-        self.assertIn("no tickers", err)
-
-    def test_sec_needs_a_user_agent(self):
-        old = os.environ.pop("SEC_USER_AGENT", None)
-        try:
-            self.assertIsNone(news.sec_user_agent(None, "/nonexistent.json"))
-            self.assertIsNone(news.sec_user_agent("Your Name you@example.com"))
-            self.assertEqual(news.sec_user_agent("Ada ada@example.org"), "Ada ada@example.org")
-            with self.assertRaises(news.NewsError):
-                news.Fetcher(None).get("https://www.sec.gov/x", "x", sec=True)
-        finally:
-            if old is not None:
-                os.environ["SEC_USER_AGENT"] = old
-
-    def test_state_forgets_after_30_days(self):
-        state = {"seen": {"old": "2026-08-01T00:00:00+00:00"}}
-        now = news.parse_time(NOW)
-        news.remember([], state, now)
-        self.assertNotIn("old", state["seen"])
-        self.assertEqual(state["last_check"], now.isoformat())
+    def test_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            none = os.path.join(tmp, "none.json")
+            code, _, err = run(["--portfolio", none, "--targets", none, "--offline", ANN])
+            self.assertEqual(code, 2)
+            self.assertIn("which stocks", err)
+            code, _, err = run(["--symbols", "TCS", "--offline", none])
+            self.assertIn("no such file", err)
+            code, _, err = run(["--symbols", "TCS", "--days", "90", "--offline", ANN])
+            self.assertIn("between 1 and 31", err)
 
 
 if __name__ == "__main__":
