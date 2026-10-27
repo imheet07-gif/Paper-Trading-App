@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 import os
 import tempfile
 import unittest
@@ -96,6 +97,60 @@ class Xbrl(unittest.TestCase):
                 sh.xbrl_name(bad)
 
 
+class FetchSurvivesBadFiles(unittest.TestCase):
+    def test_a_bad_file_or_a_failed_download_is_skipped_and_retried(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = os.path.join(tmp, "raw")
+            db = sh.connect(os.path.join(tmp, "m.db"))
+            sh._save(sh.raw_path("latest", "2026-10-27", raw), rows("master_2026-09.json"))
+            sh.rebuild(db, raw=raw, log=None)
+
+            def get(url):
+                if "SHP_1746677" in url:
+                    raise OSError("connection reset")
+                return b"<html>error page</html"
+            logs = []
+            self.assertEqual(sh.fetch_xbrl(db, get=get, raw=raw, pause=0, log=logs.append), 0)
+            self.assertTrue(any("download failed" in l for l in logs))
+            self.assertTrue(any("unreadable" in l for l in logs))
+            self.assertFalse(os.path.isdir(os.path.join(raw, "xbrl")))  # nothing cached, so the next run retries
+            db.close()
+
+            def bad_history(url):
+                if "symbol=TCS" in url:
+                    raise OSError("timed out")
+                return b"[]"
+            self.assertEqual(sh.fetch_history(["TCS", "INFY"], get=bad_history, raw=raw, pause=0, log=None), 1)
+            self.assertFalse(os.path.exists(sh.raw_path("history", "TCS", raw)))
+
+
+class Holders(unittest.TestCase):
+    def test_tcs_promoters_and_named_public_holders(self):
+        hs = sh.xbrl_facts(xbrl("TCS"))["holders"]
+        by = {h["name"]: h for h in hs}
+        tata = by["Tata Sons Private Limited"]
+        self.assertEqual((tata["group"], tata["promoter"], tata["category"], tata["pct"]),
+                         ("OthersIndianShareholders", True, "Bodies Corporate", "0.7174"))
+        lic = by["LIC of India"]
+        self.assertEqual((lic["group"], lic["promoter"], lic["pct"]), ("InsuranceCompanies", False, "0.0565"))
+        promoter_pct = sum(Decimal(h["pct"]) for h in hs if h["promoter"])
+        self.assertEqual(promoter_pct * 100, Decimal("71.77"))  # the named promoters add up to the filed stake
+
+    def test_category_rows_and_beneficial_owners_are_not_holders(self):
+        for sym in ("TCS", "DONEAR"):
+            for h in sh.xbrl_facts(xbrl(sym))["holders"]:
+                self.assertTrue(h["name"])
+                self.assertNotIn("Beneficial", h["group"])
+        groups = {h["group"] for h in sh.xbrl_facts(xbrl("DONEAR"))["holders"]}
+        self.assertIn("ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakh", groups)
+
+    def test_holder_key_groups_spellings(self):
+        self.assertEqual(sh.holder_key("Mr. Rakesh R. Jhunjhunwala"), sh.holder_key("RAKESH R JHUNJHUNWALA"))
+        self.assertEqual(sh.holder_key("ABC Pvt. Ltd."), "ABC PRIVATE LIMITED")
+        self.assertEqual(sh.holder_key("A & B Co"), "A AND B COMPANY")
+        self.assertNotEqual(sh.holder_key("Rakesh Jhunjhunwala"), sh.holder_key("Rekha Jhunjhunwala"))
+
+
 class FetchAndStore(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -143,7 +198,22 @@ class FetchAndStore(unittest.TestCase):
         n = sh.fetch_xbrl(db, get=get_xbrl, raw=self.raw, since="2026-09-30", pause=0, log=None)
         self.assertEqual(n, 2)  # EPL and SPENCERS answer nothing here and are skipped
         self.assertEqual(sh.fetch_xbrl(db, get=get_xbrl, raw=self.raw, since="2026-09-30", pause=0, log=None), 0)
+        # a cache from before holders were kept is refetched once
+        path = sh.raw_path("xbrl", "SHP_1746677_27102026033452_WEB", self.raw)
+        with open(path) as fh:
+            old = json.load(fh)
+        old.pop("version"), old.pop("holders")
+        with open(path, "w") as fh:
+            json.dump(old, fh)
+        self.assertEqual(sh.fetch_xbrl(db, get=get_xbrl, raw=self.raw, since="2026-09-30", pause=0, log=None), 1)
         sh.rebuild(db, raw=self.raw, log=None)
+        tata = db.execute("SELECT holder_group, person, promoter, pct, shares, broadcast_at FROM shareholding_holders "
+                          "WHERE holder_key = 'TATA SONS PRIVATE LIMITED'").fetchone()
+        self.assertEqual(tata, ("OthersIndianShareholders", 0, 1, "71.74", 2595499419, "2026-10-19T18:37:52"))
+        people = db.execute("SELECT COUNT(*) FROM shareholding_holders WHERE person = 1").fetchone()[0]
+        self.assertGreater(people, 0)
+        zero = db.execute("SELECT COUNT(*) FROM shareholding_holders WHERE shares = 0").fetchone()[0]
+        self.assertEqual(zero, 0)  # members holding nothing are not stored
         got = db.execute("SELECT isin, promoter, fii, mutual_funds, total_shares, pledged FROM shareholding_detail "
                          "ORDER BY isin").fetchall()
         self.assertEqual(got, [("INE467B01029", "71.77", "9.01", "5.65", 3618087518, 0),

@@ -88,6 +88,12 @@ class FetchAndStore(unittest.TestCase):
         raw = os.path.join(self.tmp.name, "raw")
         self.assertEqual(fi.fetch(rows, get=self.get, raw=raw, pause=0, log=None), 3)
         self.assertEqual(fi.fetch(rows, get=self.get, raw=raw, pause=0, log=None), 0)  # cached
+
+        def broken(url):
+            raise OSError("connection reset")
+        other = os.path.join(self.tmp.name, "raw2")
+        self.assertEqual(fi.fetch(rows, get=broken, raw=other, pause=0, log=None), 0)  # survives, caches nothing
+        self.assertFalse(os.path.isdir(other))
         db = fi.connect(os.path.join(self.tmp.name, "m.db"))
         counts = fi.rebuild(db, rows, raw=raw, log=None)
         self.assertEqual((counts["stored"], counts["isin_mismatch"]), (2, 1))  # INFY's feed row has the wrong ISIN
