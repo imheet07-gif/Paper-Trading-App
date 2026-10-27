@@ -23,6 +23,16 @@ broker-neutral holdings, trades and charges.
   2025, then the announcements feed) and SAST Regulation 29 holdings
   changes. The app's update refreshes them. `research/event_signals.py`
   turns them into signals.
+- `core/shareholding.py` quarterly shareholding patterns from NSE into the
+  store (`shareholding` table: promoter, public and employee trust stakes
+  per quarter, keyed on broadcast time; raw answers cached in
+  `data/shareholding_raw/`). A revised filing replaces the original in
+  NSE's list: `submitted_on` keeps the original filing day, the numbers are
+  the revised ones. `shareholding_detail` adds, from each filing's XBRL,
+  FII (FPI I and II), domestic institutions, mutual funds, insurance,
+  retail, total shares and NSE's yes/no promoter pledge answers; only
+  category totals are read, never per-shareholder rows. Pledged
+  quantities are not read yet (no sample with pledges seen).
 - `core/financials.py` quarterly results from the XBRL linked in NSE's
   results feed (`financials` table: revenue, profit, EPS, and for banks
   interest and provisions, for the quarter only, in rupees, keyed on the
