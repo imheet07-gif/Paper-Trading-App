@@ -11,8 +11,9 @@ broker-neutral holdings, trades and charges.
 
 - `trader-*/` the eleven skills, each a `SKILL.md` plus one stdlib CLI.
   `trader-budget`, `trader-risk`, `trader-rebalance`, `trader-screener`,
-  `trader-alerts`, `trader-news` and `trader-broker` (a paper trader only:
-  no broker connection, no live mode) are ported to India (rupees, whole
+  `trader-alerts`, `trader-news`, `trader-broker` (a paper trader only:
+  no broker connection, no live mode) and `trader-copycat` (named holders
+  from shareholding filings, and bulk and block deals) are ported to India (rupees, whole
   shares, an order sheet for manual entry; gaps in HANDOVER.md). The rest
   are still the US originals until
   Phase 2 ports them; do not assume their data sources (SEC, NYSE, Alpaca,
@@ -32,8 +33,10 @@ broker-neutral holdings, trades and charges.
   NSE's list: `submitted_on` keeps the original filing day, the numbers are
   the revised ones. `shareholding_detail` adds, from each filing's XBRL,
   FII (FPI I and II), domestic institutions, mutual funds, insurance,
-  retail, total shares and NSE's yes/no promoter pledge answers; only
-  category totals are read, never per-shareholder rows. Pledged
+  retail, total shares and NSE's yes/no promoter pledge answers.
+  `shareholding_holders` keeps each filing's named
+  holders (promoters, public holders above 1%) for trader-copycat; names
+  include private individuals and stay in the local store only. Pledged
   quantities are not read yet (no sample with pledges seen).
 - `core/financials.py` quarterly results from the XBRL linked in NSE's
   results feed (`financials` table: revenue, profit, EPS, and for banks

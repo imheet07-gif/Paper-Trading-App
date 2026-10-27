@@ -16,12 +16,12 @@ second NSE disseminated it; `submissionDate`, the day the company filed;
 and a link to the full XBRL filing.
 
 The XBRL filing (nsearchives.nseindia.com/corporate/xbrl/SHP_...xml) has
-the full pattern. Only the category totals are read: facts whose context
-has the CategoryOfShareholdersAxis alone. Facts with a typed member are
-per-shareholder rows (names, with PANs masked by NSE); they are never read
-or stored. What is kept per filing, as category facts in a small JSON
+the full pattern. Two parts are read and kept, as a small JSON per filing
 under data/shareholding_raw/xbrl/ (the raw file is 0.2 to 1.5 MB and is
-not kept), then in the `shareholding_detail` table:
+not kept):
+
+1. The category totals: facts whose context has the
+CategoryOfShareholdersAxis alone, into the `shareholding_detail` table:
 
   promoter, public, fii (foreign institutions: FPI category I and II and
   others), fpi_cat1, fpi_cat2, dii (domestic institutions), mutual_funds,
@@ -31,6 +31,20 @@ not kept), then in the `shareholding_detail` table:
   pledged, ndu, other_encumbrance: NSE's yes/no answers on whether any
   promoter shares are encumbered that way. The pledged quantity is not read
   yet: no sample with pledges has been seen.
+
+2. The named holders, into the `shareholding_holders` table: every promoter
+and promoter group holder, and every public holder the filing names (the
+format names public holders of more than 1%). Each holder is a pair of
+contexts sharing one typed member: one carries the name, the other the
+numbers; the typed axis is the holder's group (mutual funds, insurance
+companies, resident individuals above Rs 2 lakh, ...). A row marked
+"Category" is a category total, not a holder, and is skipped; so are the
+significant beneficial owner rows. A holder who falls below 1% is no
+longer named: absence means "sold or below 1%", never just "sold".
+Names are as filed, plus a normalised key (case, punctuation, honorifics,
+Ltd/Limited) that groups spellings; NSE masks PANs, so names are the only
+link between filings. Names stay in the local store (data/ is never
+committed); test fixtures replace individuals' names.
 
 Point in time, and the one trap: a revised filing REPLACES the original in
 NSE's list, with the revision's broadcast time. The original submission day
@@ -73,6 +87,12 @@ CREATE TABLE IF NOT EXISTS shareholding (
   record_id TEXT PRIMARY KEY, symbol TEXT, isin TEXT, period_end TEXT, promoter_pct TEXT, public_pct TEXT,
   employee_trusts_pct TEXT, revised INTEGER, submitted_on TEXT, revised_on TEXT, broadcast_at TEXT, xbrl TEXT);
 CREATE INDEX IF NOT EXISTS shareholding_isin ON shareholding (isin, period_end);
+CREATE TABLE IF NOT EXISTS shareholding_holders (
+  record_id TEXT NOT NULL, isin TEXT, period_end TEXT, broadcast_at TEXT, holder TEXT NOT NULL, holder_key TEXT NOT NULL,
+  holder_group TEXT NOT NULL, person INTEGER, promoter INTEGER, category TEXT, pct TEXT, shares INTEGER,
+  PRIMARY KEY (record_id, holder_key, holder_group));
+CREATE INDEX IF NOT EXISTS shareholding_holders_key ON shareholding_holders (holder_key, period_end);
+CREATE INDEX IF NOT EXISTS shareholding_holders_isin ON shareholding_holders (isin, period_end);
 CREATE TABLE IF NOT EXISTS shareholding_detail (
   record_id TEXT PRIMARY KEY, isin TEXT, period_end TEXT, promoter TEXT, public TEXT, fii TEXT, fpi_cat1 TEXT,
   fpi_cat2 TEXT, dii TEXT, mutual_funds TEXT, insurance TEXT, retail_small TEXT, retail_large TEXT,
@@ -98,6 +118,15 @@ FLAGS = {
     "WhetherAnySharesHeldByPromotersAreEncumberedOtherThanByWayOfPledgeOrNDU": "other_encumbrance",
 }
 HUNDRED = Decimal(100)
+FACTS_VERSION = 2  # 2: holders added; an older cached JSON is refetched
+SKIP_AXES = ("SignificantBeneficialOwnersAxis",)
+# holder groups that are people rather than entities (for discovery's filter)
+PERSON_GROUPS = {"IndividualsOrHUF", "ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakh",
+                 "ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakh", "NonResidentIndians",
+                 "IndividualsOrHUFForeign", "ForeignNationals", "DirectorsAndDirectorsRelatives",
+                 "KeyManagerialPersonnel", "RelativesOfPromotersOtherThanPromoterGroup"}
+HONORIFICS = {"MR", "MRS", "MS", "MISS", "SHRI", "SHREE", "SMT", "KUM", "DR", "M/S"}
+ABBREV = {"LTD": "LIMITED", "PVT": "PRIVATE", "CO": "COMPANY", "CORP": "CORPORATION", "&": "AND"}
 # the facts kept per category: enough for the columns above and for later ones (holder counts)
 KEEP = ("ShareholdingAsAPercentageOfTotalNumberOfShares", "NumberOfShares", "NumberOfShareholders")
 
@@ -150,11 +179,52 @@ def _local(tag):
     return tag.rsplit("}", 1)[-1]
 
 
+def holder_key(name):
+    """A key that groups spellings of one name: 'Mr. Rakesh R. Jhunjhunwala' and
+    'RAKESH R JHUNJHUNWALA' share one; 'ABC Pvt. Ltd.' and 'ABC PRIVATE LIMITED' too."""
+    words = re.sub(r"[^A-Z0-9&/ ]", " ", (name or "").upper().replace(".", " ")).split()
+    words = [ABBREV.get(w, w) for w in words if w not in HONORIFICS]
+    return " ".join(words)
+
+
+def _group(axis):
+    """'DetailsOfSharesHeldByMutualFundsOrUTIAxis' -> 'MutualFundsOrUTI'."""
+    return re.sub(r"^Details(Of)?SharesHeldBy", "", axis[:-4] if axis.endswith("Axis") else axis)
+
+
+def holders_of(root):
+    """The named holders in a parsed filing: [{"name", "group", "promoter", "category", "pct", "shares"}],
+    pct as filed (a fraction, 0.0565 for 5.65%)."""
+    link = {}
+    for c in root:
+        if _local(c.tag) != "context":
+            continue
+        for m in c.iter():
+            if _local(m.tag) == "typedMember":
+                link[c.get("id")] = (m.get("dimension", "").split(":")[-1], "".join(x.text or "" for x in m))
+    rows = {}
+    for el in root:
+        ref = el.get("contextRef")
+        if ref in link:
+            rows.setdefault(link[ref], {})[_local(el.tag)] = (el.text or "").strip()
+    out = []
+    for (axis, _), f in rows.items():
+        if axis in SKIP_AXES:
+            continue
+        name = f.get("NameOfTheShareholder", "").strip()
+        if not name or f.get("WhetherACategoryOrMoreThan1PercentageOfShareholding", "").lower() == "category":
+            continue
+        category = next((v for k, v in f.items() if k.startswith("CategoryOf") and v), None)
+        out.append({"name": name, "group": _group(axis), "promoter": "TypeOfPromoterShareholding" in f,
+                    "category": category, "pct": f.get("ShareholdingAsAPercentageOfTotalNumberOfShares"),
+                    "shares": f.get("NumberOfShares")})
+    return out
+
+
 def xbrl_facts(blob):
-    """The category-level facts of a shareholding XBRL filing, as plain JSON:
-    {"symbol", "isin", "date", "flags": {name: "true"/"false"},
-     "categories": {member: {element: text}}}. Per-shareholder facts (typed
-    members) are skipped, so no names are kept."""
+    """The facts kept from a shareholding XBRL filing, as plain JSON:
+    {"version", "symbol", "isin", "date", "flags": {name: "true"/"false"},
+     "categories": {member: {element: text}}, "holders": [...]}."""
     try:
         root = ET.fromstring(blob)
     except ET.ParseError as e:
@@ -168,7 +238,8 @@ def xbrl_facts(blob):
         dims = [(m.get("dimension", "").split(":")[-1], (m.text or "").split(":")[-1])
                 for m in c.iter() if _local(m.tag) == "explicitMember"]
         ctx[c.get("id")] = dims
-    out = {"symbol": None, "isin": None, "date": None, "flags": {}, "categories": {}}
+    out = {"version": FACTS_VERSION, "symbol": None, "isin": None, "date": None, "flags": {}, "categories": {},
+           "holders": holders_of(root)}
     plain = {"Symbol": "symbol", "ISIN": "isin", "DateOfReport": "date"}
     for el in root:
         tag, ref = _local(el.tag), el.get("contextRef")
@@ -238,8 +309,13 @@ def fetch_history(symbols, get=bhavcopy.http_get, raw=RAW, refresh=False, pause=
         out = raw_path("history", sym, raw)
         if os.path.exists(out) and not refresh:
             continue
-        blob = get(API + "&symbol=" + sym.replace("&", "%26"))
-        rows = json.loads(blob) if blob else []
+        try:
+            blob = get(API + "&symbol=" + sym.replace("&", "%26"))
+            rows = json.loads(blob) if blob else []
+        except Exception as e:  # one failure must not end a run over every company; not cached, so retried
+            if log:
+                log("%s: history failed (%s); retried next run" % (sym, e))
+            continue
         rows = rows.get("data", []) if isinstance(rows, dict) else rows
         _save(out, rows)
         n += 1
@@ -275,14 +351,27 @@ def fetch_xbrl(db, get=bhavcopy.http_get, raw=RAW, since=None, symbols=None, pau
             continue
         out = raw_path("xbrl", xbrl_name(url), raw)
         if os.path.exists(out):
+            with open(out, encoding="utf-8") as fh:
+                if json.load(fh).get("version", 1) >= FACTS_VERSION:
+                    continue
+        try:
+            blob = get(url)
+        except Exception as e:  # one failed download must not end a run of thousands
+            if log:
+                log("%s %s: XBRL download failed (%s); retried next run" % (sym, period, e))
             continue
-        blob = get(url)
         if not blob:
             continue
-        _save(out, xbrl_facts(blob))
+        try:
+            facts = xbrl_facts(blob)
+        except ValueError as e:
+            if log:
+                log("%s %s: XBRL unreadable (%s); retried next run" % (sym, period, e))
+            continue
+        _save(out, facts)
         n += 1
         if log:
-            log("%s %s: XBRL read" % (sym, period))
+            log("%s %s: XBRL read, %d holders named" % (sym, period, len(facts["holders"])))
         if pause:
             time.sleep(pause)
     return n
@@ -307,7 +396,8 @@ def connect(path=bhavcopy.DEFAULT_DB):
 def rebuild(db, raw=RAW, log=print):
     """Re-parse every cached answer into the shareholding table. A record seen in
     both a latest list and a history keeps one row (same recordId)."""
-    db.executescript("DROP TABLE IF EXISTS shareholding; DROP TABLE IF EXISTS shareholding_detail;" + SCHEMA)
+    db.executescript("DROP TABLE IF EXISTS shareholding; DROP TABLE IF EXISTS shareholding_detail; "
+                     "DROP TABLE IF EXISTS shareholding_holders;" + SCHEMA)
     counts = {"rows": 0, "skipped": 0}
     for kind in ("history", "latest"):
         folder = os.path.join(raw, kind)
@@ -325,8 +415,8 @@ def rebuild(db, raw=RAW, log=print):
                            ":promoter_pct,:public_pct,:employee_trusts_pct,:revised,:submitted_on,:revised_on,"
                            ":broadcast_at,:xbrl)", x)
                 counts["rows"] += 1
-    for record_id, isin, period, url in db.execute(
-            "SELECT record_id, isin, period_end, xbrl FROM shareholding WHERE xbrl IS NOT NULL").fetchall():
+    for record_id, isin, period, at, url in db.execute(
+            "SELECT record_id, isin, period_end, broadcast_at, xbrl FROM shareholding WHERE xbrl IS NOT NULL").fetchall():
         path = raw_path("xbrl", xbrl_name(url), raw)
         if not os.path.exists(path):
             continue
@@ -341,9 +431,23 @@ def rebuild(db, raw=RAW, log=print):
                    ":fii,:fpi_cat1,:fpi_cat2,:dii,:mutual_funds,:insurance,:retail_small,:retail_large,"
                    ":employee_trusts,:total_shares,:pledged,:ndu,:other_encumbrance)", d)
         counts["detail"] = counts.get("detail", 0) + 1
+        for h in facts.get("holders", []):
+            key = holder_key(h["name"])
+            if not key or not h.get("shares") or h["shares"] in ("0", "0.0"):
+                continue  # promoter group members holding nothing are listed too; they are not holders
+            try:
+                pct = format((Decimal(h["pct"]) * HUNDRED).normalize(), "f") if h.get("pct") else None
+                shares = int(Decimal(h["shares"])) if h.get("shares") else None
+            except Exception:
+                pct, shares = None, None
+            db.execute("INSERT OR REPLACE INTO shareholding_holders VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                       (record_id, isin, period, at, h["name"], key, h["group"], int(h["group"] in PERSON_GROUPS),
+                        int(bool(h["promoter"])), h.get("category"), pct, shares))
+            counts["holders"] = counts.get("holders", 0) + 1
     db.commit()
     if log:
-        log("shareholding detail from XBRL: %d filings" % counts.get("detail", 0))
+        log("shareholding detail from XBRL: %d filings, %d named holders" % (counts.get("detail", 0),
+                                                                           counts.get("holders", 0)))
         n = db.execute("SELECT COUNT(*), COUNT(DISTINCT isin), SUM(revised) FROM shareholding").fetchone()
         log("shareholding: %d filings for %d companies (%d revised); %d rows skipped" % (n[0], n[1], n[2] or 0,
                                                                                          counts["skipped"]))

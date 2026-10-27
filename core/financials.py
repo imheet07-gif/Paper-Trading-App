@@ -205,7 +205,12 @@ def fetch(rows, get=bhavcopy.http_get, raw=RAW, pause=0.6, log=print):
         out = os.path.join(raw, xbrl_name(url) + ".json")
         if os.path.exists(out):
             continue
-        blob = get(url)
+        try:
+            blob = get(url)
+        except Exception as e:  # one failed download must not end a long run; not cached, so retried
+            if log:
+                log("%s %s: download failed (%s); retried next run" % (sym, at[:10], e))
+            continue
         if not blob:
             continue
         try:
