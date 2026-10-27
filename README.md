@@ -18,6 +18,7 @@ The India-specific work so far lives in `core/`.
 | `core/nse_calendar.py` | NSE clock in IST: pre-open, normal market, closing session, T+1 settlement dates. Holidays come from NSE's own holiday file (`update-holidays` refreshes them each December); a year without one is an error, never a guess. |
 | `core/money.py` | Rupee formatting with Indian grouping (1,23,45,678.90), lakh/crore shorthand, whole-share sizing, tick-size rounding. Decimal throughout. |
 | `core/charges.py` | Every charge on a cash-market trade (brokerage, STT, exchange fee, SEBI fee, stamp duty, GST, DP charge) at Zerodha. Rates live in `core/charges.json` with their source; output says UNVERIFIED until matched to a real contract note. |
+| `core/zerodha_console.py` | Reads Zerodha Console holdings and equity tradebook exports (.xlsx or .csv): stocks and mutual funds with Decimal quantities and prices, fills grouped into orders, and the expected charges for any day to check against its contract note. Flags zero-cost holdings (demergers), discrepant and pledged units. |
 | `core/instruments.py` | One record per stock keyed by ISIN, joining NSE's equity list with Kite instrument tokens, tick and lot sizes (Angel One's scrip list optional, for its free historical data). Mismatches between sources are reported. |
 
 ```bash
@@ -25,6 +26,8 @@ python3 core/nse_calendar.py clock
 python3 core/money.py 12345678.9
 python3 core/charges.py --broker zerodha --round-trip --qty 10 --price 2875.40
 python3 core/instruments.py build --nse EQUITY_L.csv --kite instruments.csv --angel OpenAPIScripMaster.json
+python3 core/zerodha_console.py holdings private/holdings.xlsx
+python3 core/zerodha_console.py charges private/tradebook-EQ.xlsx --date 2026-08-06
 python3 -m unittest discover -s tests
 ```
 
