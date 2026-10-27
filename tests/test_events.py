@@ -42,6 +42,37 @@ class Parsing(unittest.TestCase):
         r = ev.results_row(fixture("results_2024-01.json")[0])
         self.assertEqual((r["isin"], r["period_to"], r["broadcast_at"]), ("INE482J01021", "2023-12-31", "2024-01-31T21:25:51"))
 
+    def test_results_from_announcements_under_both_headings(self):
+        rows = fixture("announcements_2024-2026.json")
+        got = [ev.announcement_result(r) for r in rows]
+        self.assertEqual([g and (g["symbol"], g["period_to"], g["broadcast_at"]) for g in got],
+                         [("BHARTIARTL", "2024-06-30", "2024-08-05T16:58:46"),
+                          ("RPOWER", "2026-06-30", "2026-08-06T19:42:43"),
+                          None,  # a board meeting that was not results
+                          ("GPIL", "2026-06-30", "2026-08-07T17:35:20"),
+                          None])  # a press release
+        self.assertTrue(got[0]["seq"].startswith("A"))  # cannot collide with the results feed's numbers
+
+    def test_period_end_reads_the_formats_companies_use_and_only_quarter_ends(self):
+        self.assertEqual(ev.period_end("the financial results for the period ended June 30, 2024."), "2024-06-30")
+        self.assertEqual(ev.period_end("Results for the quarter ended 30th June 2026"), "2026-06-30")
+        self.assertEqual(ev.period_end("for the quarter ended 30.09.2026"), "2026-09-30")
+        self.assertEqual(ev.period_end("for the year ended 31st March, 2026"), "2026-03-31")
+        self.assertIsNone(ev.period_end("period ended June 29, 2024"))
+        self.assertIsNone(ev.period_end("Outcome of Board Meeting held on August 03, 2026"))
+
+    def test_sast_row(self):
+        r = [ev.sast_row(x) for x in fixture("sast_2026-09.json")]
+        self.assertEqual((r[0]["symbol"], r[0]["promoter"], r[0]["mode"], r[0]["side"], r[0]["pct_acquired"],
+                          r[0]["pct_after"], r[0]["shares_acquired"]),
+                         ("UMIYA-MRO", 1, "Open market", "Acquisition", "0.05", "38.84", 8500))
+        self.assertEqual((r[0]["trade_from"], r[0]["trade_to"], r[0]["disclosed_at"]),
+                         ("2026-09-24", "2026-09-24", "2026-09-30T18:05:00"))
+        self.assertEqual((r[1]["promoter"], r[1]["side"], r[1]["pct_sold"], r[1]["pct_acquired"]), (0, "Sale", "2.5", None))
+        self.assertEqual(r[2]["mode"], "Inter-se transfer")
+        self.assertEqual(ev.sast_row(dict(fixture("sast_2026-09.json")[0], acquisitionMode="Open market"))["mode"],
+                         "Open market")  # one spelling whatever the year
+
     def test_months(self):
         self.assertEqual(list(ev.months("2023-11", "2024-02")), ["2023-11", "2023-12", "2024-01", "2024-02"])
         self.assertEqual(ev.month_range("2024-02"), (dt.date(2024, 2, 1), dt.date(2024, 2, 29)))
@@ -95,6 +126,26 @@ class Store(unittest.TestCase):
         self.assertEqual(ev.isin_for(index, "ABC", "2019-07-03"), "INE0NEW")
         self.assertEqual(ev.isin_for(index, "ABC", "2012-05-01"), "INE0OLD")
         self.assertIsNone(ev.isin_for(index, "XYZ", "2020-01-01"))
+
+    def test_rebuild_merges_both_results_sources_at_the_earliest_release(self):
+        os.makedirs(os.path.join(self.raw, "announcements"))
+        os.makedirs(os.path.join(self.raw, "sast"))
+        shutil.copy(os.path.join(EVF, "announcements_2024-2026.json"), os.path.join(self.raw, "announcements", "2026-08.json"))
+        shutil.copy(os.path.join(EVF, "sast_2026-09.json"), os.path.join(self.raw, "sast", "2026-09.json"))
+        counts = ev.rebuild(self.db, self.raw, log=None)
+        self.assertEqual((counts["announcements"], counts["sast"]), (3, 3))
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM results").fetchone()[0], 6)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM sast WHERE promoter=1").fetchone()[0], 2)
+
+    def test_announcements_are_fetched_only_from_2025_and_cached_filtered(self):
+        def get(url):
+            return json.dumps(fixture("announcements_2024-2026.json")).encode()
+        n = ev.fetch("2024-11", "2025-01", get=get, pause=0, today=dt.date(2026, 10, 27), log=None,
+                     sources={"announcements": ev.SOURCES["announcements"]}, raw=self.raw)
+        self.assertEqual(n, 1)
+        with open(os.path.join(self.raw, "announcements", "2025-01.json"), encoding="utf-8") as fh:
+            kept = json.load(fh)
+        self.assertEqual(len(kept), 4)  # the press release is not cached
 
     def test_fetch_skips_cached_months_but_refreshes_recent_ones(self):
         calls = []

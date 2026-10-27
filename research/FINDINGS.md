@@ -141,6 +141,32 @@ answer is not truncated: August 2026 is 21,026 rows either way).
     its own dev test, not a feed for insider_buying.
 - Not reachable: BSE's API (403). Guessed endpoint names (`corporates-sast-reg29`, `corporate-sast-reg31`, `corporates-pledgedata`) returned nothing.
 
+## 2026-10-27: event data brought up to date
+
+`core/events.py` now also stores results from the announcements feed
+(January 2025 on) and SAST Regulation 29 filings (all years), and the app's
+update refreshes every event source.
+
+- **Results**, companies with a stamped release per quarter:
+  1,996 to 2,132 for the five quarters to December 2024 (results feed);
+  2,099 to 2,252 for each quarter from June 2025 to June 2026
+  (announcements). September 2026 is filling now (356 so far).
+  - **Gap:** the March 2025 quarter has 1,354. That season (April to May
+    2025) was announced as plain "Outcome of Board Meeting held on ..."
+    without the standard results wording or an XBRL flag (TCS, Infosys,
+    HDFC Bank, Reliance). 534 other board outcomes that month were not
+    results, so the heading alone cannot be trusted. Left as a known gap
+    rather than guessed.
+  - Where both sources cover a release (January to February 2025, 4,515
+    pairs), the announcement came first, a median 177 minutes before the
+    results feed's stamp. The earliest is kept.
+- **SAST Regulation 29**: 52,151 filings from 2015. NSE spells the mode
+  as both "Open market" and "Open Market" (2022 is almost all lower
+  case); the store normalises it. Promoter open-market acquisitions per
+  year: 527 (2015), 673, 640, 1,459, 1,917, 1,908, 1,158, 1,347, 984,
+  546 (2024), 1,446 (2025), 1,465 (2026 to date).
+- **Insider trades** stay at 2 May 2026; no live source.
+
 ## Where this leaves us
 
 - Validated: the momentum_quality ranking. Candidate core for the scan.

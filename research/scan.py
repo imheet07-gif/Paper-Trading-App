@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.join(ROOT, "dashboard"))
 import backtest  # noqa: E402
 import bhavcopy  # noqa: E402
 import corporate_actions as ca  # noqa: E402
+import events as events_mod  # noqa: E402
 import instruments as instruments_mod  # noqa: E402
 import nse_calendar as cal  # noqa: E402
 import panel as panel_mod  # noqa: E402
@@ -150,6 +151,12 @@ def update(db_path=bhavcopy.DEFAULT_DB, today=None, log=print):
         with open(SECTORS, "wb") as fh:
             fh.write(sec)
     db.close()
+    # company events: this month and last are refetched, older months stay cached
+    last_month = (today.replace(day=1) - dt.timedelta(days=1)).strftime("%Y-%m")
+    events_mod.fetch(last_month, today.strftime("%Y-%m"), today=today, log=log)
+    edb = events_mod.connect(db_path)
+    events_mod.rebuild(edb, log=log)
+    edb.close()
 
 
 # ---------------------------------------------------------------- evidence

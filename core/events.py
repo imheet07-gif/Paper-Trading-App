@@ -12,7 +12,21 @@ Sources (www.nseindia.com/api, fetched month by month):
                                  the time NSE published the disclosure
                                  (full history from 2016; sparse before)
   corporates-financial-results   results filings with `broadCastDate`, the
-                                 second they were disseminated (from 2013)
+                                 second they were disseminated (2013 to
+                                 February 2025, when Integrated Filing
+                                 replaced it)
+  corporate-announcements        results from 2025 on: "Outcome of Board
+                                 Meeting" and the older "Financial Result
+                                 Updates" headings, text "has submitted to
+                                 the Exchange, the financial results for the
+                                 period ended <date>", stamped `an_dt`;
+                                 only those headings are cached
+  corporate-sast-reg29           Takeover Regulation 29 disclosures: a
+                                 holder crossing 5% or moving 2%, with a
+                                 promoter flag and the mode (from 2013)
+
+The insider feed is empty after 2 May 2026 and has no live replacement
+(research/FINDINGS.md).
 
 Point in time is the whole point: insider buys are disclosed a median of
 two days after the trade and one in ten takes four or more, so every
@@ -29,6 +43,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import sys
 import time
 
@@ -41,7 +56,12 @@ RAW = os.path.join(bhavcopy.ROOT, "data", "events_raw")
 SOURCES = {
     "insider": "corporates-pit?index=equities&from_date=%s&to_date=%s",
     "results": "corporates-financial-results?index=equities&from_date=%s&to_date=%s&period=Quarterly",
+    "announcements": "corporate-announcements?index=equities&from_date=%s&to_date=%s",
+    "sast": "corporate-sast-reg29?index=equities&from_date=%s&to_date=%s",
 }
+FIRST = {"announcements": "2025-01"}  # 15 MB a month; the results feed covers the years before
+RESULT_HEADINGS = ("Outcome of Board Meeting", "Financial Result Updates", "Integrated Filing- Financial")
+KEEP = {"announcements": lambda r: r.get("desc") in RESULT_HEADINGS}
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS insider (
   did TEXT PRIMARY KEY, pid TEXT, symbol TEXT, isin TEXT, person TEXT, category TEXT, mode TEXT, txn TEXT,
@@ -51,6 +71,11 @@ CREATE TABLE IF NOT EXISTS results (
   seq TEXT PRIMARY KEY, symbol TEXT, isin TEXT, period_from TEXT, period_to TEXT, relating_to TEXT,
   consolidated TEXT, audited TEXT, broadcast_at TEXT);
 CREATE INDEX IF NOT EXISTS results_isin ON results (isin, broadcast_at);
+CREATE TABLE IF NOT EXISTS sast (
+  app_no TEXT PRIMARY KEY, symbol TEXT, isin TEXT, holder TEXT, promoter INTEGER, mode TEXT, side TEXT, reg TEXT,
+  shares_acquired INTEGER, shares_sold INTEGER, shares_after INTEGER, pct_acquired TEXT, pct_sold TEXT,
+  pct_after TEXT, trade_from TEXT, trade_to TEXT, disclosed_at TEXT);
+CREATE INDEX IF NOT EXISTS sast_isin ON sast (isin, disclosed_at);
 """
 
 
@@ -109,7 +134,7 @@ def fetch(start, end, get=bhavcopy.http_get, pause=0.6, today=None, log=print, s
     fresh = {today.strftime("%Y-%m"), (today.replace(day=1) - dt.timedelta(days=1)).strftime("%Y-%m")}
     n = 0
     for source, path in sources.items():
-        for ym in months(start, end):
+        for ym in months(max(start, FIRST.get(source, start)), end):
             out = raw_path(source, ym, raw)
             if os.path.exists(out) and ym not in fresh:
                 continue
@@ -119,6 +144,8 @@ def fetch(start, end, get=bhavcopy.http_get, pause=0.6, today=None, log=print, s
                 continue
             data = json.loads(blob)
             rows = data.get("data", []) if isinstance(data, dict) else data
+            if source in KEEP:
+                rows = [r for r in rows if KEEP[source](r)]
             os.makedirs(os.path.dirname(out), exist_ok=True)
             with open(out, "w", encoding="utf-8") as fh:
                 json.dump(rows, fh)
@@ -178,21 +205,85 @@ def results_row(r):
             "broadcast_at": at}
 
 
+PERIOD_ENDED = re.compile(
+    r"(?:period|quarter|half[- ]year|year|months?)\s+ended\s+(?:on\s+)?"
+    r"([A-Za-z]{3,9}\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9},?\s+\d{4}"
+    r"|\d{1,2}[./-]\d{1,2}[./-]\d{4})", re.I)
+
+
+def period_end(text):
+    """'... financial results for the period ended June 30, 2026' -> '2026-06-30'.
+    Only a quarter end counts; anything else is None."""
+    m = PERIOD_ENDED.search(text or "")
+    if not m:
+        return None
+    t = re.sub(r"(\d)(st|nd|rd|th)", r"\1", m.group(1))
+    t = " ".join(re.sub(r"[,./-]", " ", t).split())  # 'June 30 2026', '30 June 2026', '30 09 2026'
+    for fmt in ("%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y", "%d %m %Y"):
+        try:
+            d = dt.datetime.strptime(t, fmt).date()
+            break
+        except ValueError:
+            continue
+    else:
+        return None
+    nxt = d + dt.timedelta(days=1)
+    return d.isoformat() if d.month in (3, 6, 9, 12) and nxt.day == 1 else None
+
+
+def announcement_result(r):
+    """A results release from the announcements feed, or None for any other announcement."""
+    text = r.get("attchmntText") or ""
+    if r.get("desc") not in RESULT_HEADINGS or "financial result" not in text.lower():
+        return None
+    at, end = stamp(r.get("an_dt")), period_end(text)
+    if not at or not end or not r.get("seq_id"):
+        return None
+    return {"seq": "A" + str(r["seq_id"]), "symbol": (r.get("symbol") or "").strip(),
+            "isin": (r.get("sm_isin") or "").strip(), "period_from": None, "period_to": end,
+            "relating_to": r.get("desc"), "consolidated": None, "audited": None, "broadcast_at": at}
+
+
+def _pct(text):
+    t = (text or "").strip()
+    try:
+        return str(D(t))
+    except Exception:
+        return None
+
+
+def sast_row(r):
+    at = stamp((r.get("timestamp") or "").title())
+    if not at or not r.get("application_no"):
+        return None
+    span = [day(x.title()) for x in (r.get("acquirerDate") or "").split(" to ")]
+    return {"app_no": str(r["application_no"]), "symbol": (r.get("symbol") or "").strip(),
+            "holder": r.get("acquirerName"), "promoter": {"Y": 1, "N": 0}.get(r.get("promoterType")),
+            # NSE writes the same mode as 'Open market' and 'Open Market' in different years
+            "mode": (r.get("acquisitionMode") or "").strip().capitalize(),
+            "side": (r.get("acqSaleType") or "").strip().capitalize(),
+            "reg": r.get("regType"), "shares_acquired": _int(r.get("noOfShareAcq")),
+            "shares_sold": _int(r.get("noOfShareSale")), "shares_after": _int(r.get("noOfShareAft")),
+            "pct_acquired": _pct(r.get("totAcqShare")), "pct_sold": _pct(r.get("totSaleShare")),
+            "pct_after": _pct(r.get("totAftShare")), "trade_from": span[0] if span else None,
+            "trade_to": span[-1] if span else None, "disclosed_at": at}
+
+
 def rebuild(db, raw=RAW, log=print):
     """Re-parse every cached month into the insider and results tables.
 
     `did` identifies one disclosed transaction (`pid` is the company). NSE lists
     some transactions more than once, a minute apart; the earliest listing is
     when it became public, so that one is kept. Results filings are kept the same way."""
-    db.executescript("DROP TABLE IF EXISTS insider; DROP TABLE IF EXISTS results;" + SCHEMA)
-    counts = {"insider": 0, "results": 0, "unmapped": 0}  # rows read, duplicates included
+    db.executescript("DROP TABLE IF EXISTS insider; DROP TABLE IF EXISTS results; DROP TABLE IF EXISTS sast;" + SCHEMA)
+    counts = {"insider": 0, "results": 0, "announcements": 0, "sast": 0, "unmapped": 0}  # rows read, duplicates included
     index = symbol_index(db)
     live = {}  # isin: (first, last) traded
     for spans in index.values():
         for a, b, i in spans:
             lo, hi = live.get(i, (a, b))
             live[i] = (min(lo, a), max(hi, b))
-    for source in ("insider", "results"):
+    for source in ("insider", "results", "announcements", "sast"):
         folder = os.path.join(raw, source)
         if not os.path.isdir(folder):
             continue
@@ -210,8 +301,19 @@ def rebuild(db, raw=RAW, log=print):
                     db.execute("INSERT INTO insider VALUES (:did,:pid,:symbol,:isin,:person,:category,:mode,:txn,"
                                ":sec_type,:qty,:value,:trade_from,:trade_to,:disclosed_at) ON CONFLICT(did) DO UPDATE "
                                "SET disclosed_at=excluded.disclosed_at WHERE excluded.disclosed_at < disclosed_at", x)
+                elif source == "sast":
+                    x = sast_row(r)
+                    if not x:
+                        continue
+                    x["isin"] = isin_for(index, x["symbol"], x["disclosed_at"][:10])
+                    if not x["isin"]:
+                        counts["unmapped"] += 1
+                    db.execute("INSERT INTO sast VALUES (:app_no,:symbol,:isin,:holder,:promoter,:mode,:side,:reg,"
+                               ":shares_acquired,:shares_sold,:shares_after,:pct_acquired,:pct_sold,:pct_after,"
+                               ":trade_from,:trade_to,:disclosed_at) ON CONFLICT(app_no) DO UPDATE "
+                               "SET disclosed_at=excluded.disclosed_at WHERE excluded.disclosed_at < disclosed_at", x)
                 else:
-                    x = results_row(r)
+                    x = results_row(r) if source == "results" else announcement_result(r)
                     if not x:
                         continue
                     # NSE keeps a company's old ISIN on results for years after a split changed it
@@ -224,7 +326,8 @@ def rebuild(db, raw=RAW, log=print):
                 counts[source] += 1
     db.commit()
     if log:
-        log("insider %(insider)d rows (%(unmapped)d without a matching ISIN), results %(results)d rows" % counts)
+        log("rows read: insider %(insider)d, results %(results)d, results from announcements %(announcements)d, "
+            "sast %(sast)d (%(unmapped)d insider or sast rows without a matching ISIN)" % counts)
     return counts
 
 
@@ -245,8 +348,8 @@ def main(argv=None):
     elif a.cmd == "rebuild":
         rebuild(db)
     else:
-        for t in ("insider", "results"):
-            col = "disclosed_at" if t == "insider" else "broadcast_at"
+        for t in ("insider", "results", "sast"):
+            col = "broadcast_at" if t == "results" else "disclosed_at"
             print(t, db.execute("SELECT COUNT(*), MIN(%s), MAX(%s) FROM %s" % (col, col, t)).fetchone())
     return 0
 

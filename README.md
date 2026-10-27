@@ -94,7 +94,7 @@ already do it well.
 | Market history | NSE bhavcopy and delivery data from 2012, corporate action factors checked against prices, ISINs joined across splits | done |
 | Backtester | Honest simulation and the dev / validation / holdout protocol | done |
 | Price signals | Momentum, 52-week high, low volatility, delivery accumulation, regime filters | first pass done: momentum per unit of volatility validated, timing filters failed (research/FINDINGS.md) |
-| Event signals | Results dates and earnings drift, insider (SEBI PIT) and promoter buying, pledges, bulk and block deals, mutual fund accumulation | insider buying and results drift built (`core/events.py`, `research/event_signals.py`) and failed dev; see research/FINDINGS.md. NSE live feeds for both ended in 2025-26; pledges, deals, MF accumulation not started |
+| Event signals | Results dates and earnings drift, insider (SEBI PIT) and promoter buying, pledges, bulk and block deals, mutual fund accumulation | insider buying and results drift built (`core/events.py`, `research/event_signals.py`) and failed dev; see research/FINDINGS.md. Results stay current through NSE announcements and SAST Regulation 29 changes are stored; the insider feed is empty after May 2026; pledges, deals, MF accumulation not started |
 | Evidence cards and daily scan | Each candidate with its reasons, sources, scorecard and red flags, for manual review; order sheets only | v0.2 built: paper trading from the 2026-10-30 rebalance |
 | Paper forward test | 3 to 6 months on paper before any real money | last |
 | Later | Portfolio X-ray and optimiser, Indian tax module, more brokers | parked |

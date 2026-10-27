@@ -13,9 +13,12 @@ broker-neutral holdings, trades and charges.
   (SEC, NYSE, Alpaca, US tax) apply to India.
 - `core/` shared India modules. Skills import them with
   `sys.path.insert(0, <repo>/core)`, the way `core/charges.py` imports `money`.
-- `core/events.py` insider trades and results filings from NSE into the
-  store, keyed on publication time (raw months cached in
-  `data/events_raw/`); `research/event_signals.py` turns them into signals.
+- `core/events.py` company events from NSE into the store, keyed on
+  publication time (raw months cached in `data/events_raw/`): insider
+  trades (feed empty after May 2026), results (results feed to February
+  2025, then the announcements feed) and SAST Regulation 29 holdings
+  changes. The app's update refreshes them. `research/event_signals.py`
+  turns them into signals.
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
