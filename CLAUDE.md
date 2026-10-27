@@ -13,6 +13,8 @@ broker-neutral holdings, trades and charges.
   (SEC, NYSE, Alpaca, US tax) apply to India.
 - `core/` shared India modules. Skills import them with
   `sys.path.insert(0, <repo>/core)`, the way `core/charges.py` imports `money`.
+- `dashboard/` the personal dashboard: `build.py` writes one self-contained
+  HTML file (no external scripts, fonts or requests) to `private/`.
 - `tests/` unittest, offline only. `tests/_load.py` loads a script by folder.
   Fixtures under `tests/fixtures/`, cut from real published files; each
   fixture folder's README names its sources and date.

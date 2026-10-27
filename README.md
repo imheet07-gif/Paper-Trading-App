@@ -24,6 +24,8 @@ The India-specific work so far lives in `core/`.
 | `core/charges.py` | Every charge on a cash-market trade (brokerage, STT, exchange fee, SEBI fee, stamp duty, GST, DP charge) at Zerodha. Rates live in `core/charges.json` with their source; output says UNVERIFIED until matched to a real contract note. |
 | `core/zerodha_console.py` | Reads Zerodha Console holdings and equity tradebook exports (.xlsx or .csv): stocks and mutual funds with Decimal quantities and prices, fills grouped into orders, and the expected charges for any day to check against its contract note. Flags zero-cost holdings (demergers), discrepant and pledged units. |
 | `core/cas.py` | Reads a CAS PDF from NSDL, CDSL, CAMS or KFintech (via casparser, offline) into broker-neutral holdings, drops personal details, masks account numbers, and reconciles it against a broker's holdings export. Password from a prompt, never stored. |
+| `core/lots.py` | FIFO lots from any broker's trades: realized gains by financial year, short or long term, with sells that have no recorded buy reported apart rather than given an invented cost. Open lots reconcile against holdings. |
+| `dashboard/build.py` | Builds your portfolio dashboard as one self-contained HTML file: headline numbers, allocation, holdings with their checks, realized gains by year, modelled charges, and everything that needs a look. No network requests; opens offline in any browser, phone included. |
 | `core/instruments.py` | One record per stock keyed by ISIN, joining NSE's equity list with Kite instrument tokens, tick and lot sizes (Angel One's scrip list optional, for its free historical data). Mismatches between sources are reported. |
 
 ```bash
@@ -34,6 +36,7 @@ python3 core/instruments.py build --nse EQUITY_L.csv --kite instruments.csv --an
 python3 core/zerodha_console.py holdings private/holdings.xlsx
 python3 core/zerodha_console.py verify-charges private/tradebook-EQ.xlsx private/pnl-EQ.xlsx
 python3 core/cas.py holdings private/cas.pdf --reconcile private/holdings.xlsx
+python3 dashboard/build.py --holdings private/holdings.xlsx --tradebook private/tradebook-*.xlsx --pnl private/pnl.xlsx
 python3 -m unittest discover -s tests
 ```
 

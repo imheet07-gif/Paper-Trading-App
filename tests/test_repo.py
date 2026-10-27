@@ -8,7 +8,7 @@ from _load import ROOT
 SKILLS = ["trader-copycat", "trader-news", "trader-budget", "trader-pelosi", "trader-analyst",
           "trader-screener", "trader-risk", "trader-broker", "trader-tax", "trader-alerts",
           "trader-rebalance"]
-CORE = ["nse_calendar.py", "nse_holidays.json", "money.py", "charges.py", "charges.json", "instruments.py", "zerodha_console.py", "cas.py"]
+CORE = ["nse_calendar.py", "nse_holidays.json", "money.py", "charges.py", "charges.json", "instruments.py", "zerodha_console.py", "cas.py", "lots.py"]
 # skills that can lead to an order carry the safety block
 ORDER_PATH = ["trader-copycat", "trader-budget", "trader-pelosi", "trader-risk", "trader-broker",
               "trader-tax", "trader-alerts", "trader-rebalance"]
@@ -39,7 +39,7 @@ class Repo(unittest.TestCase):
         local = (".env", "private", "trader", "data", "__pycache__")  # git-ignored, may exist locally
         root = sorted(d for d in os.listdir(ROOT) if not d.startswith(".git") and d not in local)
         self.assertEqual(root, sorted([".claude", ".claude-plugin", "CLAUDE.md", "LICENSE", "README.md",
-                                       "core", "docs", "tests"] + SKILLS))
+                                       "core", "dashboard", "docs", "tests"] + SKILLS))
 
     def test_core_modules_present(self):
         for f in CORE:
