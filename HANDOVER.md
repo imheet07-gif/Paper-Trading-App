@@ -31,8 +31,10 @@ or one broker.
   rebalance and must run 3 to 6 months before any real money.
 - **App:** `python3 app/server.py`, a local page with Update, Scan, a
   Strategy lab, the paper portfolio and the runs log.
-- **Skills:** the eleven `trader-*` folders are still the US originals;
-  porting them is Phase 2.
+- **Skills:** `trader-budget`, `trader-risk`, `trader-rebalance` and
+  `trader-screener` are ported to India (rupees, whole shares, an order sheet
+  for manual entry); the other seven are still the US originals; porting
+  them is Phase 2. See "Gaps in the ported skills" below.
 - **Tests:** `python3 -m unittest discover -s tests`, offline, all must
   pass before any push.
 
@@ -104,12 +106,46 @@ live in their own files. Change the owner column freely.
 | Screener.in export importer: the owner's own Excel exports, read locally, for manual review only (not point-in-time, never for backtests) | `core/screener_export.py` | second agent | waiting for a sample file from the owner |
 | Bulk and block deals, collected daily from `nsearchives.nseindia.com/content/equities/bulk.csv` and `block.csv` (no history available) | `core/deals.py`, a line in `research/scan.py` update | second agent | open |
 | Port `trader-news` and `trader-alerts` to India (NSE announcements, NSE calendar, read-only quotes) | `trader-news/`, `trader-alerts/` | second agent | open |
-| Port `trader-budget`, `trader-risk`, `trader-rebalance` and `trader-screener` to India (rupees, whole shares, an order sheet for manual entry, verified charges). Offline only: tick sizes, price bands and circuit limits, lot sizes and other NSE facts not yet in `core/` data are left out and listed in each SKILL.md | `trader-budget/`, `trader-risk/`, `trader-rebalance/`, `trader-screener/`, their tests | second agent | in progress (branch `second-agent/india-skill-ports`) |
+| Port `trader-budget`, `trader-risk`, `trader-rebalance` and `trader-screener` to India (rupees, whole shares, an order sheet for manual entry, verified charges). Offline only: tick sizes, price bands and circuit limits, lot sizes and other NSE facts not yet in `core/` data are left out and listed in each SKILL.md | `trader-budget/`, `trader-risk/`, `trader-rebalance/`, `trader-screener/`, their tests | second agent | done on branch `second-agent/india-skill-ports`, PR into `phase0-foundations`; gaps listed below |
 | Position sizing and risk control (caps, cash buffer, volatility sizing) tested on dev | `research/` | owner's agent | open |
 | SAST Regulation 29 promoter open-market buying as a signal, dev test | `research/event_signals.py` | owner's agent | open |
 | Paper forward test from 2026-10-30, scan and app upkeep | `research/scan.py`, `research/paper.py`, `app/` | owner's agent | running |
 | Mutual fund accumulation (AMC monthly portfolios; AMC sites are not on the cloud allow-list) | to be decided | unassigned | open |
 | Indian tax module (FIFO lots exist in `core/lots.py`; TMCV/TMPV and ITC Hotels cost splits from the companies' notices) | `core/tax.py`, `trader-tax/` | unassigned | parked |
+
+## Gaps in the ported skills
+
+The four ported skills (`trader-budget`, `trader-risk`, `trader-rebalance`,
+`trader-screener`) were ported offline, without NSE access, so every
+exchange or broker fact that is not already in `core/` data, read from the
+publisher's own file, was left out rather than guessed. Each SKILL.md has
+a "Left out on purpose" section and the scripts print what they did not
+check. Open items, each a task for whoever has the source file:
+
+| gap | what it means today | what closes it |
+| --- | --- | --- |
+| Tick sizes | Order sheets are market orders; no limit price is computed or checked against the tick. `research/paper.py` has ticks from the market store, the skills do not | a tick per instrument in a `core/` data file or a read of the store, from NSE's own file |
+| Price bands and circuit limits | A line can PASS trader-risk and still be rejected or sit unfilled at the band | NSE's daily price band file, stored with its source line, and a check in `trader-risk` |
+| F&O lot sizes and margins | F&O lines are blocked unless `allow_options`, and never sized | NSE's lot size file; out of scope until someone wants F&O |
+| Same-day use of sale proceeds | Sells are counted as freeing cash for later buys in the same sheet; settlement is T+1 and same-day credit is the broker's rule | the broker's own page, recorded in `core/charges.json` style with a source line |
+| Symbol to ISIN | ISINs are carried through if the targets or portfolio give them; the skills have no instrument registry of their own | wire `core/instruments.py` into the skills once a registry file is built locally |
+| Orders entered today | The user enters orders by hand, so `max_orders_per_day` counts one sheet, not the day | read the day's tradebook import |
+| Charges rates | Estimated with `core/charges.py`; shown UNVERIFIED until every block in `core/charges.json` is matched to a contract note | match a buy-day contract note |
+| Metrics source for the screener | The user's own CSV only | the open XBRL financials and Screener.in export tasks |
+| Example prices | The examples and tests use made-up round prices and made-up companies, labelled as such | nothing; they test arithmetic, not markets |
+
+Knock-on effects on skills that are still US originals:
+
+- `trader-broker` (Alpaca) no longer reads a matching risk verdict: the India
+  order sheet has different fields. Its tests now use their own US fixtures
+  (`tests/fixtures/trader-broker/`) and write the verdict file themselves.
+  Under CLAUDE.md nothing places an order, so its port should make it a
+  ticket-only skill (or retire it); that is a decision for the owner.
+- `trader-alerts` writes `trader/prices.json` with US tickers and float
+  prices; the ported skills read the same file keyed by NSE symbol. Its
+  test now uses `tests/fixtures/trader-alerts/targets-us.json`.
+- `trader-tax` and `trader-copycat` still write US-shaped portfolio and
+  targets files.
 
 ## Known data facts that cost time to learn
 

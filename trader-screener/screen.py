@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stock screener for trader-screener. Standard library only, no network.
+"""Stock screener for trader-screener, India edition. Standard library only, no network.
 
 Checks every company in a metrics file against your rules, says exactly why
 each one passes or fails, and ranks the ones that pass.
@@ -8,12 +8,14 @@ each one passes or fails, and ranks the ones that pass.
     python3 screen.py trader/metrics.json --rules my-rules.json --prices trader/prices.json
     python3 screen.py companies.csv --rules my-rules.json --out trader/shortlist.json --json
 
-Metrics: a JSON file ({"companies": [...]} as trader-analyst's facts.py
---metrics writes it, or a plain list of objects) or a CSV with a header row.
-Each company needs a "ticker"; every other column is a metric. Numbers in a
-CSV can carry $, % and thousands commas.
+Metrics: a JSON file ({"companies": [...]} or a plain list of objects) or a
+CSV with a header row. Each company needs a "symbol" (NSE symbol; "ticker"
+is read too) and may carry an "isin"; every other column is a metric.
+Numbers in a CSV can carry a rupee sign (₹, Rs, Rs., INR), %, and commas in
+Indian (1,23,456) or western grouping. Units are not converted: a column in
+crores stays in crores.
 
-Prices (optional): trader/prices.json ({"prices": {"AAPL": 341.27}}). With
+Prices (optional): trader/prices.json ({"prices": {"TCS": "3000"}}). With
 prices, the screener adds:
     price          the price you gave it
     pe             price / eps_ttm (only when eps_ttm is above zero)
@@ -58,7 +60,11 @@ def to_number(v):
     s = str(v).strip()
     if s == "" or s.lower() in ("na", "n/a", "none", "null", "-"):
         return None
-    t = s.replace(",", "").replace("$", "").replace("%", "")
+    t = s.replace(",", "").replace("%", "").replace("\u20b9", "").strip()
+    for prefix in ("INR", "Rs.", "Rs"):
+        if t.startswith(prefix):
+            t = t[len(prefix):].strip()
+            break
     try:
         return float(t)
     except ValueError:
@@ -82,12 +88,18 @@ def load_metrics(path):
         if not isinstance(rows, list):
             raise ScreenError("%s: expected a list of companies or {\"companies\": [...]}" % path)
         rows = [dict(r) for r in rows]
-    out = []
+    out, seen = [], set()
     for i, r in enumerate(rows):
-        t = str(r.get("ticker") or r.get("symbol") or "").strip().upper()
+        t = str(r.get("symbol") or r.get("ticker") or "").strip().upper()
         if not t:
-            raise ScreenError("company #%d has no ticker" % (i + 1))
-        r["ticker"] = t
+            raise ScreenError("company #%d has no symbol" % (i + 1))
+        if t in seen:
+            raise ScreenError("%s is listed twice" % t)
+        seen.add(t)
+        r.pop("ticker", None)
+        r["symbol"] = t
+        if r.get("isin"):
+            r["isin"] = str(r["isin"]).strip().upper()
         out.append(r)
     return out
 
@@ -97,7 +109,7 @@ def add_prices(rows, prices_path):
         data = json.load(fh)
     prices = {k.upper(): v for k, v in (data.get("prices", data) or {}).items()}
     for r in rows:
-        p = to_number(prices.get(r["ticker"]))
+        p = to_number(prices.get(r["symbol"]))
         if not isinstance(p, (int, float)) or p <= 0:
             continue
         r["price"] = p
@@ -192,11 +204,11 @@ def screen(companies, spec):
                 passes.append(why)
             else:
                 fails.append(why)
-        results.append({"ticker": c["ticker"], "name": c.get("name"), "passed": not fails,
+        results.append({"symbol": c["symbol"], "isin": c.get("isin"), "name": c.get("name"), "passed": not fails,
                         "fails": fails, "passes": passes, "skipped": gaps, "metrics": c})
     rank(results, spec.get("rank", []))
     results.sort(key=lambda r: (not r["passed"], -(r.get("score") or 0), len(r["fails"]),
-                                r["ticker"]))
+                                r["symbol"]))
     return results
 
 
@@ -241,7 +253,7 @@ def render(results, spec, top=None, prices_as_of=None):
     shown = passed[:top] if top else passed
     for i, r in enumerate(shown, 1):
         score = "" if r.get("score") is None else "  score %.2f" % r["score"]
-        out.append("%2d. PASS %-6s %s%s" % (i, r["ticker"], (r.get("name") or "")[:32], score))
+        out.append("%2d. PASS %-10s %s%s" % (i, r["symbol"], (r.get("name") or "")[:32], score))
         for why in r["passes"]:
             out.append("        ok    %s" % why)
         for why in r["skipped"]:
@@ -254,10 +266,10 @@ def render(results, spec, top=None, prices_as_of=None):
     if failed:
         out.append("")
         for r in failed:
-            out.append("    FAIL %-6s %s" % (r["ticker"], "; ".join(r["fails"])))
+            out.append("    FAIL %-10s %s" % (r["symbol"], "; ".join(r["fails"])))
     out.append("")
     out.append("A screen is a filter on reported numbers, not a recommendation. Read the "
-               "filings (/trader-analyst) before anything goes near /trader-budget.")
+               "company's own results filings on NSE before anything goes near /trader-budget.")
     return "\n".join(out) + "\n"
 
 
@@ -284,14 +296,14 @@ def main(argv=None):
     shortlist = {
         "name": spec.get("name"), "rules": spec.get("rules", []), "rank": spec.get("rank", []),
         "prices_as_of": prices_as_of,
-        "passed": [{"ticker": r["ticker"], "name": r.get("name"), "score": r.get("score"),
+        "passed": [{"symbol": r["symbol"], "isin": r.get("isin"), "name": r.get("name"), "score": r.get("score"),
                     "why": r["passes"], "skipped": r["skipped"]}
                    for r in (passed[:top] if top else passed)],
-        "failed": [{"ticker": r["ticker"], "why": r["fails"]} for r in results if not r["passed"]],
+        "failed": [{"symbol": r["symbol"], "why": r["fails"]} for r in results if not r["passed"]],
         "note": "A filter on reported numbers, not a recommendation.",
     }
     if args.json:
-        print(json.dumps(shortlist, indent=2))
+        print(json.dumps(shortlist, indent=2, ensure_ascii=False))
     else:
         sys.stdout.write(render(results, spec, top, prices_as_of))
     if args.out:
@@ -299,7 +311,7 @@ def main(argv=None):
         if folder:
             os.makedirs(folder, exist_ok=True)
         with open(args.out, "w", encoding="utf-8") as fh:
-            json.dump(shortlist, fh, indent=2)
+            json.dump(shortlist, fh, indent=2, ensure_ascii=False)
             fh.write("\n")
         if not args.json:
             print("wrote %s" % args.out)

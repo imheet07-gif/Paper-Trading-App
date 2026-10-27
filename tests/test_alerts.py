@@ -215,7 +215,7 @@ class Cli(unittest.TestCase):
         with open(pf, "w") as fh:
             json.dump({"cash": 0, "positions": [{"ticker": "KO", "shares": 1}]}, fh)
         code, text, _ = run(["quote", "--holdings", "--portfolio", pf, "--targets",
-                             os.path.join(ROOT, "trader-budget", "targets.example.json"), "--offline", QDIR, "--json"])
+                             os.path.join(FIX, "trader-alerts", "targets-us.json"), "--offline", QDIR, "--json"])
         self.assertEqual(code, 0)
         self.assertEqual(sorted(json.loads(text)["quotes"]), ["AAPL", "AXP", "BAC", "GOOGL", "KO"])
 

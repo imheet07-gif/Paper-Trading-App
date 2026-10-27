@@ -1,16 +1,17 @@
 {
-  "budget": 5000,
+  "budget": 100000,
   "cash_buffer_pct": 10,
   "max_position_pct": 25,
-  "max_order_usd": 2000,
-  "min_order_usd": 5,
+  "max_order_inr": 50000,
+  "min_order_inr": 1000,
   "max_orders_per_day": 10,
-  "fractional": true,
-  "broker": "alpaca",
+  "broker": "zerodha",
+  "exchange": "NSE",
   "paper": true,
   "blocked": [],
   "allow_options": false,
   "allow_margin": false,
   "allow_short": false,
+  "rebalance_band_pct": 5,
   "sec_user_agent": "Your Name you@example.com"
 }
