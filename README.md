@@ -15,7 +15,7 @@ The India-specific work so far lives in `core/`.
 
 | tool | what it does |
 | --- | --- |
-| `core/nse_calendar.py` | NSE clock in IST: pre-open, normal market, closing session, 2026 holidays, T+1 settlement dates. A year without a published holiday list is an error, never a guess. |
+| `core/nse_calendar.py` | NSE clock in IST: pre-open, normal market, closing session, T+1 settlement dates. Holidays come from NSE's own holiday file (`update-holidays` refreshes them each December); a year without one is an error, never a guess. |
 | `core/money.py` | Rupee formatting with Indian grouping (1,23,45,678.90), lakh/crore shorthand, whole-share sizing, tick-size rounding. Decimal throughout. |
 | `core/charges.py` | Every charge on a cash-market trade (brokerage, STT, exchange fee, SEBI fee, stamp duty, GST, DP charge) at Zerodha. Rates live in `core/charges.json` with their source; output says UNVERIFIED until matched to a real contract note. |
 | `core/instruments.py` | One record per stock keyed by ISIN, joining NSE's equity list with Kite instrument tokens, tick and lot sizes (Angel One's scrip list optional, for its free historical data). Mismatches between sources are reported. |

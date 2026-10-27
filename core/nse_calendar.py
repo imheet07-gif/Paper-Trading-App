@@ -8,9 +8,9 @@ India has no daylight saving, so IST is always UTC+05:30. The cash market
   09:15-15:30  normal market
   15:40-16:00  closing session (trades at the closing price only)
 
-Holidays are published once a year by NSE circular, usually in December for
-the following year. A year with no list here is an error, never a guess:
-add the circular's dates to HOLIDAYS before trusting the clock for that year.
+Holidays are published once a year by NSE, usually in December for the
+following year. A year with no list is an error, never a guess: refresh
+nse_holidays.json with `update-holidays` before trusting the clock for it.
 
 Special sessions (Muhurat trading on Diwali, the odd Saturday live session)
 are announced by separate circulars. Add them to SPECIAL_SESSIONS when NSE
@@ -24,11 +24,13 @@ circular for a date that matters.
   python3 core/nse_calendar.py clock --now 2026-10-20T10:00:00+05:30
   python3 core/nse_calendar.py holidays 2026
   python3 core/nse_calendar.py settle 2026-10-19
+  python3 core/nse_calendar.py update-holidays holiday-master.json
 """
 
 import argparse
 import datetime as dt
 import json
+import os
 import sys
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30), "IST")
@@ -38,29 +40,57 @@ PRE_OPEN_ENTRY_END = dt.time(9, 8)
 NORMAL = (dt.time(9, 15), dt.time(15, 30))
 CLOSING = (dt.time(15, 40), dt.time(16, 0))
 
-# Weekday trading holidays, equity and equity derivative segments.
-# 2026: NSE circular NSE/FAOP/71777 (Dec 12 2025), cross-checked against
-# broker-published lists on 2026-10-27. Republish from the equity segment
-# circular if any date is ever disputed.
-HOLIDAYS = {
-    2026: {
-        "2026-01-26": "Republic Day",
-        "2026-03-03": "Holi",
-        "2026-03-26": "Shri Ram Navami",
-        "2026-03-31": "Shri Mahavir Jayanti",
-        "2026-04-03": "Good Friday",
-        "2026-04-14": "Dr. Baba Saheb Ambedkar Jayanti",
-        "2026-05-01": "Maharashtra Day",
-        "2026-05-28": "Bakri Id",
-        "2026-06-26": "Muharram",
-        "2026-09-14": "Ganesh Chaturthi",
-        "2026-10-02": "Mahatma Gandhi Jayanti",
-        "2026-10-20": "Dussehra",
-        "2026-11-10": "Diwali Balipratipada",
-        "2026-11-24": "Prakash Gurpurb Sri Guru Nanak Dev",
-        "2026-12-25": "Christmas",
-    },
-}
+# Trading holidays live in nse_holidays.json beside this file, written by
+# `update-holidays` from NSE's own holiday master
+# (https://www.nseindia.com/api/holiday-master?type=trading), capital market
+# segment. Weekend entries are kept as published; they change nothing.
+HERE = os.path.dirname(os.path.abspath(__file__))
+HOLIDAYS_FILE = os.path.join(HERE, "nse_holidays.json")
+
+
+def load_holidays(path=HOLIDAYS_FILE):
+    """{year: {"YYYY-MM-DD": name}}. No file means no year is known, so every date errors."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except FileNotFoundError:
+        return {}
+    return {int(y): days for y, days in doc["years"].items()}
+
+
+def parse_holiday_master(text, segment="CM"):
+    """NSE holiday-master JSON -> {year: {"YYYY-MM-DD": description}} for one segment."""
+    rows = json.loads(text).get(segment)
+    if not rows:
+        raise ValueError("no %s segment in the holiday file" % segment)
+    out = {}
+    for r in rows:
+        d = dt.datetime.strptime(r["tradingDate"], "%d-%b-%Y").date()
+        out.setdefault(d.year, {})[d.isoformat()] = r["description"].strip()
+    return out
+
+
+def update_holidays(text, path=HOLIDAYS_FILE, fetched=None, segment="CM"):
+    """Replace the years present in an NSE holiday file; keep the other years."""
+    new = parse_holiday_master(text, segment)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except FileNotFoundError:
+        doc = {"years": {}}
+    doc["_source"] = ("NSE holiday master, %s segment: https://www.nseindia.com/api/holiday-master?type=trading"
+                      % segment)
+    doc["fetched"] = fetched or dt.date.today().isoformat()
+    for y, days in new.items():
+        doc["years"][str(y)] = dict(sorted(days.items()))
+    doc["years"] = dict(sorted(doc["years"].items()))
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    return sorted(new)
+
+
+HOLIDAYS = load_holidays()
 
 # {"YYYY-MM-DD": {"name": ..., "start": "HH:MM", "end": "HH:MM"}}, IST.
 # Muhurat 2026 timings are not in yet: add them from the NSE circular.
@@ -73,7 +103,7 @@ class UnknownYear(ValueError):
 
 def holidays(year):
     if year not in HOLIDAYS:
-        raise UnknownYear("no NSE holiday list for %d: add it from the NSE circular" % year)
+        raise UnknownYear("no NSE holiday list for %d: run update-holidays with NSE's file" % year)
     return {dt.date.fromisoformat(k): v for k, v in HOLIDAYS[year].items()}
 
 
@@ -173,6 +203,8 @@ def main(argv=None):
     h.add_argument("year", type=int)
     s = sub.add_parser("settle", help="T+1 settlement date for a trade date")
     s.add_argument("date")
+    u = sub.add_parser("update-holidays", help="load NSE's holiday-master JSON into nse_holidays.json")
+    u.add_argument("file")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "clock":
@@ -182,6 +214,10 @@ def main(argv=None):
                 print(d.isoformat(), d.strftime("%a"), name)
         elif a.cmd == "settle":
             print(settlement_date(dt.date.fromisoformat(a.date)).isoformat())
+        elif a.cmd == "update-holidays":
+            with open(a.file, encoding="utf-8") as fh:
+                years = update_holidays(fh.read())
+            print("updated", ", ".join(map(str, years)), "in", HOLIDAYS_FILE)
     except UnknownYear as e:
         print("error:", e, file=sys.stderr)
         return 2

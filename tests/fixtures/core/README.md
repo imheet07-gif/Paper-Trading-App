@@ -1,7 +1,13 @@
 # core fixtures
 
-Synthetic, format-only samples. They follow the published layouts of NSE's
-`EQUITY_L.csv`, Kite's instrument dump and Angel One's scrip master, but they
-are hand-made: tick sizes, tokens and the `SAMPLEBE` row are test values, not
-market data. Replace them with rows cut from the real files once the session
-can reach nseindia.com, api.kite.trade and angelbroking.com.
+Rows cut from the real public files, downloaded 2026-10-27:
+
+| file | source |
+| --- | --- |
+| `EQUITY_L.sample.csv` | https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv (header and 7 rows: EQ, BE, BZ and a rights entitlement) |
+| `kite_instruments.sample.csv` | https://api.kite.trade/instruments (the same stocks on NSE, plus a BSE row, an index and a future that must be ignored) |
+| `angel_scrips.sample.json` | https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json (same, tick size in paise) |
+| `nse_holiday_master.json` | https://www.nseindia.com/api/holiday-master?type=trading, capital market (CM) segment only |
+
+Tests that need a disagreement between sources (a tick-size mismatch) edit a
+copy of these rows in the test itself, so the files stay as published.

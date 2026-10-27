@@ -1,7 +1,11 @@
 [
- {"token": "2885", "symbol": "RELIANCE-EQ", "name": "RELIANCE", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "10.000000"},
- {"token": "11536", "symbol": "TCS-EQ", "name": "TCS", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "10.000000"},
- {"token": "1333", "symbol": "HDFCBANK-EQ", "name": "HDFCBANK", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "10.000000"},
- {"token": "99999", "symbol": "SAMPLEBE-BE", "name": "SAMPLEBE", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "1.000000"},
- {"token": "35003", "symbol": "NIFTY27OCT26FUT", "name": "NIFTY", "expiry": "27OCT2026", "strike": "-1.000000", "lotsize": "65", "instrumenttype": "FUTIDX", "exch_seg": "NFO", "tick_size": "10.000000"}
+{"token": "11536", "symbol": "TCS-EQ", "name": "TCS", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "10.000000", "freeze_qty": "36180", "is_cas_enabled": true},
+{"token": "1594", "symbol": "INFY-EQ", "name": "INFY", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000", "freeze_qty": "85222", "is_cas_enabled": true},
+{"token": "1333", "symbol": "HDFCBANK-EQ", "name": "HDFCBANK", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000", "freeze_qty": "138750", "is_cas_enabled": true},
+{"token": "2885", "symbol": "RELIANCE-EQ", "name": "RELIANCE", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "10.000000", "freeze_qty": "81195", "is_cas_enabled": true},
+{"token": "27", "symbol": "GATECHDVR-BE", "name": "GATECHDVR", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "1.000000", "freeze_qty": "6202074", "is_cas_enabled": false},
+{"token": "46", "symbol": "SANWARIA-BZ", "name": "SANWARIA", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "1.000000", "freeze_qty": "24070470", "is_cas_enabled": false},
+{"token": "99926000", "symbol": "Nifty 50", "name": "NIFTY", "expiry": "", "strike": "0.000000", "lotsize": "1", "instrumenttype": "AMXIDX", "exch_seg": "NSE", "tick_size": "0.000000", "freeze_qty": "0", "is_cas_enabled": false},
+{"token": "100038", "symbol": "HINDZINC27OCT26670PE", "name": "HINDZINC", "expiry": "27OCT2026", "strike": "67000.000000", "lotsize": "1225", "instrumenttype": "OPTSTK", "exch_seg": "NFO", "tick_size": "5.000000", "freeze_qty": "36751", "is_cas_enabled": false},
+{"token": "500325", "symbol": "RELIANCE", "name": "RELIANCE", "expiry": "", "strike": "-1.000000", "lotsize": "1", "instrumenttype": "", "exch_seg": "BSE", "tick_size": "5.000000", "freeze_qty": "0", "is_cas_enabled": true}
 ]

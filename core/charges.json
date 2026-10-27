@@ -1,7 +1,7 @@
 {
-  "_about": "Rates for equity cash-market trades. Percent values are percent of turnover (qty x price). Every block says where it came from and whether it has been matched to a real contract note. Nothing here is verified until a contract note test passes: run charges.py against one and set verified to the date.",
+  "_about": "Rates for equity cash-market trades. Percent values are percent of turnover (qty x price). Every block says where it came from. page_checked is the date the rate was read from the broker's own page; verified stays false until a real contract note is reproduced to the paisa by a test.",
   "statutory": {
-    "_source": "Statutory, same at every broker. STT: Finance Act; stamp duty: Indian Stamp Act (2020 uniform rates); SEBI turnover fee: SEBI. Read 2026-10-27 from zerodha.com/charges via search results.",
+    "_source": "Statutory, same at every broker: STT (Finance Act), stamp duty (Indian Stamp Act, 2020 uniform rates), SEBI turnover fee. Read directly from https://zerodha.com/charges on 2026-10-27.",
     "verified": false,
     "stt_pct": {
       "delivery": {
@@ -24,17 +24,19 @@
       }
     },
     "sebi_fee_per_crore": "10",
-    "gst_pct": "18"
+    "gst_pct": "18",
+    "page_checked": "2026-10-27"
   },
   "exchange_txn_pct": {
-    "_source": "Exchange transaction charges as passed through by Zerodha. Zerodha's pages showed 0.00297, 0.00307 and 0.00322 for NSE across versions on 2026-10-27, so this is the value to confirm first from a contract note.",
+    "_source": "Exchange transaction charges as Zerodha passes them through, read directly from https://zerodha.com/charges on 2026-10-27 (NSE 0.00307%, BSE 0.00375%, equity delivery and intraday).",
     "verified": false,
-    "NSE": "0.00297",
-    "BSE": "0.00375"
+    "NSE": "0.00307",
+    "BSE": "0.00375",
+    "page_checked": "2026-10-27"
   },
   "brokers": {
     "zerodha": {
-      "_source": "zerodha.com/charges, read via search results 2026-10-27. DP charge from memory of the published rate (Rs 13 + GST per scrip per day): confirm on a contract note or DP statement.",
+      "_source": "https://zerodha.com/charges, read directly 2026-10-27: delivery brokerage zero; intraday 0.03% or Rs 20 per executed order, whichever is lower; DP Rs 15.34 per scrip on the sell day (Rs 3.5 CDSL + Rs 9.5 Zerodha + Rs 2.34 GST), irrespective of quantity. Female first holders get Rs 0.25 off the CDSL fee (not modelled).",
       "verified": false,
       "brokerage": {
         "delivery": {
@@ -49,7 +51,8 @@
         }
       },
       "dp_charge_incl_gst": "15.34",
-      "dp_charge_basis": "per_scrip_per_day"
+      "dp_charge_basis": "per_scrip_per_day",
+      "page_checked": "2026-10-27"
     }
   }
 }

@@ -43,10 +43,28 @@ class Calendar(unittest.TestCase):
         self.assertFalse(cal.is_trading_day(dt.date(2026, 10, 24)))  # Saturday
         self.assertTrue(cal.is_trading_day(dt.date(2026, 10, 27)))
 
-    def test_fifteen_weekday_holidays_in_2026(self):
+    def test_2026_list_is_nses_own(self):
+        # NSE's holiday master: 20 entries, 16 on weekdays, including the
+        # Maharashtra civic election that broker-published lists left out
         h = cal.holidays(2026)
-        self.assertEqual(len(h), 15)
-        self.assertTrue(all(d.weekday() < 5 for d in h))
+        self.assertEqual(len(h), 20)
+        self.assertEqual(sum(d.weekday() < 5 for d in h), 16)
+        self.assertFalse(cal.is_trading_day(dt.date(2026, 1, 15)))
+
+    def test_update_holidays_from_nse_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "h.json")
+            with open(path, "w") as fh:
+                json.dump({"years": {"2025": {"2025-12-25": "Christmas"}}}, fh)
+            years = cal.update_holidays(read("nse_holiday_master.json"), path, fetched="2026-10-27")
+            self.assertEqual(years, [2026])
+            got = cal.load_holidays(path)
+            self.assertEqual(sorted(got), [2025, 2026])  # other years kept
+            self.assertEqual(got[2026]["2026-10-20"], "Dussehra")
+
+    def test_missing_segment_is_an_error(self):
+        with self.assertRaises(ValueError):
+            cal.parse_holiday_master('{"FO": []}')
 
     def test_unknown_year_is_an_error_not_a_guess(self):
         with self.assertRaises(cal.UnknownYear):
@@ -125,16 +143,16 @@ class Charges(unittest.TestCase):
         self.rates = charges.load_rates()
 
     def test_zerodha_delivery_buy(self):
-        # Rs 1,00,000 buy: STT 100, stamp 15, NSE txn 2.97, SEBI 0.10, GST 18% of 3.07
+        # Rs 1,00,000 buy: STT 100, stamp 15, NSE txn 3.07, SEBI 0.10, GST 18% of 3.17
         c = charges.trade_charges("zerodha", "buy", 100, "1000", rates=self.rates)
         self.assertEqual(c["brokerage"], Decimal("0.00"))
         self.assertEqual(c["stt"], Decimal("100.00"))
         self.assertEqual(c["stamp_duty"], Decimal("15.00"))
-        self.assertEqual(c["exchange_txn"], Decimal("2.97"))
+        self.assertEqual(c["exchange_txn"], Decimal("3.07"))
         self.assertEqual(c["sebi_fee"], Decimal("0.10"))
-        self.assertEqual(c["gst"], Decimal("0.55"))
+        self.assertEqual(c["gst"], Decimal("0.57"))
         self.assertEqual(c["dp_charge"], Decimal("0.00"))
-        self.assertEqual(c["total"], Decimal("118.62"))
+        self.assertEqual(c["total"], Decimal("118.74"))
 
     def test_sell_has_dp_and_no_stamp(self):
         c = charges.trade_charges("zerodha", "sell", 100, "1000", rates=self.rates)
@@ -177,7 +195,7 @@ class Charges(unittest.TestCase):
 
     def test_round_trip_cost_percent(self):
         r = charges.round_trip("zerodha", 100, "1000", rates=self.rates)
-        self.assertEqual(r["total"], Decimal("118.62") + r["sell"]["total"])
+        self.assertEqual(r["total"], Decimal("118.74") + r["sell"]["total"])
         self.assertGreater(r["pct_of_turnover"], Decimal("0.2"))
 
     def test_every_rate_block_names_its_source(self):
@@ -194,6 +212,7 @@ class Charges(unittest.TestCase):
 
 
 class Instruments(unittest.TestCase):
+    # Rows cut from the real files of 2026-10-27; see tests/fixtures/core/README.md
     def setUp(self):
         self.reg = inst.build(read("EQUITY_L.sample.csv"), read("kite_instruments.sample.csv"),
                               read("angel_scrips.sample.json"))
@@ -205,20 +224,35 @@ class Instruments(unittest.TestCase):
         self.assertEqual(r["angel_token"], "2885")
         self.assertEqual(r["listed"], "1995-11-29")
         self.assertEqual(r["tick_size"], "0.1")
-        self.assertEqual(r["angel_tick_size"], "0.1")
+        self.assertEqual(r["angel_tick_size"], "0.1")  # Angel publishes 10 paise
 
-    def test_bse_and_index_rows_are_not_nse_equities(self):
-        # Kite's BSE RELIANCE row has a different token and must not overwrite the NSE one
-        self.assertEqual(self.reg["instruments"]["INE002A01018"]["kite_exchange_token"], 2885)
-        self.assertEqual(self.reg["count"], 4)
+    def test_bse_index_and_derivative_rows_are_not_nse_equities(self):
+        # the BSE RELIANCE rows carry token 500325 and must not overwrite the NSE ones
+        r = self.reg["instruments"]["INE002A01018"]
+        self.assertEqual(r["kite_exchange_token"], 2885)
+        self.assertEqual(r["angel_token"], "2885")
+        self.assertEqual(self.reg["count"], 7)
 
-    def test_problems_are_reported_not_hidden(self):
+    def test_be_and_bz_series_join_both_brokers(self):
+        be = self.reg["instruments"]["INE224E01036"]
+        self.assertEqual((be["series"], be["kite_token"], be["angel_token"]), ("BE", 6913, "27"))
+        bz = self.reg["instruments"]["INE890C01046"]
+        self.assertEqual((bz["series"], bz["tick_size"], bz["angel_tick_size"]), ("BZ", "0.01", "0.01"))
+
+    def test_rights_entitlement_is_reported_missing(self):
         p = "\n".join(self.reg["problems"])
-        self.assertIn("SAMPLEBE: not in Kite", p)
-        self.assertIn("HDFCBANK: tick size differs", p)
+        self.assertIn("SHIVAM-RE1: not in Kite's list", p)
+        self.assertIn("SHIVAM-RE1: not in Angel One's list", p)
+        self.assertEqual(len(self.reg["problems"]), 2)
 
-    def test_non_eq_series_joins_angel_by_series(self):
-        self.assertEqual(self.reg["instruments"]["INE000Z01019"]["angel_token"], "99999")
+    def test_tick_size_disagreement_is_reported(self):
+        angel = read("angel_scrips.sample.json").replace(
+            '"symbol": "HDFCBANK-EQ", "name": "HDFCBANK", "expiry": "", "strike": "-1.000000", '
+            '"lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "5.000000"',
+            '"symbol": "HDFCBANK-EQ", "name": "HDFCBANK", "expiry": "", "strike": "-1.000000", '
+            '"lotsize": "1", "instrumenttype": "", "exch_seg": "NSE", "tick_size": "10.000000"')
+        reg = inst.build(read("EQUITY_L.sample.csv"), read("kite_instruments.sample.csv"), angel)
+        self.assertIn("HDFCBANK: tick size differs, Kite 0.05 vs Angel 0.1", "\n".join(reg["problems"]))
 
     def test_find_by_isin_symbol_and_name(self):
         self.assertEqual(inst.find(self.reg, "INE467B01029")[0]["nse_symbol"], "TCS")
@@ -227,7 +261,7 @@ class Instruments(unittest.TestCase):
 
     def test_nse_list_alone_still_builds(self):
         reg = inst.build(read("EQUITY_L.sample.csv"))
-        self.assertEqual(reg["count"], 4)
+        self.assertEqual(reg["count"], 7)
         self.assertEqual(reg["problems"], [])
         self.assertNotIn("kite_token", reg["instruments"]["INE002A01018"])
 
