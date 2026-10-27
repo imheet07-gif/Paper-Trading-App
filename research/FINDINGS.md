@@ -139,7 +139,7 @@ answer is not truncated: August 2026 is 21,026 rows either way).
   - It records bigger, rarer moves than PIT, so a signal built on it
     (for example open-market promoter acquisitions) is a new idea needing
     its own dev test, not a feed for insider_buying.
-- Not reachable: BSE's API (403), the old `corporates-sast-reg29` spelling.
+- Not reachable: BSE's API (403). Guessed endpoint names (`corporates-sast-reg29`, `corporate-sast-reg31`, `corporates-pledgedata`) returned nothing.
 
 ## Where this leaves us
 
