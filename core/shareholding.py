@@ -170,7 +170,7 @@ def row(r):
             "promoter_pct": pct(r.get("pr_and_prgrp")), "public_pct": pct(r.get("public_val")),
             "employee_trusts_pct": pct(r.get("employeeTrusts")), "revised": int(revised),
             "submitted_on": day(r.get("submissionDate")), "revised_on": day(r.get("revisionDate")) if revised else None,
-            "broadcast_at": at, "xbrl": r.get("xbrl") if str(r.get("xbrl") or "").startswith("https://") else None}
+            "broadcast_at": at, "xbrl": xbrl_link(r.get("xbrl"))}
 
 
 # ---------------------------------------------------------------- XBRL
@@ -326,6 +326,13 @@ def fetch_history(symbols, get=bhavcopy.http_get, raw=RAW, refresh=False, pause=
     return n
 
 
+def xbrl_link(url):
+    """The filing's XBRL link, or None when there is none: older filings list it as
+    '.../corporate/xbrl/-' (no file)."""
+    url = str(url or "").strip()
+    return url if url.startswith("https://") and url.lower().endswith(".xml") else None
+
+
 def xbrl_name(url):
     """The cache name for a filing: its file name, which NSE makes unique per filing."""
     name = url.rsplit("/", 1)[-1]
@@ -349,7 +356,12 @@ def fetch_xbrl(db, get=bhavcopy.http_get, raw=RAW, since=None, symbols=None, pau
     for sym, period, url in rows:
         if want is not None and sym not in want:
             continue
-        out = raw_path("xbrl", xbrl_name(url), raw)
+        try:
+            out = raw_path("xbrl", xbrl_name(url), raw)
+        except ValueError as e:  # an odd link must not end a run over every company
+            if log:
+                log("%s %s: %s; skipped" % (sym, period, e))
+            continue
         if os.path.exists(out):
             with open(out, encoding="utf-8") as fh:
                 if json.load(fh).get("version", 1) >= FACTS_VERSION:
@@ -417,7 +429,11 @@ def rebuild(db, raw=RAW, log=print):
                 counts["rows"] += 1
     for record_id, isin, period, at, url in db.execute(
             "SELECT record_id, isin, period_end, broadcast_at, xbrl FROM shareholding WHERE xbrl IS NOT NULL").fetchall():
-        path = raw_path("xbrl", xbrl_name(url), raw)
+        try:
+            path = raw_path("xbrl", xbrl_name(url), raw)
+        except ValueError:
+            counts["skipped"] += 1
+            continue
         if not os.path.exists(path):
             continue
         with open(path, encoding="utf-8") as fh:

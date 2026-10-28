@@ -43,6 +43,11 @@ class Parse(unittest.TestCase):
     def test_employee_trusts(self):
         self.assertEqual(sh.row(rows("master_2026-09.json")[2])["employee_trusts_pct"], "0.22")
 
+    def test_a_filing_without_an_xbrl_file(self):
+        r = rows("history_TCS.json")[-1]
+        for missing in ("https://nsearchives.nseindia.com/corporate/xbrl/-", "-", "", None):
+            self.assertIsNone(sh.row(dict(r, xbrl=missing))["xbrl"], missing)
+
     def test_bad_values(self):
         self.assertIsNone(sh.pct("n/a"))
         self.assertIsNone(sh.pct("101"))
@@ -167,6 +172,21 @@ class FetchAndStore(unittest.TestCase):
         if "symbol=" in url:
             return b"[]"
         return json.dumps(rows("master_2026-09.json")).encode()
+
+    def test_rebuild_with_a_no_file_link(self):
+        import datetime as dt
+        history = rows("history_TCS.json")
+        history[-1] = dict(history[-1], xbrl="https://nsearchives.nseindia.com/corporate/xbrl/-")
+        sh._save(sh.raw_path("history", "TCS", self.raw), history)
+        db = sh.connect(os.path.join(self.tmp.name, "m.db"))
+        sh.rebuild(db, raw=self.raw, log=None)  # used to stop the whole run with "unexpected XBRL link"
+        self.assertEqual(db.execute("SELECT COUNT(*), COUNT(xbrl) FROM shareholding").fetchone(), (21, 20))
+        self.assertEqual(sh.fetch_xbrl(db, get=lambda url: None, raw=self.raw, pause=0, log=None), 0)
+        odd = "https://nsearchives.nseindia.com/corporate/xbrl/SHP 1;.xml"  # passes xbrl_link, fails xbrl_name
+        db.execute("UPDATE shareholding SET xbrl = ? WHERE period_end = '2026-09-30'", (odd,))
+        db.commit()
+        self.assertEqual(sh.fetch_xbrl(db, get=lambda url: None, raw=self.raw, pause=0, log=None), 0)
+        db.close()
 
     def test_latest_history_cache_and_rebuild(self):
         import datetime as dt
