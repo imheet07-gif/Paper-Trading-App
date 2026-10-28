@@ -458,6 +458,17 @@ column freely.
 
 Next for the second agent: the trade finder above, in its stated order.
 
+Progress (second agent):
+
+- Step 1, settings fixed in FINDINGS.md 2026-10-28 (owner agreed): ATR stop
+  and target, loss limits per profile, the profiles' stock counts and the
+  concentration test. `research/exits.py` computes the stop, target and
+  quantity (branch `second-agent/stops-targets`). Open: the concentration
+  runs (owner's machine) and the after-tax check (needs the tax rates from
+  the Income Tax Department's own pages and a Nifty momentum index history).
+- Commodities (owner, 2026-10-28): to track; which meaning (context for
+  stocks, NSE gold and silver ETFs, or MCX futures) is the owner's choice.
+
 ## Gaps in the ported skills
 
 The four ported skills (`trader-budget`, `trader-risk`, `trader-rebalance`,
