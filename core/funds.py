@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS fund_nav (
   scheme_code TEXT NOT NULL, date TEXT NOT NULL, nav TEXT NOT NULL, name TEXT, isin TEXT,
   PRIMARY KEY (scheme_code, date));
 """
-COLUMNS = {"scheme code": "code", "scheme name": "name", "net asset value": "nav", "date": "date",
+COLUMNS = {"scheme code": "code", "scheme name": "name", "nav name": "name", "net asset value": "nav", "date": "date",
            "plan": "plan", "option": "option",
            "isin div payout/ isin growth": "isin", "isin div payout/isin growth": "isin",
            "isin div payout/isingrowth": "isin"}
