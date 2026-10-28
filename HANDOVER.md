@@ -477,6 +477,12 @@ Progress (second agent):
   candidates are the top tenth of the ranking, not the top 20, and each
   card shows its tenth's logged dev and validation record (FINDINGS.md);
   the concentration and profile backtests use the same rule.
+- `research/profiles.py` (second agent, 2026-10-28) runs the concentration
+  test (top 1, 3, 5 and 20) and the three risk levels, with the settings
+  and the "offered only if" rule fixed in FINDINGS.md first. Owner's
+  machine: `python3 research/profiles.py --period dev --all`, then
+  `--period validation --all` once; record both in FINDINGS.md. Not yet:
+  `advise.py` showing each level's record and refusing a failed level.
 - Commodities (owner, 2026-10-28): all of these, after the trade finder's
   steps 1 and 2, each from the publisher's own files:
   - A. Context: daily prices of gold, silver, crude, natural gas, copper and
