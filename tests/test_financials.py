@@ -60,12 +60,18 @@ class FetchAndStore(unittest.TestCase):
         base = "https://nsearchives.nseindia.com/corporate/xbrl/"
         rows = [{"seqNumber": "1", "symbol": "TCS", "isin": "INE467B01029", "broadCastDate": "16-Apr-2020 20:27:28",
                  "xbrl": base + "INDAS_54905_240070_16042020082728_WEB.xml"},
-                {"seqNumber": "2", "symbol": "INFY", "isin": "INE000A01099", "broadCastDate": "24-Jul-2022 18:21:00",
+                {"seqNumber": "2", "symbol": "INFY", "isin": "INE009A01021", "broadCastDate": "24-Jul-2022 18:21:00",
                  "xbrl": base + "INDAS_600774_2315_24072022182100_WEB.xml"},
                 {"seqNumber": "3", "symbol": "HDFCBANK", "isin": "INE040A01034", "broadCastDate": "19-Jul-2020 20:40:08",
                  "xbrl": base + "BANKING_57945_291264_19072020084008_WEB.xml"},
                 {"seqNumber": "4", "symbol": "NOXBRL", "isin": "INE000X01010", "broadCastDate": "19-Jul-2020 20:40:08",
-                 "xbrl": "-"}]
+                 "xbrl": "-"},
+                # INFY's feed row with its pre-split ISIN, stale by the filing day: updated, then it matches
+                {"seqNumber": "5", "symbol": "INFY", "isin": "INE009A01013", "broadCastDate": "24-Jul-2022 18:21:00",
+                 "xbrl": base + "INDAS_600774_2315_24072022182100_WEB.xml"},
+                # a row for TCS pointing at Infosys's filing: another company's results, refused
+                {"seqNumber": "6", "symbol": "TCS", "isin": "INE467B01029", "broadCastDate": "24-Jul-2022 18:21:00",
+                 "xbrl": base + "INDAS_600774_2315_24072022182100_WEB.xml"}]
         with open(os.path.join(self.results, "2020-07.json"), "w") as fh:
             json.dump(rows, fh)
         self.files = {"INDAS_54905_240070_16042020082728_WEB.xml": xml("INDAS_TCS_2020-03_consolidated.xml"),
@@ -82,9 +88,9 @@ class FetchAndStore(unittest.TestCase):
 
     def test_filter_fetch_cache_and_store(self):
         rows = fi.filings(self.results)
-        self.assertEqual([r[1] for r in rows], ["TCS", "INFY", "HDFCBANK"])  # no link, no row
-        self.assertEqual([r[1] for r in fi.filings(self.results, since="2021-01-01")], ["INFY"])
-        self.assertEqual([r[1] for r in fi.filings(self.results, symbols=["tcs"])], ["TCS"])
+        self.assertEqual([r[1] for r in rows], ["TCS", "INFY", "HDFCBANK", "INFY", "TCS"])  # no link, no row
+        self.assertEqual([r[1] for r in fi.filings(self.results, since="2021-01-01")], ["INFY", "INFY", "TCS"])
+        self.assertEqual([r[1] for r in fi.filings(self.results, symbols=["tcs"])], ["TCS", "TCS"])
         raw = os.path.join(self.tmp.name, "raw")
         self.assertEqual(fi.fetch(rows, get=self.get, raw=raw, pause=0, log=None), 3)
         self.assertEqual(fi.fetch(rows, get=self.get, raw=raw, pause=0, log=None), 0)  # cached
@@ -95,12 +101,21 @@ class FetchAndStore(unittest.TestCase):
         self.assertEqual(fi.fetch(rows, get=broken, raw=other, pause=0, log=None), 0)  # survives, caches nothing
         self.assertFalse(os.path.isdir(other))
         db = fi.connect(os.path.join(self.tmp.name, "m.db"))
+        bc = load("core", "bhavcopy")
+        p = {"series": "EQ", "open": 1, "high": 1, "low": 1, "close": 1, "last": 1, "prev_close": 1, "volume": 1,
+             "value": 1, "trades": 1}
+        bc.store_day(db, [dict(p, date="2014-12-01", isin="INE009A01013", symbol="INFY"),   # before the split
+                          dict(p, date="2022-07-22", isin="INE009A01021", symbol="INFY")])  # trading at the filing
+        db.commit()
         counts = fi.rebuild(db, rows, raw=raw, log=None)
-        self.assertEqual((counts["stored"], counts["isin_mismatch"]), (2, 1))  # INFY's feed row has the wrong ISIN
+        # seq 5's stale ISIN is updated, then matches; seq 6 is Infosys's filing under TCS: refused
+        self.assertEqual((counts["stored"], counts["isin_mismatch"], counts["isin_updated"]), (4, 1, 1))
+        self.assertEqual(db.execute("SELECT isin FROM financials WHERE seq = '5'").fetchone(), ("INE009A01021",))
         got = db.execute("SELECT symbol, isin, period_end, net_profit, eps_basic, broadcast_at FROM financials "
-                         "ORDER BY seq").fetchall()
+                         "WHERE seq IN ('1', '3', '5') ORDER BY seq").fetchall()
         self.assertEqual(got, [("TCS", "INE467B01029", "2020-03-31", "80930000000", "21.45", "2020-04-16T20:27:28"),
-                               ("HDFCBANK", "INE040A01034", "2020-06-30", "69408800000", "12.6", "2020-07-19T20:40:08")])
+                               ("HDFCBANK", "INE040A01034", "2020-06-30", "69408800000", "12.6", "2020-07-19T20:40:08"),
+                               ("INFY", "INE009A01021", "2022-06-30", "49010000000", "11.65", "2022-07-24T18:21:00")])
         db.close()
 
 

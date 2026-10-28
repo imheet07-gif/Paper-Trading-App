@@ -237,10 +237,28 @@ def connect(path=bhavcopy.DEFAULT_DB):
 def rebuild(db, rows, raw=RAW, log=print):
     """Every cached, parsed filing into the financials table, stamped with the
     results feed's broadcast time. A filing whose ISIN is not the feed row's is
-    refused rather than stored under the wrong company."""
+    refused rather than stored under the wrong company.
+
+    NSE's results feed keeps a company's old ISIN for years after a split or
+    face value change (BANKBARODA, PNB, ICICIBANK, ...), while the XBRL names
+    the current one. So, as core/events.py does, a feed ISIN that was not
+    trading on the filing day is first replaced by the ISIN the symbol traded
+    under that day, from the prices table; only then are the two compared."""
     db.executescript("DROP TABLE IF EXISTS financials;" + SCHEMA)
-    counts = {"stored": 0, "no_quarter": 0, "isin_mismatch": 0}
+    counts = {"stored": 0, "no_quarter": 0, "isin_mismatch": 0, "isin_updated": 0}
+    index = events.symbol_index(db)
+    live = {}  # isin: (first, last) traded
+    for spans in index.values():
+        for first, last, i in spans:
+            lo, hi = live.get(i, (first, last))
+            live[i] = (min(lo, first), max(hi, last))
     for seq, sym, isin, at, url in rows:
+        on, span = at[:10], live.get(isin)
+        if isin and (not span or not span[0] <= on <= span[1]):
+            current = events.isin_for(index, sym, on)
+            if current and current != isin:
+                isin = current
+                counts["isin_updated"] += 1
         path = os.path.join(raw, xbrl_name(url) + ".json")
         if not os.path.exists(path):
             continue
@@ -261,7 +279,7 @@ def rebuild(db, rows, raw=RAW, log=print):
     db.commit()
     if log:
         log("financials: %(stored)d quarters stored, %(no_quarter)d files without a clear quarter, "
-            "%(isin_mismatch)d refused for an ISIN mismatch" % counts)
+            "%(isin_mismatch)d refused for an ISIN mismatch (%(isin_updated)d stale feed ISINs updated first)" % counts)
     return counts
 
 
