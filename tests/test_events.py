@@ -148,6 +148,25 @@ class Store(unittest.TestCase):
             kept = json.load(fh)
         self.assertEqual(len(kept), 4)  # the press release is not cached
 
+    def test_integrated_filing_keeps_financials_and_refuses_a_partial_answer(self):
+        rows = [{"seq_Id": "1", "type": "Integrated Filing- Financials"},
+                {"seq_Id": "2", "type": "Integrated Filing- Governance"}]
+
+        def get(url):
+            self.assertIn("integrated-filing-results", url)
+            return json.dumps({"data": rows, "totalCount": total}).encode()
+        total = 2
+        src = {"integrated": ev.SOURCES["integrated"]}
+        self.assertEqual(ev.fetch("2024-12", "2025-01", get=get, pause=0, today=dt.date(2026, 10, 27), log=None,
+                                  sources=src, raw=self.raw), 1)  # nothing asked for before 2025
+        with open(os.path.join(self.raw, "integrated", "2025-01.json"), encoding="utf-8") as fh:
+            self.assertEqual([r["seq_Id"] for r in json.load(fh)], ["1"])
+        total = 3  # NSE pages its answer: a short page is not cached as the whole month
+        with self.assertRaisesRegex(ValueError, "2 of 3 rows"):
+            ev.fetch("2026-10", "2026-10", get=get, pause=0, today=dt.date(2026, 10, 27), log=None,
+                     sources=src, raw=self.raw)
+        self.assertFalse(os.path.exists(os.path.join(self.raw, "integrated", "2026-10.json")))
+
     def test_fetch_skips_cached_months_but_refreshes_recent_ones(self):
         calls = []
 

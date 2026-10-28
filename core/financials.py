@@ -2,12 +2,26 @@
 """Quarterly results from the XBRL filed with each NSE results announcement,
 keyed on when the results became public.
 
-Where the files are: NSE's results feed (corporates-financial-results, cached
-by core/events.py under data/events_raw/results/) carries an `xbrl` link per
-filing, nsearchives.nseindia.com/corporate/xbrl/<INDAS|BANKING|...>_*.xml,
-from 2013 to February 2025, when that feed stopped. The announcements that
-carry results since then flag `hasXbrl` but give no link; where those files
-live is still open (HANDOVER.md), so quarters from March 2025 are not here.
+Where the files are, both feeds cached month by month by core/events.py:
+
+  - NSE's results feed (corporates-financial-results, data/events_raw/results/)
+    carries an `xbrl` link per filing,
+    nsearchives.nseindia.com/corporate/xbrl/<INDAS|BANKING|...>_*.xml, from
+    2013 to March 2025 (the December 2024 quarter), when that feed stopped.
+    Its `broadCastDate` is when the results were disseminated.
+  - From April 2025 (the March 2025 quarter), SEBI's Integrated Filing (Financials)
+    (integrated-filing-results, data/events_raw/integrated/), whose `xbrl`
+    links INTEGRATED_FILING_<INDAS|BANKING|NBFC|...>_*.xml in the same
+    taxonomy. Its `broadcast_Date` is seconds after the file was created and
+    a median of two hours after the results PDF was announced (October 2026),
+    so the figures are stamped no earlier than they were public. Revisions
+    carry no `broadcast_Date`: their `creation_Date` is used. A revision
+    leaves the original in the feed; both are stored, each under its own
+    time, so a reader takes the latest one published by the day it looks at.
+    The feed gives no ISIN: it comes from the prices table for the symbol on
+    the filing day. Half-yearly filers (some NONINDAS) have no quarter and
+    are counted as such; insurers' files (COM, LI, GI) use other line names,
+    so most metrics are empty for them.
 
 What is read, for the quarter only (not the year to date):
 
@@ -52,6 +66,7 @@ import events  # noqa: E402
 
 RAW = os.path.join(bhavcopy.ROOT, "data", "financials_raw")
 RESULTS_RAW = os.path.join(events.RAW, "results")
+INTEGRATED_RAW = os.path.join(events.RAW, "integrated")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS financials (
   seq TEXT PRIMARY KEY, symbol TEXT, isin TEXT, nature TEXT, audited TEXT, period_start TEXT, period_end TEXT,
@@ -174,26 +189,38 @@ def xbrl_name(url):
     return name[:-4]
 
 
-def filings(results_raw=RESULTS_RAW, since=None, symbols=None):
-    """Results feed rows that link an XBRL file: [(seq, symbol, isin, broadcast_at, url)]."""
+def _feed_rows(folder):
+    if not os.path.isdir(folder):
+        return
+    for f in sorted(os.listdir(folder)):
+        with open(os.path.join(folder, f), encoding="utf-8") as fh:
+            yield from json.load(fh)
+
+
+def filings(results_raw=RESULTS_RAW, since=None, symbols=None, integrated_raw=INTEGRATED_RAW):
+    """Results and Integrated Filing rows that link an XBRL file:
+    [(seq, symbol, isin or None, broadcast_at, url)]. Integrated Filing seqs
+    are prefixed "I" so they never meet the results feed's numbers."""
     want = {s.upper() for s in symbols} if symbols else None
+    found = []
+    for r in _feed_rows(results_raw):
+        found.append((r.get("seqNumber"), r.get("symbol"), r.get("isin"), events.stamp(r.get("broadCastDate")),
+                      r.get("xbrl")))
+    for r in _feed_rows(integrated_raw):
+        if r.get("type") != "Integrated Filing- Financials":
+            continue
+        at = events.stamp(r.get("broadcast_Date")) or events.stamp(r.get("creation_Date"))
+        found.append(("I%s" % r["seq_Id"] if r.get("seq_Id") else None, r.get("symbol"), None, at, r.get("xbrl")))
     out = []
-    if not os.path.isdir(results_raw):
-        return out
-    for f in sorted(os.listdir(results_raw)):
-        with open(os.path.join(results_raw, f), encoding="utf-8") as fh:
-            rows = json.load(fh)
-        for r in rows:
-            url = str(r.get("xbrl") or "")
-            at = events.stamp(r.get("broadCastDate"))
-            sym = (r.get("symbol") or "").strip().upper()
-            if not url.startswith("https://") or not url.endswith(".xml") or not at or not r.get("seqNumber"):
-                continue
-            if want is not None and sym not in want:
-                continue
-            if since and at[:10] < since:
-                continue
-            out.append((str(r["seqNumber"]), sym, (r.get("isin") or "").upper() or None, at, url))
+    for seq, sym, isin, at, url in found:
+        url, sym = str(url or ""), (sym or "").strip().upper()
+        if not url.startswith("https://") or not url.endswith(".xml") or not at or not seq:
+            continue
+        if want is not None and sym not in want:
+            continue
+        if since and at[:10] < since:
+            continue
+        out.append((str(seq), sym, (isin or "").upper() or None, at, url))
     return out
 
 
@@ -235,8 +262,8 @@ def connect(path=bhavcopy.DEFAULT_DB):
 
 
 def rebuild(db, rows, raw=RAW, log=print):
-    """Every cached, parsed filing into the financials table, stamped with the
-    results feed's broadcast time. A filing whose ISIN is not the feed row's is
+    """Every cached, parsed filing into the financials table, stamped with its
+    feed's broadcast time. A filing whose ISIN is not the feed row's is
     refused rather than stored under the wrong company.
 
     NSE's results feed keeps a company's old ISIN for years after a split or
@@ -254,7 +281,9 @@ def rebuild(db, rows, raw=RAW, log=print):
             live[i] = (min(lo, first), max(hi, last))
     for seq, sym, isin, at, url in rows:
         on, span = at[:10], live.get(isin)
-        if isin and (not span or not span[0] <= on <= span[1]):
+        if not isin:  # Integrated Filing rows name no ISIN
+            isin = events.isin_for(index, sym, on)
+        elif not span or not span[0] <= on <= span[1]:
             current = events.isin_for(index, sym, on)
             if current and current != isin:
                 isin = current
@@ -284,7 +313,7 @@ def rebuild(db, rows, raw=RAW, log=print):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Quarterly results from NSE's results XBRL into the store.")
+    ap = argparse.ArgumentParser(description="Quarterly results from NSE's results and Integrated Filing XBRL into the store.")
     ap.add_argument("--db", default=bhavcopy.DEFAULT_DB)
     sub = ap.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="download and read the XBRL of cached results filings (run events.py fetch first)")

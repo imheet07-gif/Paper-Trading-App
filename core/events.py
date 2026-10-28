@@ -24,6 +24,10 @@ Sources (www.nseindia.com/api, fetched month by month):
   corporate-sast-reg29           Takeover Regulation 29 disclosures: a
                                  holder crossing 5% or moving 2%, with a
                                  promoter flag and the mode (from 2013)
+  integrated-filing-results      Integrated Filing (Financials) from 2025:
+                                 each results filing with its XBRL link,
+                                 for core/financials.py (not read here);
+                                 governance filings are not cached
 
 The insider feed is empty after 2 May 2026 and has no live replacement
 (research/FINDINGS.md).
@@ -58,10 +62,13 @@ SOURCES = {
     "results": "corporates-financial-results?index=equities&from_date=%s&to_date=%s&period=Quarterly",
     "announcements": "corporate-announcements?index=equities&from_date=%s&to_date=%s",
     "sast": "corporate-sast-reg29?index=equities&from_date=%s&to_date=%s",
+    # pages of 20 by default; a month is at most a few thousand rows, and fetch checks totalCount
+    "integrated": "integrated-filing-results?index=equities&from_date=%s&to_date=%s&size=20000",
 }
-FIRST = {"announcements": "2025-01"}  # 15 MB a month; the results feed covers the years before
+FIRST = {"announcements": "2025-01", "integrated": "2025-01"}  # 15 MB a month; the results feed covers the years before
 RESULT_HEADINGS = ("Outcome of Board Meeting", "Financial Result Updates", "Integrated Filing- Financial")
-KEEP = {"announcements": lambda r: r.get("desc") in RESULT_HEADINGS}
+KEEP = {"announcements": lambda r: r.get("desc") in RESULT_HEADINGS,
+        "integrated": lambda r: r.get("type") == "Integrated Filing- Financials"}
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS insider (
   did TEXT PRIMARY KEY, pid TEXT, symbol TEXT, isin TEXT, person TEXT, category TEXT, mode TEXT, txn TEXT,
@@ -144,6 +151,8 @@ def fetch(start, end, get=bhavcopy.http_get, pause=0.6, today=None, log=print, s
                 continue
             data = json.loads(blob)
             rows = data.get("data", []) if isinstance(data, dict) else data
+            if isinstance(data, dict) and "totalCount" in data and len(rows) < int(data["totalCount"]):
+                raise ValueError("%s %s: %d of %s rows returned; not cached" % (source, ym, len(rows), data["totalCount"]))
             if source in KEEP:
                 rows = [r for r in rows if KEEP[source](r)]
             os.makedirs(os.path.dirname(out), exist_ok=True)

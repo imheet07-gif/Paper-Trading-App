@@ -197,9 +197,10 @@ def _q(db, sql, args=()):
 
 
 def results_context(db, isin, day):
-    """The latest quarter published by `day` against the same quarter a year earlier."""
+    """The latest quarter published by `day` against the same quarter a year earlier; of a
+    quarter filed again (a revision), the latest version published by `day`."""
     rows = _q(db, "SELECT period_end, nature, revenue, net_profit, eps_basic, broadcast_at FROM financials "
-                  "WHERE isin = ? AND broadcast_at <= ? ORDER BY period_end DESC, nature", (isin, day + "T23:59:59"))
+                  "WHERE isin = ? AND broadcast_at <= ? ORDER BY period_end DESC, nature, broadcast_at DESC", (isin, day + "T23:59:59"))
     if not rows:
         return None
     latest = rows[0][0]

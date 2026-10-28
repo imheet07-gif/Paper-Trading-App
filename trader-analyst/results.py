@@ -74,8 +74,9 @@ def _d(x):
 
 def quarters(db, isin, nature=None):
     """The company's quarters, newest first, all of one nature: consolidated when the newest
-    quarter has it (or when asked), else standalone."""
-    rows = [dict(zip(COLUMNS, r)) for r in _q(db, "SELECT %s FROM financials WHERE isin = ? ORDER BY period_end DESC"
+    quarter has it (or when asked), else standalone. A revised filing wins over the original."""
+    rows = [dict(zip(COLUMNS, r)) for r in _q(db, "SELECT %s FROM financials WHERE isin = ? "
+                                                "ORDER BY period_end DESC, broadcast_at DESC"
                                                 % ", ".join(COLUMNS), (isin,))]
     if not rows:
         return [], None
