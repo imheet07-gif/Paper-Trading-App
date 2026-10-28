@@ -48,6 +48,9 @@ class RatesFile(unittest.TestCase):
         for key in ("holding", "grandfathering", "set_off"):
             self.assertIn("incometaxindia.gov.in", r[key]["_source"], key)
         self.assertEqual(r["holding"]["long_term_after_months"], 12)  # what core/lots.py applies
+        for key in ("holding", "grandfathering", "set_off"):  # the same rules under the 2025 Act
+            self.assertIn("Income-tax Act, 2025", r[key]["_source_2025"], key)
+        self.assertEqual([a["name"] for a in r["acts"]], ["Income-tax Act, 1961", "Income-tax Act, 2025"])
         self.assertTrue(r["left_out"])
 
 
@@ -89,14 +92,40 @@ class Rates(unittest.TestCase):
         self.assertEqual((new["gains_tax"], new["cess"]), (D("1500.00"), D("60.00")))
 
     def test_dates_outside_the_file_are_refused(self):
-        with self.assertRaisesRegex(ValueError, "Income-tax Act, 2025"):
-            tax.assess([t("2026-01-02", "buy", 1, "100"), t("2026-04-01", "sell", 1, "110")])
+        with self.assertRaisesRegex(ValueError, "Finance Act, 2027"):
+            tax.assess([t("2027-01-04", "buy", 1, "100"), t("2027-04-01", "sell", 1, "110")])
         with self.assertRaisesRegex(ValueError, "outside the dates"):
             tax.assess([t("2011-01-03", "buy", 1, "100"), t("2012-03-30", "sell", 1, "110")])
 
     def test_a_sale_with_no_recorded_buy_is_refused(self):
         with self.assertRaisesRegex(ValueError, "no recorded buy"):
             tax.assess([t("2021-01-04", "buy", 5, "100"), t("2021-02-01", "sell", 8, "120")])
+
+
+class IncomeTaxAct2025(unittest.TestCase):
+    def test_tax_year_2026_27_runs_under_the_new_act_at_the_same_rates(self):
+        y = tax.assess([t("2026-01-05", "buy", 100, "1000", "INE000X01001"), t("2026-06-01", "sell", 100, "1500", "INE000X01001"),
+                        t("2025-01-06", "buy", 100, "1000", "INE000X01002"), t("2026-06-01", "sell", 100, "3000", "INE000X01002")],
+                       [("2026-08-03", "10000")], slab_pct="30")[0]
+        self.assertEqual((y["fy"], y["act"]), ("FY2026-27", "Income-tax Act, 2025"))
+        self.assertEqual(y["taxable"], {"long 12.5%": D(75000), "short 20%": D(50000)})  # 2,00,000 less Rs 1,25,000
+        self.assertEqual(y["gains_tax"], D("19375.00"))  # 9,375 + 10,000
+        self.assertEqual(y["dividend_tax"], D("3000.00"))
+        self.assertEqual(y["tax"], D("23270.00"))  # 4% cess on 22,375
+
+    def test_losses_from_the_old_act_carry_across_the_change(self):
+        years = tax.assess([t("2025-05-02", "buy", 100, "500"), t("2025-09-01", "sell", 100, "100"),
+                            t("2026-05-04", "buy", 100, "100", "INE000X01002"),
+                            t("2026-09-01", "sell", 100, "500", "INE000X01002")])
+        old, new = year(years, "FY2025-26"), year(years, "FY2026-27")
+        self.assertEqual(old["act"], "Income-tax Act, 1961")
+        self.assertEqual(new["set_off"], D(40000))
+        self.assertEqual((new["tax"], new["carried_forward"]), (D("0.00"), []))
+
+    def test_grandfathering_still_applies(self):
+        y = tax.assess([t("2017-01-02", "buy", 100, "100"), t("2026-08-03", "sell", 100, "3500")],
+                       fmv={"INE000X01001": "2000"})[0]
+        self.assertEqual(y["taxable"], {"long 12.5%": D(25000)})  # 1,50,000 less Rs 1,25,000
 
 
 class Grandfathering(unittest.TestCase):

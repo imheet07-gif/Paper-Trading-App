@@ -2,19 +2,21 @@
 """Income tax on listed equity gains and dividends, financial year by year.
 
 Rules come from core/tax_rates.json, each dated and quoted from the Income
-Tax Department's own text; a date the file does not cover is an error, never
-a default. For a resident individual, securities transaction tax paid:
+Tax Department's own text: the Income-tax Act, 1961 to 31 March 2026, the
+Income-tax Act, 2025 from 1 April 2026 (same rates, new section numbers).
+A date the file does not cover is an error, never a default. For a
+resident individual, securities transaction tax paid:
 
   * sells are matched to buys oldest first (core/lots.py); held more than
     12 months is long term
-  * short-term gains at the section 111A rate of the transfer date
+  * short-term gains at the section 111A (2025 Act: 196) rate of the transfer date
   * long-term gains exempt before 1 April 2018 (section 10(38)), then at the
-    section 112A rate above the year's exemption limit; a share bought before
-    1 February 2018 costs at least its 31 January 2018 value (section
-    55(2)(ac)), which the caller supplies per ISIN
-  * losses set off in the year (section 70), the rest carried forward eight
-    years (section 74): short-term against any gain, long-term only against
-    long-term
+    section 112A (198) rate above the year's exemption limit; a share bought
+    before 1 February 2018 costs at least its 31 January 2018 value (section
+    55(2)(ac); 90(7)), which the caller supplies per ISIN
+  * losses set off in the year (section 70; 108), the rest carried forward
+    eight years (section 74; 111, and 536(n) across the change of Act):
+    short-term against any gain, long-term only against long-term
   * dividends exempt to 31 March 2020 (section 10(34), with section 115BBDA
     above Rs 10 lakh), then at the holder's slab rate
   * cess on the tax; surcharge and the rest of tax_rates.json's left_out are
@@ -175,7 +177,7 @@ def assess(trades, dividends=(), slab_pct=None, fmv=None, rates=None):
     needed only when a dividend falls on or after 1 April 2020. Returns a
     list of {"fy", "short", "long", "exempt", "set_off", "taxable",
     "carried_forward", "gains_tax", "dividends", "dividend_tax", "cess",
-    "tax"}: money in Decimal rupees, tax rounded to the paisa."""
+    "tax", "act"}: money in Decimal rupees, tax rounded to the paisa."""
     rates = rates or load_rates()
     sales = classify(lots.match(trades)["realized"], rates, fmv)
     divs = {}
@@ -233,6 +235,7 @@ def assess(trades, dividends=(), slab_pct=None, fmv=None, rates=None):
             "carried_forward": [dict(c) for c in carried],
             "gains_tax": paise(gains_tax), "dividends": div_income, "dividend_tax": paise(div_tax),
             "dividend_rule": div_note, "cess": paise(cess), "tax": paise(gains_tax + div_tax + cess),
+            "act": _dated(rates["acts"], dt.date(_fy_start(fy), 4, 1), "act")["name"],
         })
     return out
 
@@ -274,8 +277,8 @@ def main(argv=None):
         print("error: %s" % e, file=sys.stderr)
         return 1
     for y in years:
-        print("%s  short %s  long %s  set off %s  tax on gains %s  dividends %s (tax %s)  cess %s  total %s" % (
-            y["fy"], inr(y["short"]), inr(y["long"]), inr(y["set_off"]), inr(y["gains_tax"]), inr(y["dividends"]),
+        print("%s (%s)  short %s  long %s  set off %s  tax on gains %s  dividends %s (tax %s)  cess %s  total %s" % (
+            y["fy"], y["act"], inr(y["short"]), inr(y["long"]), inr(y["set_off"]), inr(y["gains_tax"]), inr(y["dividends"]),
             inr(y["dividend_tax"]), inr(y["cess"]), inr(y["tax"])))
         for c in y["carried_forward"]:
             print("    carried forward: %s loss of %s from %s" % (c["kind"], inr(c["amount"]), c["fy"]))

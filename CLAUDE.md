@@ -60,8 +60,10 @@ broker-neutral holdings, trades and charges.
   set-off and eight-year carry-forward, dividends at the slab rate from
   April 2020 (typed in, never stored), cess. Every rule is in
   `core/tax_rates.json`, dated and quoted from incometaxindia.gov.in's
-  section pages; dates it does not cover (before FY2012-13, or from 1
-  April 2026 under the Income-tax Act, 2025) are refused. Surcharge is
+  section pages, under the Income-tax Act, 1961 to March 2026 and the
+  Income-tax Act, 2025 from April 2026 (sections 196, 198, 90, 108, 111,
+  92). Dates it does not cover (before FY2012-13, or from 1 April 2027,
+  which needs the Finance Act, 2027) are refused. Surcharge is
   left out. `research/aftertax.py` runs a strategy with each year's tax
   paid from the portfolio (a hook in `backtest.run`) against an index
   fund, dev_2016 and validation only.
