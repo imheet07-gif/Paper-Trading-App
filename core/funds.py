@@ -88,7 +88,10 @@ def parse(text):
             continue
         cell = lambda k: cells[header[k]] if k in header and len(cells) > header[k] else ""
         # today's list has Plan and Option columns (checked 2026-10-28); without them they are in the name
-        name = " - ".join(x for x in (cell("name"), cell("plan"), cell("option")) if x and x != "-")
+        name = cell("name")
+        for extra in (cell("plan"), cell("option")):
+            if extra and extra != "-" and extra.lower() not in name.lower():
+                name += " - " + extra
         out.append({"code": cell("code"), "name": name, "isin": cell("isin"),
                     "nav": format(nav.normalize(), "f"), "date": day})
     if header is None:
@@ -108,8 +111,12 @@ def find(rows, words, direct=False, growth=False):
     return sorted(seen.items(), key=lambda kv: kv[1])
 
 
+BUSY_MS = 60000  # wait up to a minute for another writer (a download in another window) before failing
+
+
 def connect(path=bhavcopy.DEFAULT_DB):
     db = bhavcopy.connect(path)
+    db.execute("PRAGMA busy_timeout = %d" % BUSY_MS)
     db.executescript(SCHEMA)
     return db
 
