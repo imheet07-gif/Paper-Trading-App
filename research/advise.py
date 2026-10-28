@@ -11,8 +11,10 @@ passed the dev / validation protocol (research/strategies.json), among the
 stocks that pass every hard filter. Never a forecast. Everything else on a
 card (results, shareholding, SAST, deals) is context, labelled untested.
 
-Candidates: only the strategy's tested top N (20), the stocks it would buy
-today; never further down the ranking, however many fail a filter.
+Candidates: only the top tenth of the tested ranking (about 43 of 430
+eligible stocks); never further down, however many fail a filter. The
+top tenth beat the average stock in both tested periods (FINDINGS.md,
+2026-10-28); each card shows its tenth's record from the logged runs.
 
 Hard filters (a pick failing one is dropped and the answer says why):
   the strategy's universe   company shares only, EQ series, no failed
@@ -64,9 +66,49 @@ STRATEGY = "momentum_quality_top20"
 LIMIT_BAND = Decimal("0.01")      # buy limit 1% above the last close, as the scan's order sheet
 MAX_SHARE_OF_VALUE = 0.01         # the order at most 1% of the 60-session median traded value
 LOOKBACK_DAYS = 90                # context window for shareholding, SAST and deals
-PENDING = ["the record of this profile and of each rank bucket on dev and validation (backtests pending)",
+CANDIDATE_SHARE = 0.10            # the top tenth of the ranking (FINDINGS.md, 2026-10-28)
+RUNS_LOG = backtest.RUNS_LOG
+PENDING = ["the record of this profile on dev and validation (profile backtests pending)",
            "the after-tax comparison with a Nifty momentum index fund (step 1, pending)",
            "a results calendar: dates of upcoming results are not stored yet"]
+
+
+def decile_record(signal, runs_log=RUNS_LOG):
+    """Each tenth of the ranking's mean monthly return above the average stock, from the
+    latest logged evaluation of this signal on dev and on validation: {period: (at, [10 values])}.
+    Logged runs only; never the holdout."""
+    out = {}
+    if not os.path.exists(runs_log):
+        return out
+    with open(runs_log, encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            ic = e.get("ic") or {}
+            if e.get("signal") == signal and e.get("period") in ("dev", "validation") and \
+                    len(ic.get("decile_excess") or []) == 10:
+                if e["period"] not in out or e["at"] > out[e["period"]][0]:
+                    out[e["period"]] = (e["at"], ic["decile_excess"])
+    return out
+
+
+def tenth_of(rank, of):
+    """1 for the top tenth of the ranking, 10 for the bottom."""
+    return min(10, int((rank - 1) * 10 // of) + 1)
+
+
+def bucket(rank, of, record):
+    """What this stock's tenth of the ranking returned above the average stock, per month."""
+    if not rank or not of:
+        return None
+    t = tenth_of(rank, of)
+    out = {"tenth": t, "label": "top 10%" if t == 1 else "%d0%% to %d0%% down the ranking" % (t - 1, t)}
+    for period, (at, dec) in record.items():
+        out[period] = round(100 * dec[10 - t], 2)  # deciles are stored lowest score first
+        out[period + "_logged"] = at
+    return out
 
 
 class AdviseError(Exception):
@@ -197,7 +239,7 @@ def card(p, i, sid, scores, elig, db, link_map, amount, risk, n_stocks, ticks, b
 
 
 def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of=None, now_ist=None, ticks=None,
-           broker="zerodha", sector_of=None, strategy=STRATEGY):
+           broker="zerodha", sector_of=None, strategy=STRATEGY, candidate_share=CANDIDATE_SHARE, runs_log=RUNS_LOG):
     """The full answer as a dict. as_of replays a past session with data to it only."""
     amount = D(amount)
     if amount <= 0:
@@ -214,8 +256,10 @@ def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of
     elig = panel_mod.universe(p, u["min_price"], u["min_value"], u["value_days"], u["min_history"])
     scores = signals_mod.scores(p, strat)
     ranked = scores.iloc[i].where(elig.iloc[i]).dropna().rank(ascending=False, method="first")
-    # only the tested top N can ever be offered: the strategy never bought below it
-    order = list(ranked.sort_values().index[:int(strat["top"])])
+    # only the top tenth of the tested ranking can ever be offered
+    n_candidates = max(1, int(np.ceil(candidate_share * len(ranked))))
+    order = list(ranked.sort_values().index[:n_candidates])
+    record = decile_record(strat.get("signal"), runs_log)
     atr_now = exits.atr(p).iloc[i]
     link_map = ca.links(db)
     ticks = ticks if ticks is not None else scan.ticks()
@@ -237,6 +281,8 @@ def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of
         return picks, dropped
 
     picks, dropped = pick(risk)
+    for c in picks:
+        c["bucket"] = bucket(c["rank"], c["of"], record)
     try:
         review = scan.next_rebalance(day, db).isoformat()
     except Exception:  # the holiday calendar does not cover the year
@@ -244,17 +290,19 @@ def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of
     out = {"date": day.isoformat(), "amount": str(amount), "risk": risk,
            "strategy": strategy if isinstance(strategy, str) else strat.get("name", "custom"),
            "evidence": strat.get("description", ""), "validated": strat.get("status", ""),
-           "picks": picks, "dropped": dropped, "pending": PENDING,
+           "candidates": n_candidates, "picks": picks, "dropped": dropped,
+           "pending": PENDING + ([] if record else ["each tenth's record: no logged evaluation of this signal yet"]),
            "review_date": review,
            "rules": ["best means highest ranked by the tested signal, never a forecast",
                      "a one-month hold, entered at the next open from end-of-day data",
                      "a single stock swings far more than the tested basket of 20",
+                     "candidates are the top tenth of the tested ranking, never below it",
                      "order sheet only: nothing places an order"]}
     if len(picks) < n:
-        out["note"] = ("only %d of the %d stocks this profile holds pass every filter among the tested top %d"
-                       % (len(picks), n, int(strat["top"])))
+        out["note"] = ("only %d of the %d stocks this profile holds pass every filter among the top %d of the ranking"
+                       % (len(picks), n, n_candidates))
     if not picks:
-        out["answer"] = "no trade: nothing in the tested top %d passes the filters for this amount" % int(strat["top"])
+        out["answer"] = "no trade: nothing in the top %d of the tested ranking passes the filters for this amount" % n_candidates
     if risk != "low":
         low, _ = pick("low")
         out["low_profile"] = [{"symbol": c["symbol"], "rank": c["rank"], "order": c["plan"]["order"],
@@ -266,15 +314,15 @@ def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of
             raise AdviseError("no stored prices for %s" % sym)
         sid = hits[-1]
         cd = card(p, i, sid, *args, n, ticks, broker, sector_of, atr_now, ranked)
-        top = int(strat["top"])
+        cd["bucket"] = bucket(cd["rank"], cd["of"], record)
         if cd["rank"] is None:
             cd["verdict"] = "not ranked by the tested signal today (outside its universe): no tested reason to buy it"
-        elif cd["rank"] > top:
-            cd["verdict"] = ("ranked %d of %d by the tested signal, outside its top %d: no tested reason to prefer it "
-                             "to the picks above" % (cd["rank"], cd["of"], top))
+        elif cd["rank"] > n_candidates:
+            cd["verdict"] = ("ranked %d of %d by the tested signal, outside its top tenth: no tested reason to prefer it "
+                             "to the picks above" % (cd["rank"], cd["of"]))
         else:
-            cd["verdict"] = "inside the tested top %d (rank %d)%s" % (
-                top, cd["rank"], "" if cd["passes"] else ", but it fails a filter: " + "; ".join(cd["filters"]))
+            cd["verdict"] = "inside the top tenth of the tested ranking (rank %d of %d)%s" % (
+                cd["rank"], cd["of"], "" if cd["passes"] else ", but it fails a filter: " + "; ".join(cd["filters"]))
         out["stock"] = cd
     db.close()
     return out
@@ -284,6 +332,14 @@ def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of
 
 def _p(x):
     return "%.1f%%" % (100 * x) if x is not None and not np.isnan(x) else "-"
+
+
+def _bucket_line(b):
+    if not b:
+        return "its tenth of the ranking: no record"
+    parts = ["%s %+.2f%% a month" % (k, b[k]) for k in ("dev", "validation") if k in b]
+    return "%s of the ranking: beat the average stock by %s (logged evaluations)" % (
+        b["label"], " and ".join(parts) if parts else "no logged record")
 
 
 def report(a):
@@ -297,6 +353,7 @@ def report(a):
         L.append("   %s, about %s; stop %s (lose %s), target %s (gain %s)%s" % (
             pl["order"], inr(pl["cost"]), inr(pl["stop"]), inr(pl["loss_at_stop"]), inr(pl["target"]),
             inr(pl["gain_at_target"]), (", round trip %s%%" % pl["round_trip_pct"]) if pl["round_trip_pct"] else ""))
+        L.append("   " + _bucket_line(c.get("bucket")))
         L.append("   12-1 return %s, 1-year volatility %s, 1 month %s, %s from its 52-week high" % (
             _p(c["parts"]["return_12_1"]), _p(c["parts"]["volatility_1y"]), _p(c["recent"]["return_1m"]),
             _p(c["recent"]["from_52w_high"])))
@@ -330,6 +387,7 @@ def report(a):
         s = a["stock"]
         L.append("")
         L.append("%s: %s" % (s["symbol"], s["verdict"]))
+        L.append("   " + _bucket_line(s.get("bucket")))
         if s.get("plan"):
             L.append("   if bought anyway: %s, stop %s, target %s" % (s["plan"]["order"], inr(s["plan"]["stop"]),
                                                                     inr(s["plan"]["target"])))
