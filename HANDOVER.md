@@ -458,6 +458,33 @@ column freely.
 
 Next for the second agent: the trade finder above, in its stated order.
 
+Progress (second agent):
+
+- Step 1, settings fixed in FINDINGS.md 2026-10-28 (owner agreed): ATR stop
+  and target, loss limits per profile, the profiles' stock counts and the
+  concentration test. `research/exits.py` computes the stop, target and
+  quantity (branch `second-agent/stops-targets`). Open: the concentration
+  runs (owner's machine) and the after-tax check (needs the tax rates from
+  the Income Tax Department's own pages and a Nifty momentum index history).
+- Commodities (owner, 2026-10-28): all of these, after the trade finder's
+  steps 1 and 2, each from the publisher's own files:
+  - A. Context: daily prices of gold, silver, crude, natural gas, copper and
+    the like, shown on the evidence cards of the stocks they move (oil
+    marketers, paints, jewellers, metals) and used by the themes layer.
+  - B. NSE-listed gold and silver ETFs and Sovereign Gold Bonds: already in
+    the price store (they trade on NSE); ranked, sized and paper-traded like
+    stocks, with their own tested evidence before any ranking.
+  - C. MCX commodity futures: MCX's daily bhavcopy and contract specs (lot
+    sizes, margins), alongside the F&O work (step 4), with the same rules:
+    defined risk only, cost and worst case shown first, order sheets only.
+    mcxindia.com's files need checking for script access.
+  - D. Physical gold and silver the owner buys (coins, bars, jewellery): a
+    holdings record (weight, purity, price paid, making charges, GST),
+    valued at the published daily rates (IBJA, ibjarates.com, to verify),
+    and a cost comparison against ETFs and Sovereign Gold Bonds (spread,
+    making charges, GST, storage, tax). The project never buys anything;
+    it records what the owner bought.
+
 ## Gaps in the ported skills
 
 The four ported skills (`trader-budget`, `trader-risk`, `trader-rebalance`,

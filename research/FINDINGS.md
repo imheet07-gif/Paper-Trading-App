@@ -276,3 +276,31 @@ the universe). Not adopted, like insider_buying. A version that could be
 measured would need more coverage (smaller companies, a longer window, or
 promoter buying as one input to a composite); that is a new idea with its
 own settings fixed before any run, not a rescue of this one.
+
+## 2026-10-28: trade finder step 1, settings fixed before any test (owner agreed; second agent)
+
+For the trade finder in HANDOVER.md. Fixed now and never tuned on results;
+a change is a new version with its own record.
+
+**Stops and targets (risk limits; no edge claimed until the exit test).**
+
+- Average true range (ATR): the simple mean over the last 14 sessions of the
+  true range, the largest of high minus low, high minus the previous close,
+  and the previous close minus low, on prices adjusted for corporate
+  actions, to the last stored session.
+- Stop: entry minus 2 ATR. Target: entry plus 2 times the stop distance
+  (4 ATR), a 1 to 2 risk to reward.
+- Loss at the stop, charges included: low 0.5%, medium 1%, high 2% of the
+  amount. The quantity is the whole number of shares whose loss at the stop,
+  with the round trip's charges, stays within that, and whose cost fits the
+  stock's share of the amount.
+
+**Profiles.** Low: 5 stocks (or the index fund, if the after-tax check
+finds it beats the strategy). Medium: 3. High: 1. Each from the top of the
+tested ranking (`momentum_quality`), equal money per stock.
+
+**Concentration test.** `momentum_quality`, monthly, the same settings as
+the validated top 20, with top 1, 3 and 5 instead of 20: dev (2013 to 2020)
+first, then one validation look (2021 to 2023) for each, recorded here
+whatever it shows. Reported: CAGR, Sharpe, worst drawdown, worst month and
+share of months losing, against the top 20 on the same years. No holdout.
