@@ -358,6 +358,39 @@ end-of-day tool gets it. What is scored is the weeks after.
     so hindsight cannot creep in.
   - The scorer rejects any record whose made time is after its entry.
 
+**Sources for theme calls (owner, 2026-10-28).**
+
+A call cites a primary source. A news story can prompt a call, but the
+call then cites the release the story reports. When none exists yet, the
+call is labelled "reported, not confirmed".
+
+| site | use |
+| --- | --- |
+| `pib.gov.in` | cabinet decisions and ministry press releases |
+| `indiabudget.gov.in` | budget speech and allocations by ministry |
+| `rbi.org.in` | rate decisions and policy statements |
+| `sebi.gov.in` | circulars that change whole sectors |
+| `egazette.gov.in` | official notifications: duties, the date a policy takes effect |
+| `dgft.gov.in` | export and import policy |
+| `mospi.gov.in` | GDP, CPI and industrial production, with the release calendar |
+| `fpi.nsdl.co.in` | foreign investor flows by sector, fortnightly |
+| `amfi.com` (allowed already) | monthly mutual fund flows |
+| Economic Times, Business Standard, Mint, Moneycontrol, Reuters | public RSS headlines only (title, time, link): noticing, not evidence |
+
+Start with PIB, the Budget site, RBI, SEBI and ET's RSS. In the cloud
+these hosts must be added under the environment's Allowed domains; the
+owner's Mac reaches them already.
+
+**ET Prime.** The owner subscribes. The skill never logs in to ET or
+holds the owner's ET password, and never fetches paywalled pages.
+Instead:
+
+- the owner pastes a Prime article, or its key passage, into the chat;
+- `trader-themes` treats it as a "reported" source, with its link and
+  publication time;
+- the themes log keeps the link and a one-line summary, never the
+  article text, since ET's copyright and terms cover it.
+
 **2. Confirmation from the data, computed by the engine, not Claude.**
 
 For each call:
