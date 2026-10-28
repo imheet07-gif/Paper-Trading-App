@@ -412,7 +412,15 @@ From the entry day on, each session:
 (2013 to 2020) runs first. Then each of the seven runs gets one validation
 look (2021 to 2023). No holdout: the CLI refuses it.
 
-**When a risk level is offered.** It is offered only if, on both dev and
-validation, its CAGR and its Sharpe are above the equal-weight
-universe's. A level that fails is not offered, and the answer says why.
-This criterion is fixed now, before any run, as HANDOVER.md asks.
+**When a risk level is offered (owner chose this, before any run).**
+
+- Low must have a CAGR and a Sharpe above the equal-weight universe's, on
+  both dev and validation. It is sold as the steadier choice, so it has to
+  show both.
+- Medium and high must have a CAGR above the equal-weight universe's, on
+  both dev and validation. They are sold as more growth with more swings,
+  so they are judged on growth. Their worst month and worst drawdown are
+  shown on every answer.
+- Fallback: a request for a level that failed is answered with the next
+  safer level that passed (high, then medium, then low), and the answer
+  says why. It is "no trade" only if low failed too.

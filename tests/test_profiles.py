@@ -143,6 +143,17 @@ class Profiles(unittest.TestCase):
         with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
             profiles.main(["--period", "holdout", "--all", "--db", self.path])
 
+    def test_offer_rule_and_fallback(self):
+        bench = {"cagr": 0.10, "sharpe": 0.5}
+        self.assertTrue(profiles.passes_period("risk", "high", {"cagr": 0.12, "sharpe": 0.3}, bench))
+        self.assertFalse(profiles.passes_period("risk", "high", {"cagr": 0.09, "sharpe": 0.9}, bench))
+        self.assertFalse(profiles.passes_period("risk", "low", {"cagr": 0.12, "sharpe": 0.3}, bench))
+        self.assertTrue(profiles.passes_period("risk", "low", {"cagr": 0.12, "sharpe": 0.6}, bench))
+        self.assertEqual(profiles.safest_offered("high", {"high": False, "medium": True, "low": True}), "medium")
+        self.assertEqual(profiles.safest_offered("high", {"high": False, "medium": False, "low": True}), "low")
+        self.assertEqual(profiles.safest_offered("medium", {"high": True, "medium": True, "low": True}), "medium")
+        self.assertIsNone(profiles.safest_offered("low", {"low": False}))
+
     def test_runs_fixed_in_findings(self):
         self.assertEqual(profiles.RUNS, [("top", 1), ("top", 3), ("top", 5), ("top", 20),
                                          ("risk", "low"), ("risk", "medium"), ("risk", "high")])

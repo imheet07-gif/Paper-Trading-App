@@ -270,6 +270,28 @@ def month_stats(nav):
     return {"worst_month": float(r.min()), "months_losing": float((r < 0).mean()), "months": int(len(r))}
 
 
+def passes_period(kind, value, m, bench):
+    """This period's half of the rule fixed in FINDINGS.md: every run must earn more than the
+    equal-weight universe; the low risk level must also beat its Sharpe. A level is offered
+    only if it passes on dev and on validation; one that fails hands over to the next safer
+    level that passed."""
+    if not m or not bench:
+        return False
+    if m["cagr"] <= bench["cagr"]:
+        return False
+    return m["sharpe"] > bench["sharpe"] if (kind, value) == ("risk", "low") else True
+
+
+def safest_offered(asked, passed):
+    """The level to offer for a request: the asked level if it passed, else the next safer one
+    that did; None when even low failed (the answer is then no trade)."""
+    order = ["high", "medium", "low"]
+    for level in order[order.index(asked):]:
+        if passed.get(level):
+            return level
+    return None
+
+
 def label(kind, value):
     return "top %d, equal money" % value if kind == "top" else "%s risk (%d stock%s)" % (
         value, exits.PROFILE_STOCKS[value], "" if exits.PROFILE_STOCKS[value] == 1 else "s")
@@ -288,7 +310,7 @@ def run_one(p, scores, elig, period, kind, value, bench, note="", log=True, runs
              "sharpe": m.get("sharpe"), "cagr": m.get("cagr"), "max_drawdown": m.get("max_drawdown"),
              "worst_month": ms["worst_month"], "months_losing": ms["months_losing"],
              "bench_sharpe": bench.get("sharpe"), "bench_cagr": bench.get("cagr"), "stats": res["stats"],
-             "offer_test": bool(m and bench and m["cagr"] > bench["cagr"] and m["sharpe"] > bench["sharpe"]),
+             "offer_test": passes_period(kind, value, m, bench),
              "note": note or "concentration and risk-level test, settings fixed in FINDINGS.md 2026-10-28"}
     if log:
         backtest.log_run(entry, runs_log)
@@ -300,7 +322,7 @@ def report(period, entry, m):
     pct = lambda x: "n/a" if x is None else "%.1f%%" % (x * 100)
     kind, value = entry["profile"].split(":")
     return ("%-26s CAGR %7s  Sharpe %5.2f  worst drawdown %7s  worst month %7s  months losing %5s  "
-            "invested %4s  stops %d  targets %d  unfilled %d  short months %d of %d  beats universe: %s" % (
+            "invested %4s  stops %d  targets %d  unfilled %d  short months %d of %d  passes this period: %s" % (
                 label(kind, int(value) if kind == "top" else value), pct(m.get("cagr")), m.get("sharpe", float("nan")),
                 pct(m.get("max_drawdown")), pct(entry["worst_month"]), pct(entry["months_losing"]),
                 pct(s["invested_avg"]), s["stops"], s["targets"], s["unfilled"], s["short_months"], s["rebalances"],
