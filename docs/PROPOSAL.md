@@ -58,10 +58,10 @@ without conflicts.
 | --- | --- | --- | --- |
 | F1 | Staleness label on the card: when the latest stored results are older than the last quarter that should have reported, say "no recent results stored (latest: <quarter>)" and do not show growth as current | `research/advise.py` (the owner of that file decides) | context |
 | F2 | Results XBRL since March 2025 (existing open task) | `core/financials.py` | both |
-| F3 | Net worth and finance costs from the results XBRL (see below) | `core/financials.py`, fixtures | both |
+| F3 | Every metric line the results XBRL carries (see below and the catalogue) | `core/financials.py`, fixtures | both |
 | F4 | Screener.in export importer (existing task). Parked: the owner has no Screener.in subscription | `core/screener_export.py` | context |
 | F5 | Evaluate one vendor API (checklist below); approved by the owner 2026-10-28 | none until chosen | context |
-| F6 | Fundamental signals, pre-registered (below) | `research/signals.py`, `research/event_signals.py` | ranking |
+| F6 | The metrics catalogue: every metric on the card, and each one tested as its own pre-registered signal (below) | `research/signals.py`, `research/event_signals.py` | ranking |
 
 ### F3: what the results XBRL holds for quality (checked 2026-10-28)
 
@@ -92,9 +92,16 @@ with the full year.
 
   Run these checks on the cached files before pre-registering.
 
-F3 is therefore: add `FinanceCosts` (every quarter) and paid-up capital
-plus reserves (year-end files) to `core/financials.py`, from files
-already cached.
+F3 is therefore: widen `core/financials.py` to every line in the catalogue
+below that the results XBRL carries:
+
+- the expense lines (materials, employee costs, depreciation, finance
+  costs, other expenses);
+- exceptional items;
+- face value and paid-up capital, every quarter;
+- reserves, from year-end files.
+
+All of it comes from files already cached.
 
 ### F5: before paying for any API
 
@@ -108,52 +115,93 @@ already cached.
 Vendors found so far, such as FinancialFilings.com, are unverified. Try a
 sample before trusting any claim.
 
-### F6: fundamental signals, in the protocol
+### F6: the metrics catalogue
 
-Each signal is a new idea:
+The owner wants many metrics, not one chosen over another. So:
 
-- pre-registered in FINDINGS.md;
-- tested on dev;
-- given one validation look;
-- added to the trade finder's ranking only after it passes.
+- **On the card:** every metric below that has data, each labelled with
+  its source and date.
+- **In research:** each metric is its own signal, tested on dev.
 
-Until then fundamentals are context on the card, labelled untested.
+The whole list is pre-registered in one go, so the number of attempts is
+known before the first run and the deflated Sharpe counts every one. A
+metric joins the trade finder's ranking only after it passes dev and its
+one validation look. Until then it is labelled untested context.
 
-- **`earnings_surprise`** (needs F2 for live use).
-  - **Score:** latest quarter's diluted EPS minus the same quarter a year
-    earlier, divided by the standard deviation of that change over the
-    previous 8 quarters.
-  - **Needs:** at least 9 quarters.
-  - **Usable:** from the session after `broadcast_at`, and stale after 120
-    days.
-- **`quality`** (needs F3).
-  - **Score:** the average percentile rank of:
-    - ROE: trailing four quarters of profit attributable to owners,
-      divided by the net worth from the latest year-end results;
-    - interest coverage: trailing four quarters;
-    - earnings stability: the share of the last 8 quarters with a
-      profit.
-  - **Excluded:** loss-makers over the trailing four quarters.
-  - **Banks and NBFCs:** excluded, since interest coverage means nothing
-    for a lender. A lender quality score is a separate idea.
-  - **Usable:** from the session after the latest input's `broadcast_at`.
-- - **Combinations with `momentum_quality`**, for example 50/50 ranks, are a
-  separate pre-registration, made only after each part has been tested on
-  its own.
+Sources:
 
-**What still stands between `quality` and its dev test:**
+- **NSE:** NSE's results XBRL. Point in time, usable for testing.
+  Needs F3, and F2 for live use.
+- **NSE + prices:** the same data combined with the stored daily closes.
+  Point in time.
+- **Vendor:** shown on the card only. Used for testing only if the vendor
+  passes the F5 checklist, publication dates especially.
+
+| family | metric | definition | source |
+| --- | --- | --- | --- |
+| Growth | Revenue growth | Latest quarter against the same quarter a year earlier; and trailing four quarters against the four before | NSE |
+| Growth | EPS growth | The same, on diluted EPS restated to today's share count with the stored corporate action factors | NSE |
+| Growth | Earnings surprise | EPS change on a year earlier, divided by the standard deviation of that change over the previous 8 quarters; needs 9 quarters; stale after 120 days | NSE |
+| Profitability | Operating margin | (PBT + finance costs + depreciation - other income) over revenue, trailing four quarters | NSE |
+| Profitability | Net margin | Profit to owners over revenue, trailing four quarters | NSE |
+| Profitability | ROE | Profit to owners, trailing four quarters, over the latest year-end paid-up capital plus reserves | NSE |
+| Profitability | ROCE | Operating profit over capital employed (equity plus borrowings) | Vendor |
+| Safety | Interest coverage | (PBT + finance costs) over finance costs, trailing four quarters; not for lenders | NSE |
+| Safety | Debt to equity | Borrowings over net worth | Vendor |
+| Safety | Earnings stability | Share of the last 8 quarters with a profit; and the volatility of quarterly operating margin | NSE |
+| Earnings quality | Other income share | Other income over PBT: profit that does not come from the business | NSE |
+| Earnings quality | Exceptional items share | Exceptional items over PBT, trailing four quarters | NSE |
+| Earnings quality | Cash conversion | Operating cash flow over net profit | Vendor (cash flow is not in the results XBRL) |
+| Valuation | Earnings yield | Trailing four quarters' EPS over today's price (P/E inverted, so loss-makers sort last instead of breaking the scale) | NSE + prices |
+| Valuation | Book to price | Year-end net worth per share over today's price (P/B inverted) | NSE + prices |
+| Valuation | Sales to price | Trailing revenue per share over today's price | NSE + prices |
+| Size | Market cap | Today's price times shares outstanding (paid-up capital over face value, from the latest results) | NSE + prices |
+| Ownership | Promoter, FII, DII and MF stakes and changes; pledge flag | Already in `shareholding_detail`. History from September 2021 only, so context, not testable on dev | NSE |
+
+**Lenders** (banks, NBFCs, insurers) get their own lines where the XBRL
+carries them:
+
+- net interest income growth;
+- provisions over operating profit;
+- ROE.
+
+Interest coverage, operating margin and debt to equity are left blank
+for lenders, never shown as zero.
+
+**Composites, pre-registered with the list:**
+
+- `quality`: equal-weighted average rank of ROE, interest coverage and
+  earnings stability;
+- `value`: of earnings yield, book to price and sales to price;
+- `growth`: of revenue growth, EPS growth and earnings surprise.
+
+Combinations with `momentum_quality` come only after each part has been
+tested on its own.
+
+**Rules for every metric:**
+
+- Usable from the session after the latest input's `broadcast_at`.
+- Loss-makers and negative net worth sort last instead of being dropped,
+  so the card can still show them.
+- Ranks are within the same eligible universe the trade finder uses.
+
+**What still stands between these metrics and their dev tests:**
 
 1. F3's open checks:
-   - reserves present in the 2013 to 2016 files;
-   - how often reserves are missing;
+   - the older 2013 to 2016 files carry the same elements;
+   - how often reserves and expense lines are missing;
    - the September file.
 2. F3's parser change, with fixtures and tests.
-3. The definition above written into FINDINGS.md unchanged, with its
-   pass marks.
+3. The catalogue's NSE rows and the three composites written into
+   FINDINGS.md unchanged, with their pass marks: about 16 dev runs,
+   declared up front.
+4. The vendor rows wait for F5. A vendor that passes the checklist adds
+   its rows to the tests in a later, separate pre-registration.
 
-ROE needs a year-end net worth, so the first usable month is after the
-March 2014 results (about May 2014). Dev then runs from mid-2014 to 2020.
-Live use after testing also needs F2.
+ROE and book to price need a year-end net worth, so they start after the
+March 2014 results (about May 2014). The quarterly metrics can start in
+2015, once 8 or more quarters have built up. Live use of any NSE metric
+needs F2.
 
 ## 5. Fit with the trade finder order
 
@@ -161,8 +209,11 @@ Live use after testing also needs F2.
   file and can run alongside the trade finder steps.
 - **F1:** a few lines in `advise.py`. Best done by whoever owns that file
   now.
-- **F6:** waits for F2 or F3 and joins the queue of "shorter-horizon
-  candidates": a new candidate ranks only after it passes.
+- **F6:**
+  - **The card:** can show the metrics as soon as F3 lands, labelled
+    untested, through a small change in `advise.py` by its owner.
+  - **The ranking:** each metric joins the queue of "shorter-horizon
+    candidates" and ranks only after it passes.
 
 ## 6. Decisions
 
@@ -171,10 +222,13 @@ Made by the owner, 2026-10-28:
 - No Screener.in subscription: F4 is parked.
 - Evaluate a vendor API: F5 is approved.
 
+- Many metrics rather than one chosen over another: the F6 catalogue, with
+  each metric on the card and each tested as its own signal.
+
 Still open:
 
 1. Approve F1 to F3 as tasks to claim.
-2. Pre-register `earnings_surprise` now (it can be tested on 2013 to 2020
-   today), or wait for F3 and test it alongside `quality`.
-3. Approve the `quality` definition in F6, which replaces debt to equity
-   with interest coverage, or change it before pre-registration.
+2. Approve the F6 catalogue and the three composites for pre-registration,
+   or add or strike rows first. Rows cannot be added to that batch after
+   the first run; a later addition is a new pre-registration and counts
+   as further attempts.
