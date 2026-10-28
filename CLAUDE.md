@@ -9,9 +9,11 @@ broker-neutral holdings, trades and charges.
 
 ## Layout
 
-- `trader-*/` the eleven skills, each a `SKILL.md` plus one stdlib CLI.
+- `trader-*/` the twelve skills, each a `SKILL.md` plus one stdlib CLI
+  (`trader-advisor`, the trade finder's chat front, runs
+  `research/advise.py` instead).
   `trader-budget`, `trader-risk`, `trader-rebalance`, `trader-screener`,
-  `trader-alerts`, `trader-news`, `trader-broker` (a paper trader only:
+  `trader-alerts`, `trader-news`, `trader-advisor`, `trader-broker` (a paper trader only:
   no broker connection, no live mode) and `trader-copycat` (named holders
   from shareholding filings, and bulk and block deals) are ported to India (rupees, whole
   shares, an order sheet for manual entry; gaps in HANDOVER.md). The rest
@@ -52,7 +54,9 @@ broker-neutral holdings, trades and charges.
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
   protocol, `scan.py` is the daily scan and `paper.py` its paper ledger
-  (`trader/paper.json`). The scan runs only strategies in
+  (`trader/paper.json`), `exits.py` stops, targets and sizing,
+  `advise.py` the trade finder (only the tested top N, hard filters,
+  evidence cards). The scan runs only strategies in
   `research/strategies.json` and selects with `backtest.select_top`, so it
   trades exactly what was validated; changing a strategy means validating
   the new version first. Never open the holdout without the user asking; every run is
