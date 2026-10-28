@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS fund_nav (
   PRIMARY KEY (scheme_code, date));
 """
 COLUMNS = {"scheme code": "code", "scheme name": "name", "net asset value": "nav", "date": "date",
+           "plan": "plan", "option": "option",
            "isin div payout/ isin growth": "isin", "isin div payout/isin growth": "isin",
            "isin div payout/isingrowth": "isin"}
 
@@ -85,8 +86,10 @@ def parse(text):
         day = _day(cells[header["date"]]) if len(cells) > header["date"] else None
         if nav <= 0 or not day:
             continue
-        out.append({"code": cells[header["code"]], "name": cells[header["name"]],
-                    "isin": cells[header["isin"]] if "isin" in header and len(cells) > header["isin"] else "",
+        cell = lambda k: cells[header[k]] if k in header and len(cells) > header[k] else ""
+        # today's list has Plan and Option columns (checked 2026-10-28); without them they are in the name
+        name = " - ".join(x for x in (cell("name"), cell("plan"), cell("option")) if x and x != "-")
+        out.append({"code": cell("code"), "name": name, "isin": cell("isin"),
                     "nav": format(nav.normalize(), "f"), "date": day})
     if header is None:
         raise FundsError("not an AMFI NAV file: no header line with semicolons")

@@ -1,11 +1,8 @@
-Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
-
-Open Ended Schemes(Other Scheme - Index Funds)
-
-Test Asset Management Mutual Fund
-
-900001;INF000T01AA1;-;Test Nifty 50 Index Fund - Direct Plan - Growth Option;150.1234;28-Oct-2026
-900002;INF000T01AB9;-;Test Nifty 50 Index Fund - Regular Plan - Growth Option;140.5000;28-Oct-2026
-900003;INF000T01AC7;INF000T01AD5;Test Nifty 50 Index Fund - Direct Plan - IDCW;20.0000;28-Oct-2026
-900004;INF000T01AE3;-;Test Nifty Next 50 Index Fund - Direct Plan - Growth;55.2;28-Oct-2026
-900005;INF000T01AF0;-;Test Closed Fund - Direct Plan - Growth;N.A.;28-Oct-2026
+Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date
+ 
+Open Ended Schemes(Children’s Fund - Childrens' Fund)
+151165;INF579M01AN2;-;360 ONE ELSS Tax Saver Nifty 50 Index Fund;Direct Plan;GROWTH Option;12.9132;28-Oct-2026
+151166;INF579M01AO0;-;360 ONE ELSS Tax Saver Nifty 50 Index Fund;Direct Plan;IDCW Option;12.9132;28-Oct-2026
+151164;INF579M01AL6;-;360 ONE ELSS Tax Saver Nifty 50 Index Fund;Regular Plan;GROWTH Option;12.7900;28-Oct-2026
+151167;INF579M01AM4;-;360 ONE ELSS Tax Saver Nifty 50 Index Fund;Regular Plan;IDCW Option;12.7900;28-Oct-2026
+149373;INF846K013D2;-;Axis Nifty 50 Index Fund;Direct Plan;Growth Option;13.8175;28-Oct-2026
