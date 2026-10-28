@@ -453,6 +453,7 @@ column freely.
 | Screener.in export importer: the owner's own Excel exports, read locally, for manual review only (not point-in-time, never for backtests) | `core/screener_export.py` | second agent | waiting for a sample file from the owner |
 | Paper forward test from 2026-10-30, small fixes, reviewing the second agent's pull requests | `research/scan.py`, `research/paper.py`, `app/` | owner's agent | running |
 | Port `trader-copycat` to India: discover, follow and copy named investors from the shareholding filings' named holders and bulk and block deals; mutual fund portfolios as a second source later | `trader-copycat/`, `core/shareholding.py` (holders) | second agent | done on branch `second-agent/copycat`; MF portfolios open |
+| Port `trader-pelosi` to India: insider (PIT), promoter SAST and bulk and block deal disclosures from the store, new since the last check, by company or name, flags holdings and pledges | `trader-pelosi/insiders.py` | second agent | done on branch `second-agent/pelosi`. Gaps: NSE's insider feed is empty after 2026-05-02 (said on every answer); no "late filing" flag until SEBI's deadlines are in data with a source line; BSE-only disclosures not read |
 | Mutual fund accumulation (AMC monthly portfolios; AMC sites are not on the cloud allow-list) | to be decided | unassigned | open |
 | Indian tax module (FIFO lots exist in `core/lots.py`; TMCV/TMPV and ITC Hotels cost splits from the companies' notices; the owner's Zerodha tax P&L exports are the check) | `core/tax.py`, `trader-tax/` | unassigned | parked |
 
