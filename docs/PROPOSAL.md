@@ -1,7 +1,7 @@
 # Proposal: fundamentals for the trade finder
 
-From the owner, 2026-10-28. Approved by the owner the same day (section
-6). Nothing here is claimed, built or tested yet. The tasks are in
+From the owner, 2026-10-28. Approved by the owner the same day (sections
+6 and 7). Nothing here is claimed, built or tested yet. The tasks are in
 HANDOVER.md to claim the usual way, and the catalogue's settings go into
 `research/FINDINGS.md` as a pre-registration before any run.
 
@@ -230,3 +230,76 @@ Made by the owner, 2026-10-28:
 
 The tasks are listed in HANDOVER.md for claiming. F2 is the existing
 results XBRL row there.
+
+## 7. Broker reports and company communications (owner approved 2026-10-28)
+
+The owner wants broker reports tracked. They are treated the same way as
+themes, deals and copycat: context on the card and a forward scorecard,
+never a reason to rank a pick until a properly dated history has been
+tested.
+
+**Why this shape:**
+
+- **Estimate revisions** (analysts raising or cutting profit forecasts)
+  are among the better-evidenced stock signals worldwide. Ratings and
+  target prices are weaker: they lean optimistic and rarely say sell.
+- **No free history.** NSE does not publish broker research. Dated
+  histories of ratings, targets and estimates come from paid databases.
+  Without one, nothing here can be backtested.
+- **Copyright.** Broker reports are copyrighted. The owner may read and log
+  the ones they receive. The project never scrapes broker sites and never
+  stores or ships report text. A plugin user brings their own data.
+- **Regulation.** Personal use is fine. Passing on signals built from
+  reports needs SEBI Research Analyst registration (README fine print).
+
+| id | work | touches | for |
+| --- | --- | --- | --- |
+| B1 | Add to the F5 vendor evaluation: does the vendor offer consensus estimates, estimate revisions, ratings and target prices, each with the date it changed? If yes, show them on the card, and pre-register an estimate-revisions signal for testing, separately from the F6 batch | none until a vendor is chosen | context, then ranking |
+| B2 | Broker call log and scorecard | new `core/broker_calls.py`, tests | context, forward test |
+| B3 | Company communications on the card: links to the latest earnings-call transcript, investor presentation and analyst meet, from the NSE announcements already fetched (`trader-news` classifies them as "investor meeting") | `research/advise.py` (its owner), `trader-news/` | context |
+
+**B2 in detail.**
+
+- **The log:** the owner logs each broker call they come across in
+  `trader/broker_calls.jsonl`, which is local, append-only and never
+  edited. Each record holds:
+  - when it was logged (IST);
+  - the report date;
+  - the broker;
+  - the stock's ISIN;
+  - the rating (buy, hold or sell, mapped from the broker's own words);
+  - the target price and horizon;
+  - the source, as a link or "received by email".
+
+  No report text is kept.
+- **No backdating:** a call logged after its report date is scored from
+  the logging time, not the report date.
+- **Scoring:** each call is scored at 1, 3 and 12 months on the stored
+  closes, against the Nifty 500. It is reported per broker:
+  - hit rate;
+  - average excess return;
+  - how often the target was reached.
+
+  Scores are shown only once a broker has at least 20 scored calls.
+- **On the card:** the latest logged calls on the stock, labelled "broker
+  view, untested", with each broker's scorecard so far.
+
+**Order:**
+
+- B3 is cheap and can start now.
+- B2 can start now. Its scorecard needs months of calls before it says
+  anything.
+- B1 rides on F5.
+
+### Decisions for section 7
+
+Made by the owner, 2026-10-28: add broker reports to the plan.
+
+Still open:
+
+1. How the owner wants to log calls:
+   - a short command;
+   - a line in a chat with Claude;
+   - forwarding report emails for Claude to read the rating and target
+     from (the text is not kept).
+
