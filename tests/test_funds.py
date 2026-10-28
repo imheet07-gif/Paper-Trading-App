@@ -33,9 +33,10 @@ class Funds(unittest.TestCase):
 
     def test_both_layouts_read_by_header(self):
         rows = funds.parse(text("navall_sample.txt"))
-        self.assertEqual(len(rows), 4)  # the N.A. NAV is dropped, headings skipped
-        self.assertEqual(rows[0], {"code": "900001", "name": "Test Nifty 50 Index Fund - Direct Plan - Growth Option",
-                                   "isin": "INF000T01AA1", "nav": "150.1234", "date": "2026-10-28"})
+        self.assertEqual(len(rows), 5)  # headings and the blank line skipped
+        self.assertEqual(rows[4], {"code": "149373", "name": "Axis Nifty 50 Index Fund - Direct Plan - Growth Option",
+                                   "isin": "INF846K013D2", "nav": "13.8175", "date": "2026-10-28"})
+        self.assertEqual(funds.parse("Scheme Code;Scheme Name;Net Asset Value;Date\n1;X;N.A.;01-Jan-2013\n"), [])
         hist = funds.parse(text("history_sample.txt"))
         self.assertEqual([(r["code"], r["date"], r["nav"]) for r in hist],
                          [("900001", "2013-01-01", "100"), ("900002", "2013-01-01", "99"), ("900001", "2013-01-02", "101.5")])
@@ -48,7 +49,7 @@ class Funds(unittest.TestCase):
 
     def test_find_direct_growth(self):
         hits = funds.find(funds.parse(text("navall_sample.txt")), "nifty 50 index", direct=True, growth=True)
-        self.assertEqual([c for c, _ in hits], ["900001"])
+        self.assertEqual([c for c, _ in hits], ["151165", "149373"])  # plan and option read from their own columns
 
     def test_fetch_in_windows_keeps_only_the_schemes_asked(self):
         asked = []
@@ -75,7 +76,7 @@ class Funds(unittest.TestCase):
         code, _, err = run(["--db", self.db, "show", "999"])
         self.assertEqual(code, 2)
         code, out, _ = run(["find", "nifty 50 index", "--direct", "--growth", "--file", os.path.join(DIR, "navall_sample.txt")])
-        self.assertIn("900001", out)
+        self.assertIn("149373", out)
 
 
 if __name__ == "__main__":
