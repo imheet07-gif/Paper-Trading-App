@@ -339,3 +339,80 @@ and the profile backtests rank the same way and take, each month, the
 highest ranked stocks that pass the filters, drawn from the top tenth only.
 If fewer pass, the profile holds fewer and the rest stays in cash. Same
 protocol as the entry above: dev first, one validation look, no holdout.
+
+## 2026-10-28: concentration and risk-level backtests, settings fixed before any run (second agent)
+
+How the two tests promised above are run, fixed before the code has
+seen any data. `research/profiles.py` runs both; nothing in it is tuned
+on results, and a change is a new version with its own record.
+
+**What is shared by both.**
+
+- The signal, universe and month-end rebalance of
+  `momentum_quality_top20` (`research/strategies.json`), as the trade
+  finder uses them.
+- Candidates are the top tenth of the eligible ranking, rounded up. In
+  rank order, a stock is passed over if:
+  - it was locked at a circuit on the rebalance session (high equal to
+    low after a move of 2% or more);
+  - the order would be more than 1% of its median traded value over 60
+    sessions;
+  - not even one whole share fits (for risk levels, `exits.plan` says
+    so).
+
+  The first k that pass are bought. If fewer pass, the rest stays in cash
+  for the month.
+- Orders as the trade finder writes them: a buy limit at the rebalance
+  close plus 1%, filled at the next open plus 15 basis points of slippage
+  (never above the limit), and not filled at all if the open is above the
+  limit. Sells are at the open minus 15 basis points. A sell is blocked on
+  a day locked at the lower circuit and tried again the next session.
+- At each rebalance the new quantities replace the old: stocks no longer
+  picked are sold, kept stocks are traded up or down to the new quantity,
+  and stops and targets are reset.
+- Money and costs:
+  - Rs 1,00,000 at the start, compounding: each rebalance sizes on the
+    portfolio's value at that close.
+  - Whole shares, on unadjusted prices at the rebalance.
+  - Zerodha delivery charges from `core/charges.json`, through
+    `core/charges.py`, the DP charge included.
+  - Cash earns 6% a year.
+  - A stock without a price for 20 sessions is sold at half its last
+    price, as in `backtest.py`.
+
+**Concentration test.** Top 1, 3, 5 and, for a like-for-like comparison
+inside the same engine, 20. Equal money per stock, no stops, held to the
+next rebalance.
+
+**Risk levels.** Low, medium and high as fixed above: 5, 3 and 1 stocks.
+The quantity comes from `exits.plan`: the loss at the stop is at most
+0.5%, 1% or 2% of the portfolio's value, charges included. The stop is
+entry minus 2 ATR and the target is 2R, both from the buy limit, as on the
+card.
+
+From the entry day on, each session:
+
+- An open at or below the stop sells at the open.
+- Otherwise a low at or below the stop sells at the stop, less slippage.
+- Otherwise a high at or above the target sells at the target.
+- If the stop and the target are both touched in one session, the stop
+  is assumed.
+- A stock that is sold stays in cash until the next rebalance.
+
+**Reported for each run.**
+
+- CAGR, Sharpe (6.5% risk-free, as `backtest.py`) and the worst drawdown.
+- The worst month and the share of months that lost money.
+- The average share of money invested.
+- Stops hit, targets hit, buys not filled, and months with fewer than k
+  stocks.
+- For comparison, the equal-weight universe over the same years.
+
+**Order and looks.** Each run is logged to `runs.jsonl`. All of dev
+(2013 to 2020) runs first. Then each of the seven runs gets one validation
+look (2021 to 2023). No holdout: the CLI refuses it.
+
+**When a risk level is offered.** It is offered only if, on both dev and
+validation, its CAGR and its Sharpe are above the equal-weight
+universe's. A level that fails is not offered, and the answer says why.
+This criterion is fixed now, before any run, as HANDOVER.md asks.
