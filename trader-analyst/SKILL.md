@@ -1,104 +1,118 @@
 ---
 name: trader-analyst
 description: >-
-  The Earnings Analyst. Reads a company's reported numbers straight from SEC
-  EDGAR (XBRL company facts from its 10-Qs and 10-Ks, plus the latest earnings
-  8-K and its press release) and sums up what changed: revenue, gross,
-  operating and net margins, net income and diluted EPS, quarter by quarter,
-  each against the same quarter a year earlier, with the trailing twelve
-  months. Writes a metrics file the screener reads. Use when the user says
-  "how did Apple's earnings look", "analyze the earnings", "what changed this
-  quarter", "is revenue growing", "check the 10-Q", "compare margins", or
-  "run the analyst on my holdings".
-argument-hint: "[tickers]"
+  The Earnings Analyst, India edition. Reads the quarterly results Indian
+  companies filed with NSE (the XBRL in the local market store) and sums up
+  what changed: revenue, profit, net margin, profit before tax as a share
+  of revenue and basic EPS, quarter by quarter, each against the same
+  quarter a year earlier, with the last four quarters added up; banks on
+  their own lines (interest earned and expended, net interest income,
+  provisions). Points out profit that leans on other income, and says when
+  newer results were published than the store has read. Writes a metrics
+  file the screener reads. Use when the user says "how were TCS's
+  results", "analyse the quarter", "what changed this quarter", "is
+  revenue growing", "compare margins", or "run the analyst on my holdings".
+argument-hint: "[symbols]"
 ---
 
-# trader-analyst
+# trader-analyst (India)
 
-Earnings season moves stocks, and the press release is written to put the
-best number first. This skill reads the numbers the company actually filed
-with the SEC, lines them up quarter by quarter, and says plainly what changed.
-
-Tool in this folder (standard library Python, no keys):
+Results day moves stocks, and the press release puts the best number
+first. This skill reads the numbers the company actually filed with the
+exchange, lines them up quarter by quarter, and says plainly what changed.
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/facts.py" --help
+python3 "${CLAUDE_SKILL_DIR}/results.py" --help
 ```
 
-It needs the SEC User-Agent (`sec_user_agent` in `trader/config.json`, or
-`SEC_USER_AGENT`): "Your Name you@example.com" with the user's real name and
-email. It refuses to call SEC without one.
+Run from the repository root on the user's machine, where `data/market.db`
+is. It reads only; the numbers come from `core/financials.py`, which
+downloads each filing's XBRL from NSE on the user's machine.
 
 ## What it reads and writes
 
-- Reads `https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json` (every
-  number the company has tagged in its filings), the company's submissions
-  list (for the newest 10-Q or 10-K and the newest 8-K with item 2.02,
-  "Results of Operations") and that 8-K's folder to find the press release
-  (the EX-99.1 exhibit).
-- Writes `trader/metrics.json` with `--metrics`: one row per company (TTM
-  revenue, net income and diluted EPS, the latest margins and growth) for
-  `/trader-screener`. `metrics.example.json` in this folder is a real run
-  for AAPL, AXP, GOOGL, KO and BAC on 2026-10-13.
+- Reads the `financials` table: per quarter and per filing (consolidated
+  or standalone), revenue from operations, other income, profit before
+  tax, tax, profit (attributable to the owners when filed), basic and
+  diluted EPS; for banks interest earned and expended, operating profit
+  and provisions. Rupees, as filed.
+- Reads the `results` table (`core/events.py`) only to notice results
+  published after the newest quarter the store has numbers for.
+- Writes `trader/metrics.json` with `--metrics`: one row per company for
+  `/trader-screener` (money in crore, percentages as numbers):
+  `revenue_ttm_cr`, `net_profit_ttm_cr`, `eps_ttm`, `net_margin`,
+  `pbt_margin`, `revenue_growth_yoy`, `profit_growth_yoy`,
+  `eps_growth_yoy`, the quarter and the day it was published. There is no
+  operating margin in the filed lines read today; screen on `pbt_margin`
+  or `net_margin`.
 
 ## The rules
 
-- **Filed numbers first.** The table comes from XBRL facts the company filed.
-  Use the press release for context (guidance, segment colour), and say which
-  numbers came from where.
+- **Filed numbers only.** Every number comes from the company's filing.
+  Nothing is estimated, and a missing line is "n/a", never zero.
 - **Compare like with like.** Growth is against the same quarter a year
-  earlier. Quarter-on-quarter changes are shown but many businesses are
-  seasonal (Apple's December quarter is always its biggest).
-- **Say what is derived.** Companies do not file a Q4 10-Q. The fourth
-  quarter is the 10-K year minus the three quarters inside it and is marked
-  "derived"; derived EPS is approximate.
-- **Say when the data lags.** SEC's facts API can trail a filing. When the
-  newest 10-Q is later than the newest quarter in the facts, the tool prints a
-  NOTE with the link: read the 10-Q itself before summarising.
-- **Flag one-offs.** When net income is above operating income, gains outside
-  the business (investment marks, tax items) are inside it. The tool says so.
-  Banks and insurers have no gross margin: blank, not zero.
+  earlier. The change on the quarter before is in `--json` too, but many
+  businesses are seasonal.
+- **One kind of filing at a time.** Consolidated when the newest quarter
+  has it, else standalone; never mixed. `--standalone` asks for it.
+- **Say when the data lags.** The store's results XBRL ends with filings
+  published in February 2025. When later results were published, the
+  tool prints a NOTE with the quarter and the day: read those results
+  from the exchange before summarising, and say so.
+- **Flag one-offs.** When other income is more than a quarter of profit
+  before tax, part of the profit is outside the business. The tool says
+  so. A loss is flagged too.
+- **Banks are banks.** No revenue line: the top line is interest earned,
+  and net interest income and provisions are shown.
+- **EPS over four quarters is a sum** of the quarterly basic EPS: close,
+  not exact, when the share count changed. Say so when it matters.
 
 ## Steps
 
-1. Run it for the companies in question (or every ticker in
-   `trader/targets.json`):
+1. Run it for the companies in question (or the symbols in
+   `trader/portfolio.json`):
 
    ```bash
-   python3 "${CLAUDE_SKILL_DIR}/facts.py" AAPL
-   python3 "${CLAUDE_SKILL_DIR}/facts.py" AAPL AXP GOOGL KO BAC --metrics trader/metrics.json
+   python3 "${CLAUDE_SKILL_DIR}/results.py" TCS
+   python3 "${CLAUDE_SKILL_DIR}/results.py" TCS INFY HDFCBANK --quarters 8 --metrics trader/metrics.json
    ```
 
-   `--quarters 8` shows two years, `--json` everything machine-readable,
-   `--cik` a company without a ticker.
-2. Open the latest earnings press release (the EX-99 link) and the 10-Q when
-   the numbers need context, and read them.
-3. Write the summary: one line on the quarter (revenue, EPS, growth), one on
-   margins, one on anything unusual (a one-off, a derived quarter, data that
-   lags), and the links. Plain words, real numbers, no adjectives the numbers
-   do not support.
+   `--json` gives everything machine-readable; ISINs work in place of
+   symbols.
+2. If a NOTE says newer results exist, read them from the exchange (the
+   user can paste the results or the press release) and say which numbers
+   came from where.
+3. Write the summary: one line on the quarter (revenue, profit, EPS,
+   growth against a year earlier), one on margins, one on anything
+   unusual (other income, a loss, a lag), with the quarter and the day it
+   was published. Plain words, real numbers, no adjectives the numbers do
+   not support.
 
-## Example: the reel's top holding
+## Example (made-up company)
 
-`facts.py AAPL` (2026-10-13): quarter ending 2026-06-27 (fiscal Q3 2026),
-revenue $109.42B, +16.4% against a year earlier, net income $29.79B (+27.1%),
-diluted EPS $2.02 (+28.7%); gross margin 50.1% (+0.8 points on the quarter
-before); last four quarters $466.8B revenue and $8.71 EPS. Press release:
-the EX-99.1 of the 8-K filed 2026-07-30. For Coca-Cola the tool notes that
-SEC's facts stop at 2026-04-03 while the 10-Q for 2026-07-03 is already filed,
-so the summary reads that 10-Q directly.
+```
+ALPHA (INE001A01011), consolidated results, as filed
+  quarter ending 2024-12-31 (published 2024-12-31, unaudited): revenue ₹1,200 crore
+  (+20.0% on a year earlier), profit ₹190 crore (+26.7%), EPS ₹14.00 (+40.0%)
+    net margin 15.8%, profit before tax 20.0% of revenue
+    flag: other income is 42% of profit before tax: part of the profit is outside the business
+  last four quarters (2024-03-31 to 2024-12-31): revenue ₹4,500 crore, profit ₹700 crore, EPS ₹50.00
+  NOTE: results for the quarter ending 2025-03-31 were published on 2025-04-20 and are not in the
+  store's numbers yet
+```
 
 ## What it never does
 
 - Never says a stock is cheap, expensive, a buy or a sell. It reports what
   the company filed.
-- Never invents a number the filings do not have, or estimates a quarter it
-  cannot derive.
-- Never calls SEC without the User-Agent, and stays well under 10 requests a
-  second.
+- Never invents a number the filings do not have, or fills a quarter it
+  does not hold.
+- Never fetches anything itself; never reads a news summary in place of a
+  filing.
 
 ## Safety
 
-Education and tooling, not financial advice. This skill only reads filings.
-Nothing places an order except `/trader-broker`, after `/trader-risk` passes
-and the user types an explicit yes for that order.
+Education and tooling, not financial advice. This skill only reads
+filings. Nothing in this project places, modifies or cancels an order;
+any trade is an order sheet the user enters by hand in their own broker,
+after they say yes to it themselves.

@@ -4,159 +4,117 @@ import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from decimal import Decimal
 
-from _load import FIX, load
+from _load import load
 
-facts = load("trader-analyst", "facts")
-DIR = os.path.join(FIX, "trader-analyst")
+results = load("trader-analyst", "results")
+fin = load("core", "financials")
+ev = load("core", "events")
+bc = load("core", "bhavcopy")
+
+ALPHA, BANK = "INE001A01011", "INE002B01012"
+ENDS = ["2023-12-31", "2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31"]
 
 
-def companyfacts(cik):
-    with open(os.path.join(DIR, "companyfacts-CIK%s.json" % cik)) as fh:
-        return json.load(fh)
+def store(path):
+    """Made-up results: ALPHA, five consolidated quarters and one standalone; BANK, two quarters a year apart."""
+    db = fin.connect(path)
+    ev.connect(path).close()
+    bc.store_day(db, [{"date": "2025-01-30", "isin": i, "symbol": s, "series": "EQ", "open": 1, "high": 1, "low": 1,
+                       "close": 1, "last": 1, "prev_close": 1, "volume": 1, "value": 1, "trades": 1}
+                      for i, s in ((ALPHA, "ALPHA"), (BANK, "BANKX"))])
+    cols = ", ".join("seq symbol isin nature audited period_start period_end revenue other_income total_income pbt tax "
+                     "net_profit net_profit_owners eps_basic eps_diluted interest_earned interest_expended "
+                     "operating_profit provisions rounding broadcast_at xbrl".split())
+    rows = []
+    for k, end in enumerate(ENDS):
+        rev = 1000_0000000 + k * 50_0000000  # Rs 1,000 crore rising by Rs 50 crore a quarter
+        other = 10_0000000 if k < 4 else 100_0000000  # the last quarter leans on other income
+        rows.append(("a%d" % k, "ALPHA", ALPHA, "Consolidated", "Unaudited", None, end, str(rev), str(other), None,
+                     str(200_0000000 + k * 10_0000000), None, str(150_0000000 + k * 10_0000000), None,
+                     str(Decimal("10.0") + k), None, None, None, None, None, None, end + "T18:00:00", None))
+    rows.append(("s0", "ALPHA", ALPHA, "Standalone", "Audited", None, ENDS[-1], "500000000", None, None, None, None,
+                 "50000000", None, "2.5", None, None, None, None, None, None, ENDS[-1] + "T18:00:00", None))
+    for k, end in enumerate(("2023-12-31", "2024-12-31")):
+        rows.append(("b%d" % k, "BANKX", BANK, "Standalone", "Unaudited", None, end, None, None, None,
+                     str(300_0000000), None, str(200_0000000 + k * 40_0000000), None, "5", None,
+                     str(2000_0000000), str(1200_0000000), str(500_0000000), str(100_0000000), None,
+                     end + "T18:00:00", None))
+    db.executemany("INSERT INTO financials (%s) VALUES (%s)" % (cols, ",".join("?" * 23)), rows)
+    db.execute("INSERT INTO results VALUES ('r1','ALPHA',?, '2025-01-01','2025-03-31','Q4','Consolidated','Audited',"
+               "'2025-04-20T17:00:00')", (ALPHA,))
+    db.commit()
+    db.close()
 
 
 def run(args):
     out, err = io.StringIO(), io.StringIO()
     with redirect_stdout(out), redirect_stderr(err):
-        code = facts.main(args)
+        code = results.main(args)
     return code, out.getvalue(), err.getvalue()
 
 
-class Apple(unittest.TestCase):
+class Analyst(unittest.TestCase):
     def setUp(self):
-        self.r = facts.analyse(companyfacts("0000320193"), quarters=8)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = os.path.join(self.tmp.name, "m.db")
+        store(self.db)
 
-    def test_latest_quarter(self):
-        q = self.r["rows"][0]
-        self.assertEqual(q["end"], "2026-06-27")
-        self.assertEqual(q["fiscal"], "Q3 2026")
-        self.assertEqual(q["revenue"], 109417000000)
-        self.assertEqual(q["net_income"], 29789000000)
-        self.assertEqual(q["eps_diluted"], 2.02)
-        self.assertEqual(q["revenue_yoy"], 16.4)    # vs 94,036 a year earlier
-        self.assertEqual(q["eps_yoy"], 28.7)        # vs 1.57
-        self.assertEqual(q["gross_margin"], 50.1)
-        self.assertEqual(q["operating_margin"], 32.6)
-        self.assertEqual(q["net_margin"], 27.2)
-        self.assertFalse(q["derived"])
+    def tearDown(self):
+        self.tmp.cleanup()
 
-    def test_fiscal_labels_come_from_the_first_filing(self):
-        labels = [r["fiscal"] for r in self.r["rows"][:6]]
-        self.assertEqual(labels, ["Q3 2026", "Q2 2026", "Q1 2026", "Q4 2025", "Q3 2025", "Q2 2025"])
+    def test_quarters_growth_ttm_and_one_offs(self):
+        c = results.company(results.connect(self.db), "ALPHA", 4)
+        self.assertEqual(c["nature"], "Consolidated")
+        q = c["quarters"][0]
+        self.assertEqual(q["period_end"], "2024-12-31")
+        self.assertEqual(q["year_ago"], "2023-12-31")
+        self.assertEqual(q["top_line_yoy"], Decimal("20.0"))  # 1,200 crore against 1,000
+        self.assertEqual(q["profit_yoy"], Decimal("26.7"))  # 190 against 150
+        self.assertEqual(q["eps_yoy"], Decimal("40.0"))  # 14 against 10
+        self.assertEqual(q["net_margin"], Decimal("15.8"))
+        self.assertTrue(any("other income is 42%" in f for f in q["flags"]))
+        self.assertEqual(c["quarters"][1]["flags"], [])
+        t = c["ttm"]
+        self.assertEqual(t["from"], "2024-03-31")
+        self.assertEqual(t["top_line"], Decimal(4500_0000000))  # 1,050 + 1,100 + 1,150 + 1,200 crore
+        self.assertEqual(t["eps_basic"], Decimal("50.0"))
+        self.assertIn("2025-03-31", c["notes"][0])  # later results published, not in the numbers
 
-    def test_q4_is_derived_from_the_10k(self):
-        q4 = next(r for r in self.r["rows"] if r["end"] == "2025-09-27")
-        self.assertTrue(q4["derived"])
-        # FY2025 416,161 minus Q1 124,300, Q2 95,359, Q3 94,036
-        self.assertEqual(q4["revenue"], 102466000000)
-        self.assertEqual(q4["revenue_yoy"], 7.9)
+    def test_standalone_on_request(self):
+        c = results.company(results.connect(self.db), "ALPHA", 4, "Standalone")
+        self.assertEqual([q["period_end"] for q in c["quarters"]], ["2024-12-31"])
+        self.assertIsNone(c["ttm"])
 
-    def test_trailing_twelve_months(self):
-        self.assertEqual(self.r["ttm"]["revenue"], 466823000000)
-        self.assertEqual(self.r["ttm"]["net_income"], 128930000000)
-        self.assertEqual(self.r["ttm"]["eps_diluted"], 8.71)
+    def test_banks_read_their_own_lines(self):
+        c = results.company(results.connect(self.db), BANK, 4)
+        q = c["quarters"][0]
+        self.assertTrue(c["bank"])
+        self.assertEqual(q["net_interest_income"], Decimal(800_0000000))
+        self.assertEqual(q["profit_yoy"], Decimal("20.0"))
+        self.assertEqual(q["net_margin"], Decimal("12.0"))  # profit over interest earned
+        self.assertEqual(c["symbol"], "BANKX")
 
-    def test_what_changed_in_words(self):
-        lines = facts.changes(self.r)
-        self.assertIn("revenue $109.42B (+16.4% vs a year earlier)", lines[0])
-        self.assertIn("diluted EPS $2.02 (+28.7%)", lines[0])
-        self.assertTrue(any(l.startswith("Gross margin 50.1% (+0.8 points") for l in lines))
+    def test_report_metrics_file_and_errors(self):
+        out_file = os.path.join(self.tmp.name, "metrics.json")
+        code, out, err = run(["ALPHA", "BANKX", "NOSUCH", "--db", self.db, "--metrics", out_file])
+        self.assertEqual(code, 1)  # one name not found
+        self.assertIn("NOSUCH: no stored prices", err)
+        self.assertIn("NOTE: results for the quarter ending 2025-03-31", out)
+        self.assertIn("interest earned", out)
+        with open(out_file) as fh:
+            rows = {r["symbol"]: r for r in json.load(fh)["companies"]}
+        self.assertEqual(rows["ALPHA"]["revenue_ttm_cr"], 4500.0)
+        self.assertEqual(rows["ALPHA"]["revenue_growth_yoy"], 20.0)
+        self.assertIsNone(rows["BANKX"]["revenue_ttm_cr"])  # two quarters: no four-quarter total
+        code, out, _ = run(["ALPHA", "--db", self.db, "--json"])
+        self.assertEqual(json.loads(out)["companies"][0]["quarters"][0]["eps_basic"], "14.0")
 
-    def test_restated_values_win_but_labels_stay(self):
-        facts_ = [
-            {"start": "2025-01-01", "end": "2025-03-31", "val": 100, "fy": 2025, "fp": "Q1",
-             "form": "10-Q", "filed": "2025-05-01", "accn": "a"},
-            {"start": "2025-01-01", "end": "2025-03-31", "val": 90, "fy": 2026, "fp": "Q1",
-             "form": "10-Q", "filed": "2026-05-01", "accn": "b"},
-            {"start": "2025-01-01", "end": "2025-03-31", "val": 1, "fy": 2025, "fp": "Q1",
-             "form": "8-K", "filed": "2025-04-20", "accn": "c"},
-        ]
-        q = facts.quarterly(facts_)
-        self.assertEqual(q["2025-03-31"]["value"], 90)
-        self.assertEqual((q["2025-03-31"]["fy"], q["2025-03-31"]["fp"]), (2025, "Q1"))
-
-
-class Filings(unittest.TestCase):
-    def test_latest_10q_and_earnings_press_release(self):
-        with open(os.path.join(DIR, "submissions-CIK0000320193.json")) as fh:
-            sub = json.load(fh)
-        f = facts.latest_filings(sub, "0000320193", facts.Fetcher(offline=DIR))
-        self.assertEqual(f["report"]["form"], "10-Q")
-        self.assertEqual(f["report"]["period"], "2026-06-27")
-        self.assertTrue(f["report"]["url"].endswith("/000032019326000020/aapl-20260627.htm"))
-        e = f["earnings_8k"]
-        self.assertEqual(e["filed"], "2026-07-30")
-        self.assertEqual(e["exhibit"], "https://www.sec.gov/Archives/edgar/data/320193/"
-                                       "000032019326000018/a8-kex991q3202606272026.htm")
-
-    def test_exhibit_names_seen_on_edgar(self):
-        pick = facts.exhibit_name
-        self.assertEqual(pick(["axp-20260724.htm", "q226exhibit991.htm", "q226exhibit992.htm",
-                               "R1.htm"], "axp-20260724.htm"), "q226exhibit991.htm")
-        self.assertEqual(pick(["goog-20260722.htm", "googexhibit991q22026.htm"],
-                              "goog-20260722.htm"), "googexhibit991q22026.htm")
-        self.assertEqual(pick(["a2026q2earningsreleaseex-9.htm", "ko-20260728.htm"],
-                              "ko-20260728.htm"), "a2026q2earningsreleaseex-9.htm")
-        self.assertEqual(pick(["bac-06302026ex993.htm", "bac-06302026ex991.htm"]),
-                         "bac-06302026ex991.htm")
-        self.assertIsNone(pick(["only-8k.htm"], "only-8k.htm"))
-
-
-class LaggingData(unittest.TestCase):
-    def test_says_when_sec_facts_trail_a_filed_10q(self):
-        code, out, err = run(["KO", "--offline", DIR])
-        self.assertEqual(code, 0, err)
-        self.assertIn("COCA COLA CO (KO)", out)
-        self.assertIn("NOTE: SEC's XBRL facts stop at 2026-04-03, but a 10-Q for the period "
-                      "ending 2026-07-03 was filed 2026-07-29", out)
-
-    def test_one_offs_are_flagged(self):
-        result = {"rows": [
-            {"end": "2026-06-30", "derived": False, "revenue": 100.0, "net_income": 90.0,
-             "operating_income": 30.0, "eps_diluted": 1.0, "revenue_yoy": 10.0,
-             "net_income_yoy": 200.0, "eps_yoy": 200.0, "gross_margin": None,
-             "operating_margin": 30.0, "net_margin": 90.0}]}
-        self.assertTrue(any("above operating income" in l for l in facts.changes(result)))
-
-
-class Cli(unittest.TestCase):
-    def test_metrics_file_for_the_screener(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "trader", "metrics.json")
-            code, out, err = run(["AAPL", "KO", "--offline", DIR, "--metrics", path])
-            self.assertEqual(code, 0, err)
-            with open(path) as fh:
-                data = json.load(fh)
-        rows = {r["ticker"]: r for r in data["companies"]}
-        self.assertEqual(sorted(rows), ["AAPL", "KO"])
-        self.assertEqual(rows["AAPL"]["eps_ttm"], 8.71)
-        self.assertEqual(rows["AAPL"]["revenue_growth_yoy"], 16.4)
-        self.assertEqual(rows["KO"]["period_end"], "2026-04-03")
-        self.assertIn("wrote", out)
-        self.assertNotIn(chr(0x2014), out)
-
-    def test_unknown_ticker_and_no_user_agent(self):
-        code, _, err = run(["ZZZZ", "--offline", DIR])
+    def test_no_store(self):
+        code, _, err = run(["ALPHA", "--db", os.path.join(self.tmp.name, "none.db")])
         self.assertEqual(code, 2)
-        self.assertIn("no SEC CIK for ZZZZ", err)
-        old = os.environ.pop("SEC_USER_AGENT", None)
-        try:
-            code, _, err = run(["AAPL", "--config", "/nonexistent.json"])
-            self.assertEqual(code, 2)
-            self.assertIn("User-Agent", err)
-            self.assertIsNone(facts.user_agent("Your Name you@example.com"))
-        finally:
-            if old is not None:
-                os.environ["SEC_USER_AGENT"] = old
-
-    def test_json_output(self):
-        code, out, err = run(["AAPL", "--offline", DIR, "--json", "--quarters", "4"])
-        self.assertEqual(code, 0, err)
-        data = json.loads(out)
-        self.assertEqual(len(data[0]["result"]["rows"]), 4)
-        self.assertEqual(data[0]["result"]["concepts"]["revenue"],
-                         ["RevenueFromContractWithCustomerExcludingAssessedTax"])
+        self.assertIn("no market store", err)
 
 
 if __name__ == "__main__":

@@ -41,17 +41,20 @@ fix is `python3 research/scan.py update` (after about 7 pm IST).
 2. **"Best" means highest ranked by the tested signal**, never a forecast.
    Say so in the first answer of a conversation. Today that signal is
    `momentum_quality`, a one-month hold.
-3. **When the command finds no trade, the answer is "no trade"** (or, once
+3. **A level that failed is not offered.** The command already moves the
+   request to the next safer level that passed; never argue for the
+   level that failed.
+4. **When the command finds no trade, the answer is "no trade"** (or, once
    the after-tax check is done, the index fund when it says so). Never a
    guess, never "you could consider".
-4. **Untested context is labelled untested.** Results, shareholding, SAST,
+5. **Untested context is labelled untested.** Results, shareholding, SAST,
    bulk and block deals, news and themes describe a company; none of them
    ranked the pick. Say "untested context" when quoting them.
-5. **Stops and targets are risk limits, not a tested edge**, until the exit
+6. **Stops and targets are risk limits, not a tested edge**, until the exit
    test passes. Say so when giving them.
-6. **Say what is pending**, from the output's `pending` list: the
+7. **Say what is pending**, from the output's `pending` list: the
    profile's own record, the after-tax comparison, the results calendar.
-7. **Order sheet only.** Nothing places an order. The user enters a line
+8. **Order sheet only.** Nothing places an order. The user enters a line
    themselves, or paper-trades it with `/trader-broker` after
    `/trader-risk` checks it. Never ask for or use broker credentials.
 
@@ -66,6 +69,13 @@ fix is `python3 research/scan.py update` (after about 7 pm IST).
    the user named one).
 3. Reply in this order:
    - the date of the data and what "best" means;
+   - if `risk` differs from `risk_asked`, the `fallback` sentence word for
+     word first: the level asked for failed its backtest, and this is the
+     same ranking at a safer level;
+   - the level's record from `level_record` (2013 to 2020 and 2021 to
+     2023): growth a year against the average stock, worst drop, worst
+     month and what it would be in rupees on this amount, share of months
+     that lost money. If it is pending, say the level is not yet tested;
    - each pick: the order line (shares, limit price, about how much money),
      the stop and what is lost there, the target and what is gained there,
      the round-trip charges, why it ranks (its rank and the two inputs),

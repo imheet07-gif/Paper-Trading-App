@@ -36,7 +36,8 @@ padding:6px 12px;cursor:pointer}
 select,input[type=number],input[type=text]{background:var(--page);color:var(--ink);border:1px solid var(--ring);
 border-radius:8px;padding:6px 8px}
 input[type=number]{width:90px}
-label{display:inline-flex;gap:6px;align-items:center}
+label{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:100%}
+select{max-width:100%}
 .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .form .full{grid-column:1/-1}
 .weights{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px}
@@ -70,5 +71,5 @@ white-space:pre-wrap}
 border-radius:8px;display:none;z-index:9;max-width:320px;white-space:pre-line}
 footer{max-width:1120px;margin:0 auto;padding:0 16px 32px;font-size:13px;color:var(--ink2)}
 ul{margin:6px 0;padding-left:20px}
-@media (max-width:640px){.top{position:static;gap:8px}nav{flex-wrap:nowrap;overflow-x:auto;width:100%;order:3}
+@media (max-width:640px){.top{position:static;gap:8px}nav{flex-wrap:nowrap;overflow-x:auto;width:100%;flex-basis:100%;order:3}
 nav button,nav a{white-space:nowrap}.grid2{grid-template-columns:1fr}.kpi .v{font-size:22px}}

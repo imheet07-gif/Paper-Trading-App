@@ -187,7 +187,8 @@
   document.querySelectorAll("#tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
       document.querySelectorAll("#tabs button").forEach(function (x) { x.classList.toggle("on", x === b); });
-      ["today", "lab", "paper", "runs"].forEach(function (t) { $("tab-" + t).hidden = t !== b.dataset.tab; });
+      ["today", "ask", "lab", "paper", "runs"].forEach(function (t) { $("tab-" + t).hidden = t !== b.dataset.tab; });
+      if (b.dataset.tab === "ask") renderAsk();
       if (b.dataset.tab === "runs") renderRuns();
       if (b.dataset.tab === "paper") renderPaper();
       if (b.dataset.tab === "lab") renderLabList();
@@ -240,6 +241,79 @@
       setBusy(false);
       refresh().then(function () { if (j.state === "done" && onDone) onDone(j); });
     });
+  }
+
+  // ------------------------------------------------------------ Ask (the trade finder)
+  var askBuilt = false;
+  function renderAsk() {
+    var el = $("tab-ask");
+    if (!askBuilt) {
+      el.innerHTML = "<div class='card'><h2>Ask the trade finder</h2>" +
+        "<p class='muted small'>The highest ranked trades by the one tested signal, after its filters, sized to a risk level. " +
+        "An order sheet to read and enter by hand, never an order.</p><div class='form'>" +
+        "<label>Amount (₹) <input type='number' id='ask-amount' min='1000' step='1000' value='50000' style='width:130px'></label>" +
+        "<label>Risk <select id='ask-risk'><option value='low'>low: 5 stocks, lose at most 0.5% per stop</option>" +
+        "<option value='medium' selected>medium: 3 stocks, 1% per stop</option><option value='high'>high: 1 stock, 2% per stop</option></select></label>" +
+        "<label>Also check <input type='text' id='ask-stock' maxlength='20' placeholder='a symbol, e.g. TCS' style='width:150px'></label>" +
+        "<div><button class='primary' id='btn-ask'>Ask</button></div></div></div><div id='ask-out'></div>";
+      $("btn-ask").onclick = function () {
+        startJob("advise", { amount: $("ask-amount").value, risk: $("ask-risk").value, stock: $("ask-stock").value.trim() || undefined },
+          "Trade finder", loadAdvice);
+      };
+      askBuilt = true;
+    }
+    loadAdvice();
+  }
+  function loadAdvice() { get("/api/advice").then(renderAdvice); }
+  function li(items) { return items && items.length ? "<ul>" + items.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : ""; }
+  function pctText(x) { return x == null ? "-" : (Number(x) * 100).toFixed(1) + "%"; }
+  function renderAdvice(a) {
+    var el = $("ask-out");
+    if (!el) return;
+    if (!a || !a.date) { el.innerHTML = "<div class='card muted'>No answer yet. Ask above.</div>"; return; }
+    var h = ["<div class='card'><div class='row spread'><h2>" + inr(a.amount) + ", " + esc(a.risk) + " risk</h2>" +
+      "<span class='muted small'>data to " + esc(a.date) + "; review on " + esc(a.review_date || "the next rebalance") + "</span></div>" +
+      "<p class='small muted'>" + esc(a.evidence) + "</p>"];
+    if (a.fallback && a.risk_asked && a.risk !== a.risk_asked) h.push("<div class='note'>Asked for " + esc(a.risk_asked) + " risk: " + esc(a.fallback) + ".</div>");
+    var lr = a.level_record || {};
+    [["dev", "2013 to 2020"], ["validation", "2021 to 2023"]].forEach(function (pp) {
+      var x = lr[pp[0]];
+      if (x) h.push("<p class='small'>" + esc(a.risk) + " risk, " + pp[1] + ": " + pctText(x.cagr) + " a year (average stock " + pctText(x.universe_cagr) +
+        "), worst drop " + pctText(x.max_drawdown) + ", worst month " + pctText(x.worst_month) + " (" + inr(x.worst_month_rupees) + " on this amount)</p>");
+    });
+    if (a.answer) h.push("<div class='note bad'>" + esc(a.answer) + "</div>");
+    if (a.note) h.push("<div class='note'>" + esc(a.note) + "</div>");
+    h.push("</div>");
+    (a.picks || []).forEach(function (c, i) {
+      var pl = c.plan || {};
+      h.push("<div class='card'><div class='row spread'><h2>" + (i + 1) + ". " + esc(c.symbol) + " <span class='muted small'>" + esc(c.sector || "") + "</span></h2>" +
+        "<span class='pill'>rank " + c.rank + " of " + c.of + "</span></div>" +
+        "<p><b>" + esc(pl.order) + "</b>, about " + inr(pl.cost) + "</p>" +
+        "<div class='kpis'>" + kpi("Stop", inr(pl.stop, 2), "lose " + inr(pl.loss_at_stop, 2) + " there") +
+        kpi("Target", inr(pl.target, 2), "gain " + inr(pl.gain_at_target, 2) + " there") +
+        kpi("Charges", pl.round_trip_pct ? pl.round_trip_pct + "%" : "-", "round trip") + "</div>" +
+        "<p class='small muted'>" + esc(pl.exits_label || "") + "</p>" +
+        (c.bucket ? "<p class='small'>" + esc(c.bucket.label) + " of the ranking: beat the average stock by " +
+          ["dev", "validation"].filter(function (k) { return c.bucket[k] != null; }).map(function (k) { return k + " " + c.bucket[k] + "% a month"; }).join(", ") + "</p>" : "") +
+        "<p class='small'>12-1 return " + pctPlain(c.parts.return_12_1) + ", 1-year volatility " + pctPlain(c.parts.volatility_1y) +
+        ", 1 month " + pct(c.recent.return_1m) + ", " + pctPlain(c.recent.from_52w_high) + " from its 52-week high</p>" +
+        (c.flags && c.flags.length ? "<h3>Flags</h3>" + li(c.flags) : "") +
+        (c.results ? "<p class='small muted'>Untested context: results " + esc(c.results.quarter) + ", revenue " + esc(c.results.revenue_growth_pct || "?") +
+          "%, profit " + esc(c.results.profit_growth_pct || "?") + "% against a year earlier</p>" : "") + "</div>");
+    });
+    if (a.low_profile && a.low_profile.length) {
+      h.push("<div class='card'><h2>The low-risk alternative</h2>" + li(a.low_profile.map(function (x) { return x.order + " (lose " + inr(x.loss_at_stop, 2) + " at the stop)"; })) + "</div>");
+    }
+    if (a.dropped && a.dropped.length) {
+      h.push("<div class='card'><h2>Passed over</h2>" + li(a.dropped.slice(0, 10).map(function (d) { return d.symbol + " (rank " + d.rank + "): " + d.why.join("; "); })) + "</div>");
+    }
+    if (a.stock) {
+      var s = a.stock;
+      h.push("<div class='card'><h2>" + esc(s.symbol) + "</h2><p>" + esc(s.verdict) + "</p>" + (s.filters && s.filters.length ? li(s.filters) : "") + "</div>");
+    }
+    h.push("<div class='card small'><b>Not available yet:</b> " + esc((a.pending || []).join("; ")) +
+      ".<br>Order sheet only: nothing here places an order. Not financial advice.</div>");
+    el.innerHTML = h.join("");
   }
 
   // ------------------------------------------------------------ Today

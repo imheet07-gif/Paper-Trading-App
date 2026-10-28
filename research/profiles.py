@@ -26,6 +26,7 @@ never opened here. Numbers are float estimates and never feed accounting.
 
 import argparse
 import datetime as dt
+import json
 import math
 import os
 import sys
@@ -57,6 +58,7 @@ DELIST_AFTER, DELIST_HAIRCUT = 20, 0.5
 VALUE_DAYS = 60
 PERIODS = {k: backtest.PERIODS[k] for k in ("dev", "validation")}  # never the holdout
 RUNS = [("top", 1), ("top", 3), ("top", 5), ("top", 20), ("risk", "low"), ("risk", "medium"), ("risk", "high")]
+EXIT_RUNS = [("hold", "low"), ("hold", "medium"), ("hold", "high")]  # the exit test (FINDINGS.md 2026-10-28)
 
 
 def charges_fn(broker):
@@ -110,8 +112,9 @@ def choose(p, scores, elig, i, amount, stocks, risk, arrays, broker):
 
 
 def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, broker="zerodha",
-             slippage_bps=SLIPPAGE_BPS, cash_yield=CASH_YIELD):
+             slippage_bps=SLIPPAGE_BPS, cash_yield=CASH_YIELD, use_exits=True):
     """Run one concentration (risk=None) or risk-level portfolio over [start, end].
+    use_exits=False holds a risk level's stocks to the next rebalance (the exit test).
     Positions are held in adjusted units (raw shares / the adjustment multiplier at
     the rebalance), so splits and bonuses inside a month change nothing."""
     slip = slippage_bps / 1e4
@@ -197,7 +200,7 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
             if pending:
                 pending = {s: (v[0], None, None, None) for s, v in pending.items()}
         # 2. stops and targets, from the entry day on
-        if risk:
+        if risk and use_exits:
             for s in list(units):
                 stop, target = exit_at.get(s, (None, None))
                 if stop is None:
@@ -293,14 +296,41 @@ def safest_offered(asked, passed):
 
 
 def label(kind, value):
-    return "top %d, equal money" % value if kind == "top" else "%s risk (%d stock%s)" % (
-        value, exits.PROFILE_STOCKS[value], "" if exits.PROFILE_STOCKS[value] == 1 else "s")
+    if kind == "top":
+        return "top %d, equal money" % value
+    n = exits.PROFILE_STOCKS[value]
+    return "%s risk (%d stock%s)%s" % (value, n, "" if n == 1 else "s", ", no exits" if kind == "hold" else "")
+
+
+def exits_pass(with_exits, held):
+    """The exit test for one level and period (FINDINGS.md 2026-10-28): with the stop and
+    target, a higher Sharpe and a shallower worst drawdown than holding to the rebalance."""
+    try:
+        return bool(with_exits["sharpe"] > held["sharpe"] and with_exits["max_drawdown"] > held["max_drawdown"])
+    except (KeyError, TypeError):
+        return False
+
+
+def logged(period, profile, runs_log=backtest.RUNS_LOG):
+    """The latest logged run of this profile ('risk:low') in this period, or None."""
+    best = None
+    if not os.path.exists(runs_log):
+        return None
+    with open(runs_log, encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get("profile") == profile and e.get("period") == period and (best is None or e["at"] > best["at"]):
+                best = e
+    return best
 
 
 def run_one(p, scores, elig, period, kind, value, bench, note="", log=True, runs_log=backtest.RUNS_LOG):
     start, end = PERIODS[period]
     stocks = value if kind == "top" else exits.PROFILE_STOCKS[value]
-    res = simulate(p, scores, elig, start, end, stocks, value if kind == "risk" else None)
+    res = simulate(p, scores, elig, start, end, stocks, None if kind == "top" else value, use_exits=kind != "hold")
     m = backtest.metrics(res["nav"])
     ms = month_stats(res["nav"])
     entry = {"at": dt.datetime.now().isoformat(timespec="seconds"), "signal": "momentum_quality", "period": period,
@@ -310,7 +340,8 @@ def run_one(p, scores, elig, period, kind, value, bench, note="", log=True, runs
              "sharpe": m.get("sharpe"), "cagr": m.get("cagr"), "max_drawdown": m.get("max_drawdown"),
              "worst_month": ms["worst_month"], "months_losing": ms["months_losing"],
              "bench_sharpe": bench.get("sharpe"), "bench_cagr": bench.get("cagr"), "stats": res["stats"],
-             "offer_test": passes_period(kind, value, m, bench),
+             "offer_test": passes_period(kind, value, m, bench) if kind != "hold" else None,
+             "yearly": m.get("yearly"),
              "note": note or "concentration and risk-level test, settings fixed in FINDINGS.md 2026-10-28"}
     if log:
         backtest.log_run(entry, runs_log)
@@ -326,19 +357,27 @@ def report(period, entry, m):
                 label(kind, int(value) if kind == "top" else value), pct(m.get("cagr")), m.get("sharpe", float("nan")),
                 pct(m.get("max_drawdown")), pct(entry["worst_month"]), pct(entry["months_losing"]),
                 pct(s["invested_avg"]), s["stops"], s["targets"], s["unfilled"], s["short_months"], s["rebalances"],
-                "yes" if entry["offer_test"] else "no"))
+                "n/a" if entry["offer_test"] is None else "yes" if entry["offer_test"] else "no"))
 
 
-def main(argv=None):
+def main(argv=None, runs_log=backtest.RUNS_LOG):
     ap = argparse.ArgumentParser(description="Concentration and risk-level backtests (dev and validation only).")
     ap.add_argument("--period", required=True, choices=sorted(PERIODS))
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--stocks", type=int, choices=[1, 3, 5, 20], help="concentration: top k, equal money, no stops")
     g.add_argument("--risk", choices=sorted(exits.RISK_SHARE), help="a risk level: its stocks, sizing, stop and target")
     g.add_argument("--all", action="store_true", help="the seven runs fixed in FINDINGS.md")
+    g.add_argument("--exit-test", action="store_true",
+                   help="each risk level held without its stop and target, against its logged --all run")
     ap.add_argument("--db", default=panel_mod.bhavcopy.DEFAULT_DB)
     ap.add_argument("--note", default="")
     a = ap.parse_args(argv)
+    if a.exit_test:
+        missing = [lvl for _, lvl in EXIT_RUNS if not logged(a.period, "risk:" + lvl, runs_log)]
+        if missing:
+            print("error: run --period %s --all first (no logged run for: %s)" % (a.period, ", ".join(missing)),
+                  file=sys.stderr)
+            return 2
     start, end = PERIODS[a.period]
     strat = scan.load_strategy(STRATEGY)
     u = strat["universe"]
@@ -351,10 +390,19 @@ def main(argv=None):
     print("momentum_quality, %s %s to %s, Rs %s start, top tenth candidates" % (a.period, start, end, "{:,.0f}".format(CAPITAL)))
     print("%-26s CAGR %6.1f%%  Sharpe %5.2f  worst drawdown %6.1f%%" % (
         "equal-weight universe", bench["cagr"] * 100, bench["sharpe"], bench["max_drawdown"] * 100))
-    runs = RUNS if a.all else [("top", a.stocks)] if a.stocks else [("risk", a.risk)]
+    runs = EXIT_RUNS if a.exit_test else RUNS if a.all else [("top", a.stocks)] if a.stocks else [("risk", a.risk)]
     for kind, value in runs:
-        entry, m = run_one(p, scores, elig, a.period, kind, value, bench, a.note)
+        entry, m = run_one(p, scores, elig, a.period, kind, value, bench, a.note, runs_log=runs_log)
         print(report(a.period, entry, m))
+        if kind == "hold":
+            w = logged(a.period, "risk:" + value, runs_log)
+            yr = lambda e, y: "%+.1f%%" % (100 * e["yearly"][str(y)]) if e.get("yearly") and str(y) in e["yearly"] \
+                else "%+.1f%%" % (100 * e["yearly"][y]) if e.get("yearly") and y in e["yearly"] else "n/a"
+            print("  with the stop and target: Sharpe %.2f against %.2f, worst drawdown %.1f%% against %.1f%%, "
+                  "2016 %s against %s, 2022 %s against %s: exits %s" % (
+                      w["sharpe"], entry["sharpe"], 100 * w["max_drawdown"], 100 * entry["max_drawdown"],
+                      yr(w, 2016), yr(entry, 2016), yr(w, 2022), yr(entry, 2022),
+                      "pass this period" if exits_pass(w, entry) else "do not pass this period"))
     print("logged to research/runs.jsonl; record the results in research/FINDINGS.md, whatever they show")
     return 0
 

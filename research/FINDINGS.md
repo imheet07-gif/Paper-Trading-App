@@ -424,3 +424,26 @@ look (2021 to 2023). No holdout: the CLI refuses it.
 - Fallback: a request for a level that failed is answered with the next
   safer level that passed (high, then medium, then low), and the answer
   says why. It is "no trade" only if low failed too.
+
+## 2026-10-28: the exit test, settings fixed before any run (second agent)
+
+The question from HANDOVER.md: do the stop and target cut
+`momentum_quality`'s crashes (2016, 2022) without giving up the return?
+
+**How.** `research/profiles.py --exit-test` runs each risk level a second
+time with the same candidates, filters, orders, quantity (`exits.plan`)
+and costs as its risk-level run, but holds every stock to the next
+rebalance: no stop, no target. Each pair, with and without exits, is
+compared on the same years. The exits are the ones fixed above: stop at
+entry minus 2 ATR, target at 2R, stop first when a session touches both.
+Dev first; then one validation look per level. No holdout.
+
+**When the exits count as tested, per level.** On both dev and
+validation, with exits the Sharpe must be higher and the worst drawdown
+must be shallower than without them. Then the card may say the stop and
+target were tested for that level. Otherwise the label stays "risk
+limits, not a tested edge". The stops stay on every card either way: the
+owner wants them as limits.
+
+**Also reported, not judged:** CAGR, the 2016 and 2022 returns, the worst
+month, stops and targets hit.

@@ -7,6 +7,11 @@ these as subprocesses and never anything else.
   python3 research/jobs.py backtest --signal momentum_quality --period dev
   python3 research/jobs.py backtest --composite momentum_quality=1,low_volatility=1 --top 20
   python3 research/jobs.py save-strategy RESULT_ID --name my_blend
+  python3 research/jobs.py advise --amount 50000 --risk medium [--stock TCS]
+
+The trade finder's answer (research/advise.py) is written to
+private/advice/latest.json for the app's Ask tab: an order sheet to read,
+never an order.
 
 A backtest writes its full result (equity curve, benchmark, drawdown,
 yearly returns, information coefficient, trial count, deflated Sharpe) to
@@ -26,6 +31,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 RESULTS = os.path.join(ROOT, "data", "app", "backtests")
+ADVICE = os.path.join(ROOT, "private", "advice")  # names from deals can appear: private, never committed
 
 
 def parse_composite(text):
@@ -138,6 +144,10 @@ def main(argv=None):
     b.add_argument("--slippage-bps", type=float, default=15.0)
     b.add_argument("--period", default="dev", choices=["dev", "dev_2016", "validation"])
     b.add_argument("--note", default="")
+    ad = sub.add_parser("advise")
+    ad.add_argument("--amount", required=True)
+    ad.add_argument("--risk", choices=["low", "medium", "high"], default="medium")
+    ad.add_argument("--stock")
     v = sub.add_parser("save-strategy")
     v.add_argument("result_id")
     v.add_argument("--name", required=True)
@@ -156,6 +166,20 @@ def main(argv=None):
         print("result %s: %s on %s, CAGR %.1f%%, Sharpe %.2f, max drawdown %.1f%%, %d runs tried" % (
             r["id"], r["label"], r["period"], m["cagr"] * 100, m["sharpe"], m["max_drawdown"] * 100, r["trials"]))
         print("RESULT_ID=" + r["id"])
+    elif a.cmd == "advise":
+        import advise
+        import scan
+        try:
+            res = advise.advise(a.amount, a.risk, a.stock)
+        except (advise.AdviseError, scan.Stale) as e:
+            print("the trade finder could not answer: %s" % e)
+            return 1
+        os.makedirs(ADVICE, exist_ok=True)
+        tmp = os.path.join(ADVICE, "latest.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(advise._jsonable(res), fh, ensure_ascii=False)
+        os.replace(tmp, os.path.join(ADVICE, "latest.json"))
+        print(advise.report(res))
     elif a.cmd == "save-strategy":
         save_strategy(a.result_id, a.name)
         print("saved %s as a candidate" % a.name)

@@ -17,7 +17,8 @@ broker-neutral holdings, trades and charges.
   no broker connection, no live mode), `trader-copycat` (named holders
   from shareholding filings, and bulk and block deals) and `trader-pelosi`
   (insider, promoter SAST and bulk and block deal disclosures, from the
-  store; `insiders.py`) are ported to India (rupees, whole
+  store; `insiders.py`) and `trader-analyst` (quarterly results from the
+  store's `financials` table; `results.py`) are ported to India (rupees, whole
   shares, an order sheet for manual entry; gaps in HANDOVER.md). The rest
   are still the US originals until
   Phase 2 ports them; do not assume their data sources (SEC, NYSE, Alpaca,
@@ -52,6 +53,10 @@ broker-neutral holdings, trades and charges.
   the scan's evening update. NSE publishes only the latest session, so a
   missed evening is lost; raw files cached in `data/deals_raw/`. Client
   names include private individuals: they stay in the local store only.
+- `core/metals.py` gold and silver: Sovereign Gold Bonds (series GB) from
+  the store, gold and silver ETFs picked from NSE's ETF list file, and the
+  owner's physical metal ledger (`trader/metals.json`), valued only at
+  rates the owner records with a date and source (`trader/metal_rates.json`).
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
@@ -68,7 +73,8 @@ broker-neutral holdings, trades and charges.
 - `app/` the local app (`server.py`, standard library; `static/` page,
   styles and charts in plain JavaScript, nothing loaded from outside). It
   runs only `research/jobs.py` tasks with arguments checked against fixed
-  lists; never add a task that places orders or opens the holdout.
+  lists (its Ask tab runs the trade finder, writing to `private/advice/`);
+  never add a task that places orders or opens the holdout.
 - `dashboard/` the personal dashboard: `build.py` writes one self-contained
   HTML file (no external scripts, fonts or requests) to `private/`.
 - `docs/solutions/` documented solutions to past problems (bugs, best
