@@ -62,9 +62,14 @@ EXIT_RUNS = [("hold", "low"), ("hold", "medium"), ("hold", "high")]  # the exit 
 
 
 def charges_fn(broker):
+    """Charges on a fill of `qty` units at `price`. Units are adjusted for corporate actions
+    and need not be whole, so the charges are worked out on the fill's turnover as one
+    line: every delivery charge in core/charges.json is a share of turnover or a flat fee."""
     def fn(side, qty, price):
-        return float(charges_mod.trade_charges(broker, side, D(str(round(qty, 6))), D(str(round(price, 4))),
-                                               "delivery", "NSE")["total"])
+        turnover = paise(D(str(round(qty * price, 4))))
+        if turnover <= 0:
+            return 0.0
+        return float(charges_mod.trade_charges(broker, side, 1, turnover, "delivery", "NSE")["total"])
     return fn
 
 
