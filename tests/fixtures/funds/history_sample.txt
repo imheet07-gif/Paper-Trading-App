@@ -1,0 +1,10 @@
+Scheme Code;Scheme Name;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Net Asset Value;Repurchase Price;Sale Price;Date
+
+Open Ended Schemes(Other Scheme - Index Funds)
+
+Test Asset Management Mutual Fund
+
+900001;Test Nifty 50 Index Fund - Direct Plan - Growth Option;INF000T01AA1;;100.0000;;;01-Jan-2013
+900002;Test Nifty 50 Index Fund - Regular Plan - Growth Option;INF000T01AB9;;99.0000;;;01-Jan-2013
+900001;Test Nifty 50 Index Fund - Direct Plan - Growth Option;INF000T01AA1;;101.5000;;;02-Jan-2013
+900001;Test Nifty 50 Index Fund - Direct Plan - Growth Option;INF000T01AA1;;N.A.;;;03-Jan-2013

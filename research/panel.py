@@ -116,6 +116,31 @@ def load(db_path=bhavcopy.DEFAULT_DB, start=None, end=None):
     return out
 
 
+def dividends(p, db_path=None):
+    """Cash dividends per share, in rupees on the shares as they traded that day, on each ex-date:
+    a frame shaped like p.close, 0 where there is none. From corporate_actions.dividend, through
+    the same ISIN chains as the prices."""
+    out = pd.DataFrame(0.0, index=p.dates, columns=p.close.columns)
+    db = sqlite3.connect(db_path or p.db_path)
+    try:
+        rows = db.execute("SELECT ex_date, COALESCE(isin, isin_reported), dividend FROM corporate_actions "
+                          "WHERE dividend IS NOT NULL AND dividend != ''").fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    db.close()
+    link_map = getattr(p, "link_map", {}) or {}
+    for ex, isin, div in rows:
+        if not isin:
+            continue
+        sid = ca.chain(isin, link_map)[-1]
+        if sid not in out.columns:
+            continue
+        k = p.dates.searchsorted(pd.Timestamp(ex))
+        if k < len(p.dates) and p.dates[k] == pd.Timestamp(ex):
+            out.iat[k, out.columns.get_loc(sid)] += float(div)
+    return out
+
+
 def universe(p, min_price=20.0, min_value=2e7, value_days=60, min_history=250):
     """Boolean frame: eligible to buy at each date's close, using only data to that date.
 

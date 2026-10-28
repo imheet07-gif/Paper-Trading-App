@@ -169,6 +169,34 @@ class Profiles(unittest.TestCase):
         self.assertFalse(profiles.passes_period("vol", "low", {"cagr": 0.12, "sharpe": 0.3}, bench))
         self.assertTrue(profiles.passes_period("vol", "high", {"cagr": 0.12, "sharpe": 0.3}, bench))
 
+    def test_dividends_are_paid_on_shares_held_the_day_before(self):
+        import sqlite3
+        rise = [c for c in self.p.close.columns if self.p.names[c] == "RISE"][0]
+        ex = self.days[self.r + 3].isoformat()
+        db = sqlite3.connect(self.path)
+        db.execute("INSERT INTO corporate_actions (ex_date, symbol, isin_reported, isin, series, subject, kind, dividend) "
+                   "VALUES (?, 'RISE', ?, ?, 'EQ', 'Dividend - Rs 5 Per Share', 'dividend', '5')", (ex, rise, rise))
+        db.commit()
+        db.close()
+        dv = panel.dividends(self.p, self.path)
+        self.assertEqual(dv.loc[pd.Timestamp(ex), rise], 5.0)
+        self.assertEqual(float(dv.values.sum()), 5.0)
+        res = profiles.simulate(self.p, self.scores, self.elig, self.days[self.r - 5].isoformat(),
+                                self.days[self.r + 15].isoformat(), 5, None, dividends=dv.values)
+        bought = sum(t[3] for t in self.trades(res, "RISE", "buy"))
+        self.assertGreater(bought, 0)
+        self.assertAlmostEqual(res["stats"]["dividends"], bought * 5.0, places=6)
+        without = profiles.simulate(self.p, self.scores, self.elig, self.days[self.r - 5].isoformat(),
+                                    self.days[self.r + 15].isoformat(), 5, None)
+        self.assertAlmostEqual(res["nav"].iloc[-1] - without["nav"].iloc[-1], bought * 5.0 / profiles.CAPITAL, delta=1e-4)
+
+    def test_v2_needs_a_fund_and_never_falls_back(self):
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                profiles.main(["--period", "dev", "--vol-levels", "--db", self.path])
+        s, name = profiles.fund_nav(self.path, "900001")
+        self.assertTrue(s.empty)
+
     def test_month_stats(self):
         idx = pd.to_datetime(["2020-01-31", "2020-02-28", "2020-03-31"])
         m = profiles.month_stats(pd.Series([1.1, 0.99, 1.0], index=idx))
