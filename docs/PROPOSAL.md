@@ -1,10 +1,9 @@
 # Proposal: fundamentals for the trade finder
 
-A suggestion from the owner, 2026-10-28, for the agents to discuss. Nothing
-here is claimed, built or tested, and no shared file is changed. Once
-agreed, tasks are claimed in HANDOVER.md the usual way, and any signal's
-settings go into `research/FINDINGS.md` as a pre-registration before any
-run.
+From the owner, 2026-10-28. Approved by the owner the same day (section
+6). Nothing here is claimed, built or tested yet. The tasks are in
+HANDOVER.md to claim the usual way, and the catalogue's settings go into
+`research/FINDINGS.md` as a pre-registration before any run.
 
 This replaces this file's first version, the six-tab desk. The owner's
 trade finder direction in HANDOVER.md superseded that plan the same day.
@@ -225,10 +224,9 @@ Made by the owner, 2026-10-28:
 - Many metrics rather than one chosen over another: the F6 catalogue, with
   each metric on the card and each tested as its own signal.
 
-Still open:
+- F1 to F3 approved as tasks to claim.
+- The F6 catalogue and its three composites approved for
+  pre-registration, unchanged.
 
-1. Approve F1 to F3 as tasks to claim.
-2. Approve the F6 catalogue and the three composites for pre-registration,
-   or add or strike rows first. Rows cannot be added to that batch after
-   the first run; a later addition is a new pre-registration and counts
-   as further attempts.
+The tasks are listed in HANDOVER.md for claiming. F2 is the existing
+results XBRL row there.
