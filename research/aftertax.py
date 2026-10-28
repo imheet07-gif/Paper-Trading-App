@@ -304,7 +304,7 @@ def main(argv=None):
     for r in fy_table(mine["nav"], mine["years"], mine["hook"].tax_paid, mine["final"]):
         print("  %-10s %8.1f%% %8.1f%% %12s %12s %12s %12s %9s" % (
             r["fy"], r["before"] * 100, r["after"] * 100, inr(r["short"], 0), inr(r["long"], 0),
-            inr(r["dividends"], 0), inr(r["tax"], 0), inr(r["carried"], 0)))
+            inr(r["dividends"], 0), inr(float(r["tax"]), 0), inr(r["carried"], 0)))
     print("  fund: bought %s, sold %s, one sale taxed" % (f["nav"].index[0].date(), f["nav"].index[-1].date()))
     for y in f["years"]:
         print("    %s gain %s, tax %s" % (y["fy"], inr(y["short"] + y["long"], 0), inr(y["tax"], 0)))
@@ -313,7 +313,7 @@ def main(argv=None):
     print("  %-34s %9.1f%% %9s" % ("CAGR after gains tax", out["strategy_cagr_after_gains_tax"] * 100, ""))
     print("  %-34s %9.1f%% %9.1f%%" % ("CAGR after all tax (your slab)", cagr(a.capital, mine["final"], first, last) * 100,
                                       out["fund_cagr_after_tax"] * 100))
-    print("  %-34s %10s %10s" % ("value at the end, after tax", inr(mine["final"], 0), inr(f["final"], 0)))
+    print("  %-34s %10s %10s" % ("value at the end, after tax", inr(float(mine["final"]), 0), inr(float(f["final"]), 0)))
     lead = "the fund" if f["final"] > mine["final"] else "the strategy"
     print("  After tax, %s ended ahead over this window." % lead)
     print("  Before surcharge; tax rules and what is left out: core/tax_rates.json. Estimates, not tax advice.")
