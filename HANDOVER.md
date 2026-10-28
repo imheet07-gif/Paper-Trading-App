@@ -502,6 +502,12 @@ Progress (second agent):
     and a cost comparison against ETFs and Sovereign Gold Bonds (spread,
     making charges, GST, storage, tax). The project never buys anything;
     it records what the owner bought.
+  - Done for B and D (second agent, branch `second-agent/metals`):
+    `core/metals.py listed` (SGBs from the store; ETFs need NSE's ETF list
+    file, whose URL is to verify on the Mac) and `ledger add|list|value|
+    remove`. Open: the IBJA rate download (not reachable from the cloud),
+    the SGB and ETF cost comparison (needs the scheme terms and fund
+    costs from RBI's and the AMCs' own pages), and B's tested evidence.
 
 ## Gaps in the ported skills
 

@@ -52,6 +52,10 @@ broker-neutral holdings, trades and charges.
   the scan's evening update. NSE publishes only the latest session, so a
   missed evening is lost; raw files cached in `data/deals_raw/`. Client
   names include private individuals: they stay in the local store only.
+- `core/metals.py` gold and silver: Sovereign Gold Bonds (series GB) from
+  the store, gold and silver ETFs picked from NSE's ETF list file, and the
+  owner's physical metal ledger (`trader/metals.json`), valued only at
+  rates the owner records with a date and source (`trader/metal_rates.json`).
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
