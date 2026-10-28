@@ -52,7 +52,8 @@ def match(trades):
     rows = sorted(trades, key=lambda t: (str(t["date"]), str(t.get("time") or ""), 0 if t["side"] == "buy" else 1))
     open_lots, realized, symbols = {}, [], {}
     for t in rows:
-        isin, qty, price, day = t["isin"], int(t["qty"]), D(t["price"]), _day(t["date"])
+        isin, price, day = t["isin"], D(t["price"]), _day(t["date"])
+        qty = t["qty"] if isinstance(t["qty"], Decimal) else int(t["qty"])  # Decimal: research's fractional units
         symbols[isin] = t.get("symbol") or symbols.get(isin, isin)
         q = open_lots.setdefault(isin, [])
         if t["side"] == "buy":

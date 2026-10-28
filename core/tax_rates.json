@@ -1,0 +1,101 @@
+{
+  "_about": "Income tax on listed equity shares and units of equity oriented funds (securities transaction tax paid), for a resident individual, under the Income-tax Act, 1961. Every rule has the date it applies from and the official text it was read from: the section pages of the Income Tax Department's own site, incometaxindia.gov.in/w/<section>, read on 2026-10-29. Each page carries a 'Year' edition; the edition read is named. Dates are transfer dates (or, for dividends, the date the dividend is received) unless a rule says fy_from, which is the first financial year (April to March) it applies to. Percent values are percent of the gain or income. Anything outside 'covers' is refused, never defaulted.",
+  "covers": {
+    "from": "2012-04-01",
+    "to": "2026-03-31",
+    "_note": "From 1 April 2026 the Income-tax Act, 2025 applies (incometaxindia.gov.in lists it under All Acts); its sections have not been read here, so later transfers and dividends are refused. Before FY2012-13 the editions were not read either."
+  },
+  "holding": {
+    "long_term_after_months": 12,
+    "_source": "Section 2(42A), 2025 edition (incometaxindia.gov.in/w/section-2-66): '\"short-term capital asset\" means a capital asset held by an assessee for not more than twenty-four months', with the proviso that for 'a security ... listed in a recognized stock exchange in India ... or a unit of an equity oriented fund' the words '\"twelve months\" had been substituted'. Held more than 12 months is long term; core/lots.py applies the same test."
+  },
+  "short_term": [
+    {
+      "from": "2012-04-01",
+      "rate_pct": "15",
+      "_source": "Section 111A(1)(i), 2012 and 2015 editions (incometaxindia.gov.in/w/section-111a-4 and -12): 'the amount of income-tax calculated on such short-term capital gains at the rate of fifteen per cent'. The 2026 edition (/w/section-111a) keeps 'fifteen per cent for any transfer which takes place before the 23rd day of July, 2024'."
+    },
+    {
+      "from": "2024-07-23",
+      "rate_pct": "20",
+      "_source": "Section 111A(1)(i)(b), 2026 edition (incometaxindia.gov.in/w/section-111a): 'at the rate of twenty per cent for any transfer which takes place on or after the 23rd day of July, 2024'."
+    }
+  ],
+  "long_term": [
+    {
+      "from": "2012-04-01",
+      "exempt": true,
+      "_source": "Section 10(38), 2012, 2013, 2015, 2017 and 2019 editions (incometaxindia.gov.in/w/section-10-10, -13, -55, -57, -59): exempts 'any income arising from the transfer of a long-term capital asset, being an equity share in a company or a unit of an equity oriented fund' where the sale 'is chargeable to securities transaction tax'; the 2019 edition adds 'nothing contained in this clause shall apply to any income arising from the transfer of long-term capital asset ... made on or after the 1st day of April, 2018'."
+    },
+    {
+      "from": "2018-04-01",
+      "rate_pct": "10",
+      "_source": "Section 112A(2)(i), 2018 edition (incometaxindia.gov.in/w/section-112a-61): 'Following section 112A shall be inserted after section 112 by the Finance Act, 2018, w.e.f. 1-4-2019' (assessment year 2019-20, so transfers from 1 April 2018), taxing 'such long-term capital gains exceeding one lakh rupees at the rate of ten per cent'. Unchanged in the 2019 to 2024 editions (-62, -55 to -58)."
+    },
+    {
+      "from": "2024-07-23",
+      "rate_pct": "12.5",
+      "_source": "Section 112A(2)(i)(b), 2026 edition (incometaxindia.gov.in/w/section-112a-65): 'at the rate of twelve and one-half per cent for any transfer which takes place on or after the 23rd day of July, 2024'."
+    }
+  ],
+  "long_term_exemption": [
+    {
+      "fy_from": "FY2018-19",
+      "amount": "100000",
+      "_source": "Section 112A(2)(i), 2018 to 2024 editions (incometaxindia.gov.in/w/section-112a-61, -62, -55 to -58): tax on 'long-term capital gains exceeding one lakh rupees'."
+    },
+    {
+      "fy_from": "FY2024-25",
+      "amount": "125000",
+      "_source": "Section 112A(2)(i), 2026 edition (incometaxindia.gov.in/w/section-112a-65): 'long-term capital gains exceeding one lakh twenty-five thousand rupees', and 'the limit of one lakh twenty-five thousand rupees shall apply on aggregate of the long-term capital gains under sub-clauses (a) and (b)', so the whole of FY2024-25, before and after 23 July 2024, shares one limit."
+    }
+  ],
+  "grandfathering": {
+    "acquired_before": "2018-02-01",
+    "fmv_date": "2018-01-31",
+    "_source": "Section 55(2)(ac), 2022 edition (incometaxindia.gov.in/w/section-55-60): the cost of an equity share or unit 'referred to in section 112A, acquired before the 1st day of February, 2018, shall be higher of (i) the cost of acquisition of such asset; and (ii) lower of (A) the fair market value of such asset; and (B) the full value of consideration'; fair market value is, for a listed asset, 'the highest price of the capital asset quoted on such exchange on' 31 January 2018 (or the last earlier day it traded), and for an unlisted unit 'the net asset value of such unit as on the said date'."
+  },
+  "set_off": {
+    "carry_forward_years": 8,
+    "_source": "Section 70(2) and (3), 2025 edition (incometaxindia.gov.in/w/section-70-64): a loss on a short-term capital asset may be set off 'against the income ... in respect of any other capital asset'; a loss on any other capital asset only against 'any other capital asset not being a short-term capital asset'. Section 74(1) and (2), 2025 edition (/w/section-74-64): an unabsorbed loss is carried forward, short-term 'set off against income, if any, under the head \"Capital gains\"', long-term only against capital gains 'not being a short-term capital asset', and 'No loss shall be carried forward under this section for more than eight assessment years immediately succeeding the assessment year for which the loss was first computed'."
+  },
+  "cess": [
+    {
+      "fy_from": "FY2012-13",
+      "rate_pct": "3",
+      "_source": "Finance Acts 2013 to 2018, section 2(11) and (12) (incometaxindia.gov.in/w/section-2-86, -87, -124 to -127): income-tax and surcharge for the assessment year are increased by 'Education Cess on income-tax', 'at the rate of two per cent', and 'Secondary and Higher Education Cess on income-tax', 'at the rate of one per cent of such income-tax and surcharge'. The Finance Act, 2018 applies them to assessment year 2018-19 (FY2017-18)."
+    },
+    {
+      "fy_from": "FY2018-19",
+      "rate_pct": "4",
+      "_source": "Finance (No. 2) Act, 2019, section 2(11) (incometaxindia.gov.in/w/section-2-128), for the assessment year commencing 1 April 2019 (FY2018-19): 'Health and Education Cess on income-tax', 'calculated at the rate of four per cent of such income-tax and surcharge'. Same rate in the Finance Acts 2020 to 2025 (/w/section-2-129 to -135); the Finance Act, 2025, section 2(12), sets it for advance tax of FY2025-26."
+    }
+  ],
+  "dividends": [
+    {
+      "from": "2012-04-01",
+      "holder": "exempt",
+      "_source": "Section 10(34), 2012, 2013, 2015, 2017 and 2019 editions (incometaxindia.gov.in/w/section-10-10, -13, -55, -57, -59): exempt 'any income by way of dividends referred to in section 115-O' (dividends on which the company paid distribution tax)."
+    },
+    {
+      "from": "2016-04-01",
+      "holder": "exempt",
+      "above": "1000000",
+      "rate_pct": "10",
+      "_source": "Section 115BBDA(1), 2017 and 2019 editions (incometaxindia.gov.in/w/section-115bbda-1 and -3): 'Ins. by Act No. 28 of 2016 (w.e.f. 1-4-2017)' (assessment year 2017-18, so FY2016-17); dividends 'in aggregate exceeding ten lakh rupees' are taxed 'at the rate of ten per cent'. The 2026 edition (/w/section-115bbda-12) limits it to dividends 'paid by a domestic company or companies on or before the 31st day of March, 2020'."
+    },
+    {
+      "from": "2020-04-01",
+      "holder": "slab",
+      "_source": "Section 10(34), 2025 edition (incometaxindia.gov.in/w/section-10-65): 'nothing contained in this clause shall apply to any income by way of dividend received on or after the 1st day of April, 2020', so dividends are part of total income, taxed at the holder's slab rate, which the user types in when running and which is never stored."
+    }
+  ],
+  "left_out": [
+    "Surcharge: it depends on the holder's total income, which is not known here. Sections 111A and 112A gains and dividends can attract it at higher incomes; tax here is before surcharge.",
+    "The resident's basic exemption shortfall (provisos to sections 111A(1) and 112A(2)) and the section 87A rebate: both depend on total income.",
+    "Transfer expenses other than securities transaction tax (section 48): callers pass prices net of costs if they want them deducted.",
+    "Losses on long-term transfers exempt under section 10(38) (before 1 April 2018) are dropped, not set off or carried forward: income from an exempt source is outside the computation under sections 70 and 74. This is the module's reading, not quoted text.",
+    "Carry forward assumes each year's return is filed on time (section 80 is not checked).",
+    "When a year has gains at two rates (FY2024-25), losses and the long-term exemption are set against the higher-rate gains first, the order that lowers the tax; the Act does not fix an order."
+  ]
+}

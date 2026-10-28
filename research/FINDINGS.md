@@ -594,3 +594,45 @@ the owner asks.
 average, and recent market volatility, may be shown as untested context.
 They never change a trade: timing by trend and breadth failed validation
 (2026-10-27).
+
+## 2026-10-29: the after-tax check, settings fixed before any run (owner's agent)
+
+The trade finder leads with an index fund if the fund beats the tested
+strategy after tax (HANDOVER.md). Run by `research/aftertax.py`; tax by
+`core/tax.py` from `core/tax_rates.json`, every rule dated and quoted from
+the Income Tax Department's own section pages.
+
+**Strategy.** `momentum_quality_top20` exactly as validated: top 20,
+month-end rebalance, next-open fills, 15 bps slippage, charges from
+`core/charges.json`, Rs 10,00,000 at the start. Added for this check
+only: dividends credited on the ex-date (rupees per share from the
+store's corporate actions, on the shares held the session before); each
+financial year's tax paid from the portfolio at the year's last close;
+everything sold at the window's last close (less slippage and charges)
+and that year's tax paid. Gains are on fill prices; charges are not
+deducted from gains (slightly more tax than a filed return).
+
+**Fund.** Bought at the window's first close, held, sold at its last; a
+growth plan, so its dividends stay inside the fund untaxed. Its value is
+the stored price index plus the index's own daily dividend yield (no
+total return index is stored), less an expense ratio of 1.0% a year,
+fixed here. The fund's own factsheet was not read; direct plans of
+momentum index funds are quoted around 0.4 to 0.5% by aggregator sites,
+so 1.0% handicaps the fund. Rerun with the factsheet figure for the
+card. Purchase stamp duty and redemption STT on fund units are left out.
+
+**Windows.** `dev_2016` (2016 to 2020) against a Nifty 50 fund, since
+Nifty200 Momentum 30 is stored only from August 2020; `validation`
+(2021 to 2023) against a Nifty200 Momentum 30 fund. One run each. The
+holdout stays closed.
+
+**Reported.** Per financial year: return before and after tax, short and
+long gains, dividends, tax paid, losses carried. Overall: CAGR before
+tax, after gains tax only, and after all tax at a slab rate typed in for
+the run (dividends); the end value of each after tax. The slab rate is
+never written down: the run log keeps the result with dividends
+untaxed. Tax is before surcharge (it depends on total income).
+
+**The rule.** If the fund's after-tax end value beats the strategy's on
+a window, the trade finder's low profile should lead with the fund for
+that kind of market; the owner decides.
