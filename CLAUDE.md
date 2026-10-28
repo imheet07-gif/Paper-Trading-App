@@ -17,7 +17,8 @@ broker-neutral holdings, trades and charges.
   no broker connection, no live mode), `trader-copycat` (named holders
   from shareholding filings, and bulk and block deals) and `trader-pelosi`
   (insider, promoter SAST and bulk and block deal disclosures, from the
-  store; `insiders.py`) are ported to India (rupees, whole
+  store; `insiders.py`) and `trader-analyst` (quarterly results from the
+  store's `financials` table; `results.py`) are ported to India (rupees, whole
   shares, an order sheet for manual entry; gaps in HANDOVER.md). The rest
   are still the US originals until
   Phase 2 ports them; do not assume their data sources (SEC, NYSE, Alpaca,

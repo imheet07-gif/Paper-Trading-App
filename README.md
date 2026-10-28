@@ -15,10 +15,10 @@ as the import that works for everyone.
 portfolio overview page). The main track now is the research layer: a
 survivorship-free NSE history from 2012, corporate action adjustment, and
 a backtester with a fixed validation protocol. Of the twelve `trader-*`
-skills, ten are ported to India (`trader-pelosi` reads insider, promoter
-SAST and bulk and block deal disclosures) and `trader-advisor` (the trade
-finder) is new; `trader-analyst` and `trader-tax` are still the US
-originals, documented in
+skills, eleven are ported to India (`trader-pelosi` reads insider,
+promoter SAST and bulk and block deal disclosures; `trader-analyst` the
+quarterly results filed with NSE) and `trader-advisor` (the trade finder)
+is new; `trader-tax` is still the US original, documented in
 [docs/trader-skill-README.md](docs/trader-skill-README.md).
 
 ## Start here: the app
