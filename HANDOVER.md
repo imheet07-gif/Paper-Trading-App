@@ -466,6 +466,14 @@ Progress (second agent):
   quantity (branch `second-agent/stops-targets`). Open: the concentration
   runs (owner's machine) and the after-tax check (needs the tax rates from
   the Income Tax Department's own pages and a Nifty momentum index history).
+- Step 2, built ahead of step 1's results on branch `second-agent/advise`:
+  `research/advise.py` (only the tested top N, the hard filters, sizing and
+  stops from `exits.py`, an evidence card per pick with results and
+  untested ownership context, the low profile beside a riskier request,
+  stock mode, "no trade" when nothing passes) and the `trader-advisor`
+  skill (twelfth skill; tests and plugin description updated). Pending, and
+  shown on every answer: each profile's own backtest record and each rank
+  bucket's record, the after-tax comparison, a results calendar.
 - Commodities (owner, 2026-10-28): all of these, after the trade finder's
   steps 1 and 2, each from the publisher's own files:
   - A. Context: daily prices of gold, silver, crude, natural gas, copper and
