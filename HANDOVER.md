@@ -152,8 +152,11 @@ What it must be honest about, shown in every answer:
    - results or ex-dates due inside the holding month;
    - pledges and other red flags;
    - entry limit, quantity and charges;
-   - the review date: the next rebalance day. No stop-loss or target,
-     since none is tested; the card says so.
+   - the review date: the next rebalance day;
+   - a stop-loss and a profit target with a quantity sized so hitting the
+     stop loses a fixed share of the amount (see "Exits and options"
+     below). Until the exit test passes, the card labels them risk
+     limits, not a tested edge.
 5. **Stock mode, `--stock SYMBOL`:**
    - the same card for any stock: its rank on the tested signal, its
      filters and red flags, and how it compares with the top pick;
@@ -174,6 +177,95 @@ What it must be honest about, shown in every answer:
 Order: after-tax check, concentration test, `advise.py` with the card,
 stock mode, the Ask tab. New tested signals (for example earnings surprise
 once results XBRL since March 2025 is found) widen the candidates later.
+
+### Exits and options (owner, 2026-10-28)
+
+The owner wants a stop-loss, a profit target and option strategies on
+every answer, and candidates beyond momentum.
+
+**1. Stops and targets as risk control (build now, no edge claimed).**
+
+- Stop below entry at a multiple of the 14-session average true range
+  (ATR, from stored daily highs and lows).
+- Target at a multiple of the stop distance.
+- Quantity sized so a stop hit loses a fixed share of the amount (for
+  example 1% of Rs 50,000 = Rs 500, charges included).
+- The multiples and the risk share are fixed and written in FINDINGS.md
+  before any test.
+- The card shows the stop, the target, the rupee loss at the stop and the
+  rupee gain at the target.
+
+**2. Test whether exits add anything (dev only first, pre-registered,
+every run logged).**
+
+- `research/backtest.py` gains exit rules checked each session on daily
+  bars:
+  - stop;
+  - target;
+  - time limit;
+  - the exit fills at the stop or target price, or at the open when the
+    stock gaps through it;
+  - when one bar touches both the stop and the target, count the stop
+    (daily data cannot say which came first).
+- First on `momentum_quality`: do stops cut its crashes (2016, 2022)
+  without giving up the return?
+- Then shorter-horizon candidates that exits suit, each a new idea with
+  its own pre-registration:
+  - a 52-week-high breakout (`high_52w` exists);
+  - a pullback inside an uptrend;
+  - the move after a results gap.
+- A candidate joins the trade finder's ranking only after dev and one
+  validation look. Until then nothing but momentum ranks a pick.
+
+**3. Options, in three steps.**
+
+- **(a) Data.**
+  - `core/fo.py` stores NSE's daily F&O bhavcopy. The archive serves
+    both layouts:
+    - `content/fo/BhavCopy_NSE_FO_0_0_0_<YYYYMMDD>_F_0000.csv.zip`;
+    - before July 2024,
+      `content/historical/DERIVATIVES/<YYYY>/<MON>/fo<DDMONYYYY>bhav.csv.zip`.
+  - It also stores the lot sizes from `content/fo/fo_mktlots.csv`.
+  - Option charges (STT, exchange fees) go in `core/charges.json` from
+    the publishers' own pages, dated, since the rates changed in 2024.
+- **(b) A strategy calculator, arithmetic only.**
+  - For a chosen view on a stock or the Nifty:
+    - a protective put;
+    - a covered call;
+    - bull and bear spreads;
+    - a long call or put.
+  - From the last settlement prices it gives:
+    - lots;
+    - premium;
+    - maximum loss and maximum gain;
+    - breakeven;
+    - charges;
+    - the payoff at expiry.
+  - It refuses anything with undefined risk (naked selling) and anything
+    that does not fit the amount. Most stock-option lots do not fit Rs
+    50,000: one ABCAPITAL put on 2026-10-27 cost about Rs 1.07 lakh, or
+    3,100 shares at Rs 34.50. The card should say so rather than hide it.
+- **(c) Backtests of option overlays** on end-of-day prices.
+  - Examples: a protective put on the momentum basket, an index put
+    hedge.
+  - Pre-registered, dev only first.
+  - Bid-ask spreads are not in the bhavcopy, so far-out or illiquid
+    strikes are excluded and slippage is set wide.
+  - SEBI's own study found about nine in ten individual F&O traders lost
+    money, so the calculator shows the cost and worst case first.
+
+Order sheets only, as everywhere: nothing places an order, at any broker.
+
+**Order for the whole trade finder:**
+
+1. Stops and targets as risk limits, with the after-tax and
+   concentration checks.
+2. `advise.py`.
+3. The exit tests.
+4. F&O data.
+5. The options calculator.
+6. Shorter-horizon candidates.
+7. Option overlay tests.
 
 ## Tasks
 
