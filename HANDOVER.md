@@ -486,6 +486,12 @@ Progress (second agent):
   reads those runs: it shows the level's record (with the worst month in
   rupees on the amount) and hands a failed level to the next safer one
   that passed (branch `second-agent/advise-levels`).
+- Exit test (second agent, 2026-10-28; branch `second-agent/exit-test`):
+  `research/profiles.py --period dev --exit-test` holds each risk level's
+  stocks without the stop and target and compares with its logged `--all`
+  run; the rule (higher Sharpe and a shallower worst drawdown, on dev and
+  validation) is in FINDINGS.md. If a level passes, its card may drop "not
+  a tested edge"; that label change is a follow-up once results exist.
 - Commodities (owner, 2026-10-28): all of these, after the trade finder's
   steps 1 and 2, each from the publisher's own files:
   - A. Context: daily prices of gold, silver, crude, natural gas, copper and

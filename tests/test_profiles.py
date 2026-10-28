@@ -1,5 +1,6 @@
 import datetime as dt
 import io
+import json
 import importlib.util
 import os
 import sys
@@ -153,6 +154,32 @@ class Profiles(unittest.TestCase):
         self.assertEqual(profiles.safest_offered("high", {"high": False, "medium": False, "low": True}), "low")
         self.assertEqual(profiles.safest_offered("medium", {"high": True, "medium": True, "low": True}), "medium")
         self.assertIsNone(profiles.safest_offered("low", {"low": False}))
+
+    def test_exit_test_holds_the_same_stocks_without_stops(self):
+        held = profiles.simulate(self.p, self.scores, self.elig, self.days[self.r - 5].isoformat(),
+                                 self.days[self.r + 15].isoformat(), 5, "medium", use_exits=False)
+        self.assertEqual(held["stats"]["stops"], 0)
+        self.assertEqual(held["stats"]["targets"], 0)
+        with_exits = self.run_(5, "medium")
+        buys = lambda r: sorted((t[1], round(t[3], 6)) for t in r["trades"] if t[2] == "buy")
+        self.assertEqual(buys(held), buys(with_exits))  # same picks and quantities: only the exits differ
+        self.assertEqual([t[5] for t in self.trades(held, "CRASH", "sell")], [])  # held through the gap
+
+    def test_exits_pass_rule(self):
+        self.assertTrue(profiles.exits_pass({"sharpe": 0.8, "max_drawdown": -0.2}, {"sharpe": 0.7, "max_drawdown": -0.3}))
+        self.assertFalse(profiles.exits_pass({"sharpe": 0.8, "max_drawdown": -0.4}, {"sharpe": 0.7, "max_drawdown": -0.3}))
+        self.assertFalse(profiles.exits_pass({"sharpe": 0.6, "max_drawdown": -0.2}, {"sharpe": 0.7, "max_drawdown": -0.3}))
+
+    def test_exit_test_needs_the_logged_level_runs(self):
+        log = os.path.join(self.tmp.name, "runs.jsonl")
+        with open(log, "w") as fh:
+            fh.write(json.dumps({"at": "2026-10-29T00:00:00", "period": "dev", "profile": "risk:low", "sharpe": 1}) + "\n")
+        with redirect_stderr(io.StringIO()) as err:
+            code = profiles.main(["--period", "dev", "--exit-test", "--db", self.path], runs_log=log)
+        self.assertEqual(code, 2)
+        self.assertIn("medium, high", err.getvalue())
+        self.assertEqual(profiles.logged("dev", "risk:low", log)["sharpe"], 1)
+        self.assertIsNone(profiles.logged("validation", "risk:low", log))
 
     def test_runs_fixed_in_findings(self):
         self.assertEqual(profiles.RUNS, [("top", 1), ("top", 3), ("top", 5), ("top", 20),
