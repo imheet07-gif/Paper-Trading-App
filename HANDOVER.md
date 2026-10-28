@@ -178,6 +178,51 @@ Order: after-tax check, concentration test, `advise.py` with the card,
 stock mode, the Ask tab. New tested signals (for example earnings surprise
 once results XBRL since March 2025 is found) widen the candidates later.
 
+### The front: a Claude skill, and risk appetite (owner, 2026-10-28)
+
+The owner talks to it in a Claude chat: "I want to invest Rs 50,000,
+medium risk", or "what about TATAMOTORS?". The app's Ask tab is optional.
+
+- **New skill `trader-advisor`.**
+  - It asks for whatever is missing (amount, risk appetite, a stock if
+    any).
+  - It runs `research/advise.py --amount N --risk low|medium|high
+    [--stock SYMBOL] --json`.
+  - It explains the answer in plain words.
+  - Its SKILL.md must say:
+    - Claude never adds, swaps or ranks a pick itself;
+    - every trade, number and claim in the reply comes from the
+      command's output;
+    - when the command finds no tested trade, the answer is "no trade"
+      or the index fund, never a guess;
+    - untested context (deals, SAST, shareholding, news) is labelled as
+      such.
+  - Adding a twelfth skill means updating `tests/test_repo.py`'s skill
+    list and the plugin manifest.
+- **Risk appetite is three fixed profiles**, written in FINDINGS.md
+  before any test and never tuned on results. A starting point to argue
+  with:
+
+| profile | stocks | loss at the stop, per stock | options |
+| --- | --- | --- | --- |
+| low | 5 (or the index fund when it beats the strategy after tax) | 0.5% of the amount | none |
+| medium | 3 | 1% | defined-risk spreads and protective puts |
+| high | 1 | 2% | long calls or puts, spreads |
+
+- **The evidence for a profile is its own backtest.** Each profile runs
+  as a strategy on dev and gets one validation look:
+  - top N of the tested ranking;
+  - its stop and target rules;
+  - its sizing.
+
+  The answer shows that profile's record next to the trade: CAGR, worst
+  drawdown, worst month, share of months losing, and the rupee loss of
+  the worst month on the owner's amount. A profile that fails
+  validation is not offered; the answer says why.
+- The answer also shows what the low profile would have done. A
+  medium- or high-risk request is then always seen next to the safer
+  alternative.
+
 ### Exits and options (owner, 2026-10-28)
 
 The owner wants a stop-loss, a profit target and option strategies on
@@ -260,7 +305,7 @@ Order sheets only, as everywhere: nothing places an order, at any broker.
 
 1. Stops and targets as risk limits, with the after-tax and
    concentration checks.
-2. `advise.py`.
+2. `advise.py` with the three profiles, and the `trader-advisor` skill.
 3. The exit tests.
 4. F&O data.
 5. The options calculator.
