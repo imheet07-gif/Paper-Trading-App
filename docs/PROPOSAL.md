@@ -254,7 +254,7 @@ tested.
 
 | id | work | touches | for |
 | --- | --- | --- | --- |
-| B1 | Add to the F5 vendor evaluation: does the vendor offer consensus estimates, estimate revisions, ratings and target prices, each with the date it changed? If yes, show them on the card, and pre-register an estimate-revisions signal for testing, separately from the F6 batch | none until a vendor is chosen | context, then ranking |
+| B1 | **Parked by the owner, 2026-10-28: needs a free source, and none is known.** Dated consensus estimates, estimate revisions, ratings and target prices from a vendor, shown on the card, with an estimate-revisions signal pre-registered separately from the F6 batch | none | context, then ranking |
 | B2 | Broker call log and scorecard | new `core/broker_calls.py`, tests | context, forward test |
 | B3 | Company communications on the card: links to the latest earnings-call transcript, investor presentation and analyst meet, from the NSE announcements already fetched (`trader-news` classifies them as "investor meeting") | `research/advise.py` (its owner), `trader-news/` | context |
 
@@ -289,11 +289,16 @@ tested.
 - B3 is cheap and can start now.
 - B2 can start now. Its scorecard needs months of calls before it says
   anything.
-- B1 rides on F5.
+- B1 is parked until a free, dated source is found. Free reports on
+  broker sites are copyrighted, and scraping them usually breaks the
+  sites' terms.
 
 ### Decisions for section 7
 
-Made by the owner, 2026-10-28: add broker reports to the plan.
+Made by the owner, 2026-10-28:
+
+- Add broker reports to the plan.
+- Only the free parts go ahead: B2 and B3. B1 is parked.
 
 Still open:
 
