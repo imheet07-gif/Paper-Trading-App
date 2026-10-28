@@ -7,11 +7,12 @@ from _load import ROOT
 
 SKILLS = ["trader-copycat", "trader-news", "trader-budget", "trader-pelosi", "trader-analyst",
           "trader-screener", "trader-risk", "trader-broker", "trader-tax", "trader-alerts",
-          "trader-rebalance"]
+          "trader-rebalance", "trader-advisor"]
+INDIA_ONLY = ["trader-advisor"]  # skills this edition added; the upstream pack never had them
 CORE = ["nse_calendar.py", "nse_holidays.json", "money.py", "charges.py", "charges.json", "instruments.py", "zerodha_console.py", "cas.py", "lots.py", "bhavcopy.py", "corporate_actions.py"]
 # skills that can lead to an order carry the safety block
 ORDER_PATH = ["trader-copycat", "trader-budget", "trader-pelosi", "trader-risk", "trader-broker",
-              "trader-tax", "trader-alerts", "trader-rebalance"]
+              "trader-tax", "trader-alerts", "trader-rebalance", "trader-advisor"]
 
 
 def frontmatter(path):
@@ -30,7 +31,7 @@ def every_text_file():
 
 
 class Repo(unittest.TestCase):
-    def test_eleven_skill_folders_at_the_root(self):
+    def test_twelve_skill_folders_at_the_root(self):
         found = sorted(d for d in os.listdir(ROOT)
                        if os.path.isfile(os.path.join(ROOT, d, "SKILL.md")))
         self.assertEqual(found, sorted(SKILLS))
@@ -87,7 +88,8 @@ class Repo(unittest.TestCase):
         with open(os.path.join(ROOT, "docs", "trader-skill-README.md"), encoding="utf-8") as fh:
             upstream = fh.read()
         for s in SKILLS:
-            self.assertIn("/" + s, upstream, s)
+            if s not in INDIA_ONLY:
+                self.assertIn("/" + s, upstream, s)
 
     def test_broker_order_tools_are_denied(self):
         with open(os.path.join(ROOT, ".claude", "settings.json")) as fh:

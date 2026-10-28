@@ -276,3 +276,151 @@ the universe). Not adopted, like insider_buying. A version that could be
 measured would need more coverage (smaller companies, a longer window, or
 promoter buying as one input to a composite); that is a new idea with its
 own settings fixed before any run, not a rescue of this one.
+
+## 2026-10-28: trade finder step 1, settings fixed before any test (owner agreed; second agent)
+
+For the trade finder in HANDOVER.md. Fixed now and never tuned on results;
+a change is a new version with its own record.
+
+**Stops and targets (risk limits; no edge claimed until the exit test).**
+
+- Average true range (ATR): the simple mean over the last 14 sessions of the
+  true range, the largest of high minus low, high minus the previous close,
+  and the previous close minus low, on prices adjusted for corporate
+  actions, to the last stored session.
+- Stop: entry minus 2 ATR. Target: entry plus 2 times the stop distance
+  (4 ATR), a 1 to 2 risk to reward.
+- Loss at the stop, charges included: low 0.5%, medium 1%, high 2% of the
+  amount. The quantity is the whole number of shares whose loss at the stop,
+  with the round trip's charges, stays within that, and whose cost fits the
+  stock's share of the amount.
+
+**Profiles.** Low: 5 stocks (or the index fund, if the after-tax check
+finds it beats the strategy). Medium: 3. High: 1. Each from the top of the
+tested ranking (`momentum_quality`), equal money per stock.
+
+**Concentration test.** `momentum_quality`, monthly, the same settings as
+the validated top 20, with top 1, 3 and 5 instead of 20: dev (2013 to 2020)
+first, then one validation look (2021 to 2023) for each, recorded here
+whatever it shows. Reported: CAGR, Sharpe, worst drawdown, worst month and
+share of months losing, against the top 20 on the same years. No holdout.
+
+## 2026-10-28: trade finder candidates widened to the top tenth (owner agreed; second agent)
+
+Fixed before any new run. The trade finder (`research/advise.py`) offered
+only the strategy's top 20, so a stock that failed a filter left a profile
+short even when good candidates sat just below. From now on its candidates
+are the top tenth of the tested ranking (`momentum_quality`), rounded up:
+about 43 of 430 eligible stocks today. Never below it, however many fail a
+filter.
+
+**Why the tenth, from runs already logged (no new look).** The
+`momentum_quality` evaluations in `runs.jsonl` (2026-10-27) give each tenth
+of the ranking's mean monthly return above the average eligible stock:
+
+| tenth of the ranking | dev 2013 to 2020 | validation 2021 to 2023 |
+|---|---|---|
+| top | +0.80% | +0.91% |
+| second | +0.30% | +0.72% |
+| third | +0.31% | +0.71% |
+| bottom | -0.59% | -1.39% |
+
+The top tenth beat the average in both periods and by the most; the next
+two tenths beat it by less. The top 20 (about the top 5%) sits inside the
+top tenth, so the validated strategy and the daily scan are unchanged:
+this governs only which stocks the trade finder may offer.
+
+**Shown on each card.** The pick's tenth of the ranking and that tenth's
+record above, read from the latest logged dev and validation evaluations of
+the signal. Never the holdout.
+
+**Tests that follow this rule.** The concentration test (top 1, 3 and 5)
+and the profile backtests rank the same way and take, each month, the
+highest ranked stocks that pass the filters, drawn from the top tenth only.
+If fewer pass, the profile holds fewer and the rest stays in cash. Same
+protocol as the entry above: dev first, one validation look, no holdout.
+
+## 2026-10-28: concentration and risk-level backtests, settings fixed before any run (second agent)
+
+How the two tests promised above are run, fixed before the code has
+seen any data. `research/profiles.py` runs both; nothing in it is tuned
+on results, and a change is a new version with its own record.
+
+**What is shared by both.**
+
+- The signal, universe and month-end rebalance of
+  `momentum_quality_top20` (`research/strategies.json`), as the trade
+  finder uses them.
+- Candidates are the top tenth of the eligible ranking, rounded up. In
+  rank order, a stock is passed over if:
+  - it was locked at a circuit on the rebalance session (high equal to
+    low after a move of 2% or more);
+  - the order would be more than 1% of its median traded value over 60
+    sessions;
+  - not even one whole share fits (for risk levels, `exits.plan` says
+    so).
+
+  The first k that pass are bought. If fewer pass, the rest stays in cash
+  for the month.
+- Orders as the trade finder writes them: a buy limit at the rebalance
+  close plus 1%, filled at the next open plus 15 basis points of slippage
+  (never above the limit), and not filled at all if the open is above the
+  limit. Sells are at the open minus 15 basis points. A sell is blocked on
+  a day locked at the lower circuit and tried again the next session.
+- At each rebalance the new quantities replace the old: stocks no longer
+  picked are sold, kept stocks are traded up or down to the new quantity,
+  and stops and targets are reset.
+- Money and costs:
+  - Rs 1,00,000 at the start, compounding: each rebalance sizes on the
+    portfolio's value at that close.
+  - Whole shares, on unadjusted prices at the rebalance.
+  - Zerodha delivery charges from `core/charges.json`, through
+    `core/charges.py`, the DP charge included.
+  - Cash earns 6% a year.
+  - A stock without a price for 20 sessions is sold at half its last
+    price, as in `backtest.py`.
+
+**Concentration test.** Top 1, 3, 5 and, for a like-for-like comparison
+inside the same engine, 20. Equal money per stock, no stops, held to the
+next rebalance.
+
+**Risk levels.** Low, medium and high as fixed above: 5, 3 and 1 stocks.
+The quantity comes from `exits.plan`: the loss at the stop is at most
+0.5%, 1% or 2% of the portfolio's value, charges included. The stop is
+entry minus 2 ATR and the target is 2R, both from the buy limit, as on the
+card.
+
+From the entry day on, each session:
+
+- An open at or below the stop sells at the open.
+- Otherwise a low at or below the stop sells at the stop, less slippage.
+- Otherwise a high at or above the target sells at the target.
+- If the stop and the target are both touched in one session, the stop
+  is assumed.
+- A stock that is sold stays in cash until the next rebalance.
+
+**Reported for each run.**
+
+- CAGR, Sharpe (6.5% risk-free, as `backtest.py`) and the worst drawdown.
+- The worst month and the share of months that lost money.
+- The average share of money invested.
+- Stops hit, targets hit, buys not filled, and months with fewer than k
+  stocks.
+- For comparison, the equal-weight universe over the same years.
+
+**Order and looks.** Each run is logged to `runs.jsonl`. All of dev
+(2013 to 2020) runs first. Then each of the seven runs gets one validation
+look (2021 to 2023). No holdout: the CLI refuses it.
+
+**When a risk level is offered (owner chose this, before any run).**
+
+- Low must have a CAGR and a Sharpe above the equal-weight universe's, on
+  both dev and validation. It is sold as the steadier choice, so it has to
+  show both.
+- Medium and high must have a CAGR above the equal-weight universe's, on
+  both dev and validation. They are sold as more growth with more swings,
+  so they are judged on growth. Their worst month and worst drawdown are
+  shown on every answer.
+- Fallback: a request for a level that failed is answered with the next
+  safer level that passed (high, then medium, then low), and the answer
+  says why. It is "no trade" only if low failed too.
