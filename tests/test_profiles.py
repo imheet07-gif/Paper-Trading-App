@@ -139,6 +139,36 @@ class Profiles(unittest.TestCase):
         self.assertAlmostEqual(fee("sell", 66.6667, 375.0), whole, places=1)  # same turnover after a 3:2 bonus
         self.assertEqual(fee("buy", 1e-12, 100.0), 0.0)
 
+    def test_basket_volatility(self):
+        import numpy as np
+        C = np.array([[100.0, 50.0]] + [[100.0 * (1.01 if k % 2 else 0.99) ** 0, 50.0] for k in range(10)])
+        self.assertIsNone(profiles.basket_vol(C, 10, [0, 1], days=63))  # too few sessions
+        C = np.cumprod(np.where(np.arange(100) % 2, 1.01, 0.99))[:, None] * np.ones((1, 2)) * 100
+        v = profiles.basket_vol(C, 99, [0, 1])
+        self.assertAlmostEqual(v, 0.01 * np.sqrt(252), delta=0.02)
+
+    def test_volatility_target_puts_the_rest_in_the_index(self):
+        import numpy as np
+        n = len(self.p.dates)
+        index = 1000.0 * 1.001 ** np.arange(n)
+        vol = profiles.basket_vol(self.p.close.values, self.r, [self.p.close.columns.get_loc(c) for c in self.p.close.columns])
+        res = profiles.simulate(self.p, self.scores, self.elig, self.days[self.r - 5].isoformat(),
+                                self.days[self.r + 15].isoformat(), 3, None, target_vol=vol / 2, index=index)
+        st = res["stats"]
+        self.assertLess(st["exposure_avg"], 0.8)
+        self.assertGreater(st["index_avg"], 0.1)  # the rest went into the index, not cash
+        self.assertTrue((res["nav"] > 0).all())
+        full = profiles.simulate(self.p, self.scores, self.elig, self.days[self.r - 5].isoformat(),
+                                 self.days[self.r + 15].isoformat(), 3, None, target_vol=10.0, index=index)
+        self.assertEqual(full["stats"]["exposure_avg"], 1.0)  # never above 100%
+        self.assertLess(full["stats"]["index_avg"], 0.01)
+
+    def test_v2_levels_fixed_in_findings(self):
+        self.assertEqual(profiles.VOL_LEVELS, {"low": (20, 0.10), "medium": (5, 0.20), "high": (3, 0.30)})
+        bench = {"cagr": 0.10, "sharpe": 0.5}
+        self.assertFalse(profiles.passes_period("vol", "low", {"cagr": 0.12, "sharpe": 0.3}, bench))
+        self.assertTrue(profiles.passes_period("vol", "high", {"cagr": 0.12, "sharpe": 0.3}, bench))
+
     def test_month_stats(self):
         idx = pd.to_datetime(["2020-01-31", "2020-02-28", "2020-03-31"])
         m = profiles.month_stats(pd.Series([1.1, 0.99, 1.0], index=idx))
