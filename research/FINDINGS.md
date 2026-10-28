@@ -499,3 +499,49 @@ validation look (2021 to 2023) next. No setting changes before it. A
 version that keeps the risk levels' loss limits but invests the idle
 cash (for example in an index fund), or a wider limit band, would be a
 new idea with its own settings fixed first, not a fix to this one.
+
+## 2026-10-29: the same runs on validation, one look each (owner's machine)
+
+Validation 2021 to 2023, the settings unchanged. The equal-weight
+universe made 34.6% a year (Sharpe 1.41) in these three strong years.
+
+| run | CAGR | Sharpe | worst drawdown | worst month | months losing | invested | 2021 / 2022 / 2023 | passes validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| top 1 | 77.0% | 1.26 | -63.7% | -47.4% | 36% | 85% | +167% / -18% / +117% | yes |
+| top 3 | 43.0% | 1.19 | -32.3% | -13.6% | 42% | 76% | +82% / -7% / +57% | yes |
+| top 5 | 36.4% | 1.09 | -24.7% | -11.8% | 47% | 77% | +64% / -8% / +58% | yes |
+| top 20 | 37.1% | 1.47 | -23.6% | -13.7% | 25% | 76% | +55% / -1% / +62% | yes |
+| low (5 stocks) | 9.7% | 0.72 | -3.0% | -1.5% | 28% | 11% | +13% / +3% / +12% | no |
+| medium (3 stocks) | 12.2% | 0.88 | -4.4% | -2.1% | 33% | 14% | +13% / +4% / +18% | no |
+| high (1 stock) | 12.3% | 0.84 | -4.8% | -1.8% | 33% | 9% | +18% / +2% / +16% | no |
+
+Exit test on validation, each level without its stop and target:
+
+| level | without exits: CAGR, Sharpe, worst drawdown | with exits: Sharpe, worst drawdown | 2022 with / without | exits pass validation |
+| --- | --- | --- | --- | --- |
+| low | 13.0%, 0.95, -7.7% | 0.72, -3.0% | +2.7% / +2.3% | no |
+| medium | 16.6%, 1.15, -8.2% | 0.88, -4.4% | +3.9% / +3.5% | no |
+| high | 18.7%, 1.26, -10.6% | 0.84, -4.8% | +2.1% / +3.3% | no |
+
+Verdicts under the rules fixed before any run:
+
+- **No risk level passes.** Each needed to beat the universe's CAGR on
+  dev and validation; on validation all three grew at 10% to 12% against
+  34.6%, because about 90% of the money sat in cash. Low and high passed
+  dev, medium did not. By the fallback rule the trade finder now answers
+  "no trade" at every level, and says why.
+- **The exits are not a tested edge.** They passed for high on dev only.
+  On validation they cut the worst drawdown at every level but lowered
+  the Sharpe at every level. The card's label "risk limits, not a tested
+  edge" stays.
+- **Concentration, equal money, no stops:** every count beat the
+  universe's CAGR in both periods. Fewer stocks swung far more: the top 1
+  lost 64% to 72% at its worst in each period; the top 5 and top 20 kept
+  their worst drawdowns near a quarter to a third.
+
+What failed is the sizing, not the ranking: a loss limit per stock with
+a 2 ATR stop leaves most of the money idle. Any new risk-level design
+(for example the concentration counts as levels, or the loss limits with
+the idle cash in an index fund) is a new idea. Its settings are fixed
+here first, and since 2021 to 2023 has now been seen for these runs, its
+clean test is the holdout, opened once, only when the owner asks.
