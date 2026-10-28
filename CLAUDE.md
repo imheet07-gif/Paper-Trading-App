@@ -55,7 +55,7 @@ broker-neutral holdings, trades and charges.
   `backtest.py` simulates and enforces the dev / validation / holdout
   protocol, `scan.py` is the daily scan and `paper.py` its paper ledger
   (`trader/paper.json`), `exits.py` stops, targets and sizing,
-  `advise.py` the trade finder (only the tested top N, hard filters,
+  `advise.py` the trade finder (only the top tenth of the tested ranking, hard filters,
   evidence cards). The scan runs only strategies in
   `research/strategies.json` and selects with `backtest.select_top`, so it
   trades exactly what was validated; changing a strategy means validating

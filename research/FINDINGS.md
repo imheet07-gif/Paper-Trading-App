@@ -304,3 +304,38 @@ the validated top 20, with top 1, 3 and 5 instead of 20: dev (2013 to 2020)
 first, then one validation look (2021 to 2023) for each, recorded here
 whatever it shows. Reported: CAGR, Sharpe, worst drawdown, worst month and
 share of months losing, against the top 20 on the same years. No holdout.
+
+## 2026-10-28: trade finder candidates widened to the top tenth (owner agreed; second agent)
+
+Fixed before any new run. The trade finder (`research/advise.py`) offered
+only the strategy's top 20, so a stock that failed a filter left a profile
+short even when good candidates sat just below. From now on its candidates
+are the top tenth of the tested ranking (`momentum_quality`), rounded up:
+about 43 of 430 eligible stocks today. Never below it, however many fail a
+filter.
+
+**Why the tenth, from runs already logged (no new look).** The
+`momentum_quality` evaluations in `runs.jsonl` (2026-10-27) give each tenth
+of the ranking's mean monthly return above the average eligible stock:
+
+| tenth of the ranking | dev 2013 to 2020 | validation 2021 to 2023 |
+|---|---|---|
+| top | +0.80% | +0.91% |
+| second | +0.30% | +0.72% |
+| third | +0.31% | +0.71% |
+| bottom | -0.59% | -1.39% |
+
+The top tenth beat the average in both periods and by the most; the next
+two tenths beat it by less. The top 20 (about the top 5%) sits inside the
+top tenth, so the validated strategy and the daily scan are unchanged:
+this governs only which stocks the trade finder may offer.
+
+**Shown on each card.** The pick's tenth of the ranking and that tenth's
+record above, read from the latest logged dev and validation evaluations of
+the signal. Never the holdout.
+
+**Tests that follow this rule.** The concentration test (top 1, 3 and 5)
+and the profile backtests rank the same way and take, each month, the
+highest ranked stocks that pass the filters, drawn from the top tenth only.
+If fewer pass, the profile holds fewer and the rest stays in cash. Same
+protocol as the entry above: dev first, one validation look, no holdout.

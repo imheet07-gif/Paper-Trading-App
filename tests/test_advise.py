@@ -40,14 +40,22 @@ class Advise(unittest.TestCase):
         db.close()
         cls.day = cls.days[400]  # GONE still trades; LOCK is locked
         cls.ticks = {}
+        cls.runs = os.path.join(cls.tmp.name, "runs.jsonl")
+        dec = [-0.006, -0.003, -0.002, -0.001, -0.004, 0.0, 0.003, 0.003, 0.003, 0.008]
+        with open(cls.runs, "w") as fh:
+            for at, period in (("2026-01-01T00:00:00", "dev"), ("2026-01-02T00:00:00", "validation"),
+                               ("2026-01-03T00:00:00", "holdout")):
+                fh.write(json.dumps({"at": at, "signal": "momentum_quality", "period": period,
+                                     "ic": {"decile_excess": dec}}) + "\n")
 
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def ask(self, amount=50000, risk="medium", stock=None, broker="zerodha"):
+    # the made-up market ranks only a handful of stocks: offer all of them unless a test says otherwise
+    def ask(self, amount=50000, risk="medium", stock=None, broker="zerodha", share=1.0):
         return advise.advise(amount, risk, stock, self.path, as_of=self.day, ticks={}, broker=broker,
-                             sector_of={}, strategy=strategy())
+                             sector_of={}, strategy=strategy(), candidate_share=share, runs_log=self.runs)
 
     def test_picks_are_ranked_filtered_and_sized(self):
         a = self.ask()
@@ -64,14 +72,26 @@ class Advise(unittest.TestCase):
         self.assertEqual(a["risk"], "medium")
         self.assertTrue(a["pending"])
 
-    def test_never_below_the_tested_top_n(self):
-        s = strategy()
-        s["top"] = 2  # the strategy buys only its top 2 here
-        a = advise.advise(50000, "medium", None, self.path, as_of=self.day, ticks={}, broker="zerodha",
-                          sector_of={}, strategy=s)
-        self.assertTrue(all(c["rank"] <= 2 for c in a["picks"]))
-        self.assertNotIn("DOWN", [c["symbol"] for c in a["picks"]])  # rank 4: never offered
-        self.assertIn("among the tested top 2", a["note"])
+    def test_never_below_the_top_tenth(self):
+        a = self.ask(share=advise.CANDIDATE_SHARE)  # a tenth of a handful of stocks: the top one only
+        self.assertEqual(a["candidates"], 1)
+        self.assertTrue(all(c["rank"] == 1 for c in a["picks"]))
+        self.assertNotIn("DOWN", [c["symbol"] for c in a["picks"]])
+        self.assertIn("among the top 1 of the ranking", a["note"])
+        self.assertIn("outside its top tenth", self.ask(stock="DOWN", share=advise.CANDIDATE_SHARE)["stock"]["verdict"])
+
+    def test_each_pick_shows_its_tenths_record(self):
+        b = self.ask()["picks"][0]["bucket"]
+        self.assertEqual(b["tenth"], 1)
+        self.assertEqual(b["dev"], 0.8)
+        self.assertEqual(b["validation"], 0.8)
+        self.assertNotIn("holdout", b)  # the holdout is never read
+        self.assertEqual(advise.tenth_of(1, 430), 1)
+        self.assertEqual(advise.tenth_of(43, 430), 1)
+        self.assertEqual(advise.tenth_of(44, 430), 2)
+        self.assertEqual(advise.tenth_of(430, 430), 10)
+        self.assertEqual(advise.bucket(430, 430, advise.decile_record("momentum_quality", self.runs))["dev"], -0.6)
+        self.assertEqual(advise.decile_record("momentum_quality", os.path.join(self.tmp.name, "none")), {})
 
     def test_ranks_follow_the_tested_signal(self):
         a = self.ask()

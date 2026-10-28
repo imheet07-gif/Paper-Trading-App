@@ -69,6 +69,7 @@ fix is `python3 research/scan.py update` (after about 7 pm IST).
    - each pick: the order line (shares, limit price, about how much money),
      the stop and what is lost there, the target and what is gained there,
      the round-trip charges, why it ranks (its rank and the two inputs),
+     its tenth of the ranking and that tenth's logged record (`bucket`),
      its flags, then its untested context, labelled;
    - for medium and high: the low-risk alternative from `low_profile`;
    - stocks passed over and why (`dropped`), briefly;
@@ -80,8 +81,8 @@ fix is `python3 research/scan.py update` (after about 7 pm IST).
 ## Example
 
 "I want to invest Rs 50,000, medium risk." Claude runs the command and
-answers, from its output only: the data's date; three picks from the tested
-top 20, each with "BUY n SYMBOL on NSE, delivery, limit price", the stop and
+answers, from its output only: the data's date; three picks from the top tenth
+of the tested ranking (about 43 stocks), each with "BUY n SYMBOL on NSE, delivery, limit price", the stop and
 its rupee loss (at most Rs 500), the target and its gain; the low-risk
 alternative; what was passed over (for example, a stock locked at its
 circuit); the review date; and that the profile's own record and the
