@@ -58,27 +58,43 @@ without conflicts.
 | --- | --- | --- | --- |
 | F1 | Staleness label on the card: when the latest stored results are older than the last quarter that should have reported, say "no recent results stored (latest: <quarter>)" and do not show growth as current | `research/advise.py` (the owner of that file decides) | context |
 | F2 | Results XBRL since March 2025 (existing open task) | `core/financials.py` | both |
-| F3 | Balance sheet from the results XBRL (see below) | `core/financials.py`, fixtures | both |
-| F4 | Screener.in export importer (existing task), shown on the card as "Screener.in export, <date>, not point in time" | `core/screener_export.py` | context |
-| F5 | Optional: evaluate one vendor API (checklist below) | none until chosen | context |
+| F3 | Net worth and finance costs from the results XBRL (see below) | `core/financials.py`, fixtures | both |
+| F4 | Screener.in export importer (existing task). Parked: the owner has no Screener.in subscription | `core/screener_export.py` | context |
+| F5 | Evaluate one vendor API (checklist below); approved by the owner 2026-10-28 | none until chosen | context |
 | F6 | Fundamental signals, pre-registered (below) | `research/signals.py`, `research/event_signals.py` | ranking |
 
-### F3: the balance sheet may already be in files we fetch
+### F3: what the results XBRL holds for quality (checked 2026-10-28)
 
-SEBI's listing rules (LODR Regulation 33) require a half-yearly statement
-of assets and liabilities with the September and March quarter results.
-If NSE's results XBRL for those quarters carries it, equity, borrowings
-and total assets can be read from files `core/financials.py` already
-caches.
+Checked against the three fixtures in `tests/fixtures/financials/`. These
+are unchanged files as NSE published them. The TCS file is a March quarter
+with the full year.
 
-- **Check first:** does a September or March quarter file contain those
-  elements, and from which year? Check against the regulation's text and
-  real files before relying on this paragraph.
-- **If yes:** parse equity, total borrowings, total assets and cash, keyed
-  on the same `broadcast_at`. Then ROE and debt to equity become
-  computable point in time, twice a year.
-- **If no:** the annual report XBRL is the fallback, filed later and less
-  timely.
+- **No statement of assets and liabilities.** The March 2020 TCS file has
+  no borrowings, total assets or cash. It does carry segment assets and
+  liabilities, but only multi-segment companies file those, so they
+  cannot stand in for a balance sheet.
+- **Net worth, once a year.** The March (year-end) file carries
+  `PaidUpValueOfEquityShareCapital` and
+  `ReserveExcludingRevaluationReserves`. Their sum for TCS is Rs 84,749
+  crore at March 2020. That gives an annual, point-in-time net worth, and
+  so ROE.
+- **Interest burden, every quarter.** Every file carries `FinanceCosts`
+  and `ProfitBeforeTax`. Interest coverage is (PBT plus finance costs)
+  divided by finance costs. It is a quarterly, point-in-time stand-in for
+  leverage.
+- **Debt to equity is not available** from these files. Borrowings would
+  need the annual report XBRL filed with the Ministry of Corporate Affairs
+  (not on the allow-list), or a vendor that passes the F5 checklist.
+- **Not yet checked:**
+  - a September-quarter file, where a half-yearly statement may appear;
+  - files from 2013 to 2016, the older taxonomy, for the reserves element;
+  - how often reserves are missing.
+
+  Run these checks on the cached files before pre-registering.
+
+F3 is therefore: add `FinanceCosts` (every quarter) and paid-up capital
+plus reserves (year-end files) to `core/financials.py`, from files
+already cached.
 
 ### F5: before paying for any API
 
@@ -86,7 +102,8 @@ caches.
 2. How far back does it go, and does it include smaller NSE companies?
 3. Licence: the project is meant to ship as a plugin, so each user would
    need their own key, and the terms must allow that.
-4. Does it add anything over F2 to F4, which are free?
+4. Does it add anything over F2 and F3, which are free? Debt and
+   borrowings are the obvious gap.
 
 Vendors found so far, such as FinancialFilings.com, are unverified. Try a
 sample before trusting any claim.
@@ -110,16 +127,33 @@ Until then fundamentals are context on the card, labelled untested.
   - **Usable:** from the session after `broadcast_at`, and stale after 120
     days.
 - **`quality`** (needs F3).
-  - **Score:** the average percentile rank of trailing ROE and minus debt
-    to equity.
-  - **Excluded:** loss-makers.
-  - **Banks:** excluded, or scored separately, decided before testing.
-- **Combinations with `momentum_quality`**, for example 50/50 ranks, are a
+  - **Score:** the average percentile rank of:
+    - ROE: trailing four quarters of profit attributable to owners,
+      divided by the net worth from the latest year-end results;
+    - interest coverage: trailing four quarters;
+    - earnings stability: the share of the last 8 quarters with a
+      profit.
+  - **Excluded:** loss-makers over the trailing four quarters.
+  - **Banks and NBFCs:** excluded, since interest coverage means nothing
+    for a lender. A lender quality score is a separate idea.
+  - **Usable:** from the session after the latest input's `broadcast_at`.
+- - **Combinations with `momentum_quality`**, for example 50/50 ranks, are a
   separate pre-registration, made only after each part has been tested on
   its own.
 
-The data window for `quality` depends on F3's answer: dev needs balance
-sheets from 2013 to 2020.
+**What still stands between `quality` and its dev test:**
+
+1. F3's open checks:
+   - reserves present in the 2013 to 2016 files;
+   - how often reserves are missing;
+   - the September file.
+2. F3's parser change, with fixtures and tests.
+3. The definition above written into FINDINGS.md unchanged, with its
+   pass marks.
+
+ROE needs a year-end net worth, so the first usable month is after the
+March 2014 results (about May 2014). Dev then runs from mid-2014 to 2020.
+Live use after testing also needs F2.
 
 ## 5. Fit with the trade finder order
 
@@ -130,10 +164,17 @@ sheets from 2013 to 2020.
 - **F6:** waits for F2 or F3 and joins the queue of "shorter-horizon
   candidates": a new candidate ranks only after it passes.
 
-## 6. Decisions for the owner
+## 6. Decisions
 
-1. Approve F1 to F4 as tasks to claim.
-2. Is a vendor API worth evaluating (F5), or are the Screener.in export and
-   NSE's own filings enough?
-3. Pre-register `earnings_surprise` now (it can be tested on 2013 to 2020
-   today), or wait for F3 and test it alongside `quality`?
+Made by the owner, 2026-10-28:
+
+- No Screener.in subscription: F4 is parked.
+- Evaluate a vendor API: F5 is approved.
+
+Still open:
+
+1. Approve F1 to F3 as tasks to claim.
+2. Pre-register `earnings_surprise` now (it can be tested on 2013 to 2020
+   today), or wait for F3 and test it alongside `quality`.
+3. Approve the `quality` definition in F6, which replaces debt to equity
+   with interest coverage, or change it before pre-registration.
