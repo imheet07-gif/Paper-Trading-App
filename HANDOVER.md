@@ -93,6 +93,88 @@ table, `CLAUDE.md` layout list, `research/signals.py` (`SIGNALS`,
 `DESCRIPTIONS`), `app/server.py` (`SIGNALS`), `research/FINDINGS.md`,
 `research/runs.jsonl`, `tests/test_repo.py` (root layout list).
 
+## Direction (owner, 2026-10-28): the trade finder
+
+The product is no longer a monthly strategy list. It answers two questions:
+
+- **"I have Rs 50,000 to invest today: what is the best trade?"**
+- **"What about this stock?"**
+
+Each answer comes with its evidence and rationale. This replaces the
+six-tab plan in draft PR #12. Its after-tax check and its rule that trades
+come only from tested evidence or the owner's own choice carry over.
+
+What it must be honest about, shown in every answer:
+
+- "Best" means highest ranked by evidence that passed the protocol, never
+  a forecast. Today that evidence is `momentum_quality` alone. Every
+  other source (copycat, deals, SAST, shareholding, results) is context on
+  the card, labelled untested. None of them ranks a pick until it passes
+  dev and validation.
+- The evidence is for a one-month hold, entered at the next open from
+  end-of-day data. A single stock swings far more than the tested
+  basket of 20, and the card shows by how much (see the concentration
+  test below).
+- If the after-tax check shows a Nifty momentum index fund beats the
+  strategy, the answer leads with the fund.
+- Order sheet only. Nothing places an order.
+
+### `research/advise.py --amount 50000` (and an Ask tab in the app)
+
+1. **Candidates:** the tested signal's ranking on the latest stored
+   session, through `backtest.select_top` as the scan does.
+2. **Hard filters** (a pick failing any is dropped, and the card says why):
+   - the universe filters;
+   - EQ series only (BE is trade-for-trade);
+   - not locked at a circuit on the last session;
+   - no failed corporate action check;
+   - the order is at most 1% of the stock's 60-day median traded value;
+   - one share fits in the slice.
+3. **Sizing for the amount:**
+   - whole shares, at a limit price on the tick;
+   - charges from `core/charges.py`, with the round trip shown as a
+     percent of the money.
+   - Before the first run, fix and write in FINDINGS.md:
+     - the minimum slice per stock;
+     - the most stocks the amount allows while the round trip stays under
+       a fixed cost.
+   - The answer gives the top pick and that basket side by side.
+4. **Evidence card per pick:**
+   - the signal's score, its rank and percentile, and its parts (12-1
+     return, one-year volatility);
+   - what this rank bucket returned over the next month on dev and on
+     validation: mean, share of months positive, worst month. Read from
+     the backtest store, never the holdout;
+   - latest quarter from `core/financials.py` against the same quarter a
+     year earlier;
+   - shareholding changes, SAST and bulk or block deals in the last 90
+     days, labelled untested context;
+   - results or ex-dates due inside the holding month;
+   - pledges and other red flags;
+   - entry limit, quantity and charges;
+   - the review date: the next rebalance day. No stop-loss or target,
+     since none is tested; the card says so.
+5. **Stock mode, `--stock SYMBOL`:**
+   - the same card for any stock: its rank on the tested signal, its
+     filters and red flags, and how it compares with the top pick;
+   - when it ranks low it says plainly that there is no tested reason
+     to prefer it.
+
+### Research needed for honest cards (pre-register in FINDINGS.md first)
+
+- **After-tax check:** `momentum_quality_top20` after short- and long-term
+  capital gains tax, with dated rates from the Income Tax Department's own
+  text in a data file, against a Nifty momentum index fund over 2013 to
+  2023 (fund costs included). Do this first: it can change the answer.
+- **Concentration:** dev and validation results for the top 1, 3 and 5
+  against the top 20 (CAGR, Sharpe, worst drawdown, share of months
+  losing), so a card can say what holding one stock has meant.
+  Logged runs, no holdout.
+
+Order: after-tax check, concentration test, `advise.py` with the card,
+stock mode, the Ask tab. New tested signals (for example earnings surprise
+once results XBRL since March 2025 is found) widen the candidates later.
+
 ## Tasks
 
 Split as of 2026-10-27: the second agent takes the build and research
@@ -115,9 +197,7 @@ column freely.
 | Mutual fund accumulation (AMC monthly portfolios; AMC sites are not on the cloud allow-list) | to be decided | unassigned | open |
 | Indian tax module (FIFO lots exist in `core/lots.py`; TMCV/TMPV and ITC Hotels cost splits from the companies' notices; the owner's Zerodha tax P&L exports are the check) | `core/tax.py`, `trader-tax/` | unassigned | parked |
 
-Suggested order for the second agent: position sizing, then the SAST
-signal, then shareholding, then XBRL financials. The first two use data
-already in the store.
+Next for the second agent: the trade finder above, in its stated order.
 
 ## Gaps in the ported skills
 
