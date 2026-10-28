@@ -545,3 +545,52 @@ a 2 ATR stop leaves most of the money idle. Any new risk-level design
 the idle cash in an index fund) is a new idea. Its settings are fixed
 here first, and since 2021 to 2023 has now been seen for these runs, its
 clean test is the holdout, opened once, only when the owner asks.
+## 2026-10-29: risk levels v2, stock count plus a volatility target, the rest in the index (owner agreed; settings fixed before any run)
+
+A new idea, not a fix to the levels that failed. Run by
+`research/profiles.py --vol-levels`.
+
+**Levels.**
+
+| level | stocks | target yearly volatility of the stock part |
+| --- | --- | --- |
+| low | 20 | 10% |
+| medium | 5 | 20% |
+| high | 3 | 30% |
+
+**Each month-end rebalance:**
+
+1. Choose the stocks exactly as the concentration runs do: the top tenth
+   of the ranking, the trade finder's filters, limit buys at the close
+   plus 1%, whole shares, Zerodha charges, no stop and no target.
+2. Measure the volatility of an equal-money basket of those stocks: the
+   standard deviation of its daily returns over the last 63 sessions,
+   times the square root of 252.
+3. The share of the portfolio put in the stocks is the target divided by
+   that volatility, never above 100%.
+4. The rest goes into the Nifty 500 index, standing in for an index fund.
+   It is bought or sold at the close of the day the stock orders fill,
+   with the cash those orders leave, never borrowing. It earns the index's
+   price return: no dividends, and no fund costs or tax (the expense
+   ratios and tax treatment have not been read from the funds' and the
+   Income Tax Department's own pages).
+5. Money from buys that did not fill earns the 6% cash rate until the next
+   rebalance.
+
+Everything else is as in the concentration and risk-level entry above.
+
+**When a level is offered.** The rule the owner chose (2026-10-28),
+unchanged: low beats the equal-weight universe on CAGR and Sharpe; medium
+and high on CAGR; on dev and on validation; a failed level hands over to
+the next safer level that passed. The Nifty 500's own CAGR and Sharpe
+are reported beside each run, not judged.
+
+**Order and looks.** Dev first (2013 to 2020), then one validation look.
+Validation has been seen by the earlier level runs, so a pass there is
+weaker evidence than before; the holdout (2024 onward) stays closed until
+the owner asks.
+
+**The market's state on the card.** The Nifty 500 against its 200-day
+average, and recent market volatility, may be shown as untested context.
+They never change a trade: timing by trend and breadth failed validation
+(2026-10-27).

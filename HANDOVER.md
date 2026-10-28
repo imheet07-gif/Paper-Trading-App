@@ -499,6 +499,12 @@ Progress (second agent):
   run; the rule (higher Sharpe and a shallower worst drawdown, on dev and
   validation) is in FINDINGS.md. If a level passes, its card may drop "not
   a tested edge"; that label change is a follow-up once results exist.
+- Risk levels v2 (owner, 2026-10-29; branch `second-agent/vol-levels`): the
+  first levels failed validation (about 90% cash). v2 is stock count plus a
+  volatility target per level, the rest in the Nifty 500 (FINDINGS.md
+  2026-10-29). `research/profiles.py --period dev --vol-levels`, then one
+  validation look. `advise.py` still reads only the `risk:` runs; wiring
+  `vol:` levels into it waits for results.
 - Commodities (owner, 2026-10-28): all of these, after the trade finder's
   steps 1 and 2, each from the publisher's own files:
   - A. Context: daily prices of gold, silver, crude, natural gas, copper and
