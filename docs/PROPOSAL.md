@@ -1,218 +1,139 @@
-# Proposal: from one strategy to a trading desk
+# Proposal: fundamentals for the trade finder
 
-A suggestion from the owner, 2026-10-28, for the agents working on the app
-to discuss. Nothing here is claimed, built or tested. It does not change
-HANDOVER.md, the app or any shared file. Once agreed, tasks are claimed in
-HANDOVER.md the usual way, and any strategy settings are copied unchanged
-into `research/FINDINGS.md` as a pre-registration before any run.
+A suggestion from the owner, 2026-10-28, for the agents to discuss. Nothing
+here is claimed, built or tested, and no shared file is changed. Once
+agreed, tasks are claimed in HANDOVER.md the usual way, and any signal's
+settings go into `research/FINDINGS.md` as a pre-registration before any
+run.
 
-## 1. The problem
+This replaces this file's first version, the six-tab desk. The owner's
+trade finder direction in HANDOVER.md superseded that plan the same day.
+The earlier text is in this branch's history.
 
-The owner wants the time spent on this project to give useful results
-every day, beyond testing one strategy. Today the app shows only the
-research side: Update, Scan, the Strategy lab, the paper portfolio and
-the runs log. The validated output is one monthly momentum list. That
-list is close to what Indian momentum index funds already offer, such as
-those tracking Nifty 200 Momentum 30 and Nifty 500 Momentum 50.
+## 1. Why
 
-The original trader-skill was a toolkit of eleven tools, each giving
-something usable, and was not built around one strategy. Most of those
-tools are already ported here, but they are reachable only as skills in a
-chat, not in the app.
+The trade finder's evidence card shows a stock's latest quarter. The owner
+also wants fundamentals more broadly: the numbers a company reports
+(growth, margins, ROE, debt), both on the card and, once tested, in the
+ranking. Third-party APIs for Indian filings exist. The question is where
+they help and where they would mislead.
 
-## 2. What exists today
+## 2. Two jobs, two kinds of source
 
-| tool | gives the owner | state |
-| --- | --- | --- |
-| trader-copycat | Named investors' adds and cuts from quarterly shareholding filings (holders above 1%), and bulk and block deals: the Indian counterpart of copying a 13F | ported, not in the app |
-| trader-news | NSE announcements on holdings | ported, not in the app |
-| trader-alerts | Price targets and stops on the NSE calendar | ported, not in the app |
-| trader-screener | Ranks stocks against the owner's own rules | ported, not in the app |
-| trader-budget, trader-risk, trader-broker | Any idea turned into sized, checked orders, then a paper fill after the owner's yes | ported, not in the app |
-| trader-rebalance | Back to target weights | ported, not in the app |
-| trader-analyst | Results, margins and growth per company | US original. India data in `core/financials.py` to February 2025 |
-| trader-tax | Lots, gains, loss harvesting | US original. FIFO lots in `core/lots.py` |
-| trader-pelosi | Congress trades | No India equivalent. Nearest: live SAST Regulation 29 promoter dealings in `core/events.py` |
-| dashboard | Holdings, realized gains by financial year, charges | built, separate HTML page |
+| job | example | needs | source |
+| --- | --- | --- | --- |
+| **Context** on a card | "Revenue up 18% on a year earlier, ROE 21%, debt to equity 0.4" | Correct and current | Any reliable source, labelled with its source and date |
+| **Ranking**, a tested signal | "Buy the top tenth by earnings surprise" | Point in time: each number as first published, with the moment it became public | NSE's own filings only |
 
-## 3. The proposal: one app, six tabs
+Why vendor data cannot rank:
 
-1. **Portfolio.** The owner's real holdings from a broker export or CAS,
-   P&L, realized gains by financial year and charges (the dashboard,
-   brought into the app).
-2. **Ideas.** Several sources side by side, each labelled with its
-   evidence:
-   - **Tested:** the validated strategy lists (today `momentum_quality_top20`).
-   - **Screener:** the owner's own rules, for example earnings growing
-     and price near its 52-week high.
-   - **Copycat:** what named investors added or cut in the latest quarter.
-   - **Big money:** today's bulk and block deals, and promoter buying and
-     selling (SAST).
-   - **Results:** who reported this week and what changed.
-3. **Watch.** News and price alerts on holdings and on ideas the owner
-   follows.
-4. **Act.** Pick any idea, size it (budget), check it (risk), and get an
-   order sheet or a paper fill. Nothing places an order (CLAUDE.md).
-5. **Market pulse.** Described in section 5.
-6. **Lab.** The current research tab, unchanged.
+- **Restated history.** Vendors usually store figures as later restated,
+  after mergers, accounting changes and corrections. A backtest on them
+  uses numbers nobody had at the time.
+- **No publication time.** Vendors rarely give the time each figure became
+  public, and the backtester trades only after publication
+  (`broadcast_at`).
+- **Project rule.** CLAUDE.md already requires facts from the publisher's
+  own file.
 
-### Give every idea source a scorecard
+## 3. What exists, and the gaps
 
-This is the part that keeps the project honest while widening it.
+- **Quarterly results** (`core/financials.py`): revenue, profit and EPS,
+  plus banks' interest and provisions. They come from NSE's results XBRL,
+  keyed on publication time, from 2013 **to February 2025 only**. Where NSE
+  serves the XBRL since then is an open task in HANDOVER.md.
+- **No balance sheet.** ROE, debt and asset figures cannot be computed.
+- **The card is silently stale.** `research/advise.py` `results_context`
+  shows the latest stored quarter. For every stock today that is December
+  2024 or earlier, and the card does not say the quarter is old.
+- **Screener.in export importer:** waiting for a sample file from the
+  owner (HANDOVER.md). It is for display only, never for backtests.
 
-- Each source in Ideas gets its own paper ledger from the day it is
-  switched on. Its picks are recorded at the next open, with real charges,
-  and tracked against the Nifty 500.
-- Copycat, deals and SAST have no usable history (NSE publishes deals for
-  the latest session only, and shareholding history starts in September
-  2021), so they cannot be backtested. A forward scorecard is the only
-  honest test available.
-- After a few months the owner can see which sources earn their place.
-- The rules for turning a source's picks into a ledger (which picks, how
-  many, held how long) are written down before the source is switched on,
-  the same as a pre-registration.
+## 4. Proposed work
 
-## 4. Daily brief and trades of the day
+Small first. Each item lists the files it touches so it can be claimed
+without conflicts.
 
-A one-page evening summary for the next morning's open. Data is end of
-day, so nothing is intraday.
+| id | work | touches | for |
+| --- | --- | --- | --- |
+| F1 | Staleness label on the card: when the latest stored results are older than the last quarter that should have reported, say "no recent results stored (latest: <quarter>)" and do not show growth as current | `research/advise.py` (the owner of that file decides) | context |
+| F2 | Results XBRL since March 2025 (existing open task) | `core/financials.py` | both |
+| F3 | Balance sheet from the results XBRL (see below) | `core/financials.py`, fixtures | both |
+| F4 | Screener.in export importer (existing task), shown on the card as "Screener.in export, <date>, not point in time" | `core/screener_export.py` | context |
+| F5 | Optional: evaluate one vendor API (checklist below) | none until chosen | context |
+| F6 | Fundamental signals, pre-registered (below) | `research/signals.py`, `research/event_signals.py` | ranking |
 
-**Trades of the day** can come from only three places:
+### F3: the balance sheet may already be in files we fetch
 
-1. **Rebalance order sheets** of validated strategies, on their rebalance
-   day.
-2. **Forced exits**, when a holding:
-   - moves to the trade-for-trade or surveillance segment;
-   - has a delisting or suspension announced;
-   - has a corporate action that fails its factor check.
-3. **Ideas the owner chooses to act on** from the Ideas tab. These are
-   labelled as the owner's choice, not a signal.
+SEBI's listing rules (LODR Regulation 33) require a half-yearly statement
+of assets and liabilities with the September and March quarter results.
+If NSE's results XBRL for those quarters carries it, equity, borrowings
+and total assets can be read from files `core/financials.py` already
+caches.
 
-Otherwise the brief says "no trades today". A round trip costs about 0.3%
-here, and nothing tested so far has an edge over a few days. Stop-losses
-and profit targets on a tested strategy are new strategies and need
-testing first.
+- **Check first:** does a September or March quarter file contain those
+  elements, and from which year? Check against the regulation's text and
+  real files before relying on this paragraph.
+- **If yes:** parse equity, total borrowings, total assets and cash, keyed
+  on the same `broadcast_at`. Then ROE and debt to equity become
+  computable point in time, twice a year.
+- **If no:** the annual report XBRL is the fallback, filed later and less
+  timely.
 
-## 5. Market pulse
+### F5: before paying for any API
 
-Each line shows today's number and its percentile over the past year.
-Everything comes from data the store already holds unless marked
-**needs a feed**. The pulse is description only: timing filters failed
-validation in 2022 (FINDINGS.md), so it never changes an order.
+1. Does it give each figure as first reported, with its publication date?
+2. How far back does it go, and does it include smaller NSE companies?
+3. Licence: the project is meant to ship as a plugin, so each user would
+   need their own key, and the terms must allow that.
+4. Does it add anything over F2 to F4, which are free?
 
-| line | source |
-| --- | --- |
-| Nifty 50 and Nifty 500: day, month and year change; distance from the 50- and 200-day averages | index closes |
-| India VIX and its percentile | index closes |
-| Advances against declines; share of stocks above their 200-day average; new 52-week highs against lows | bhavcopy |
-| Market-wide delivery % against its one-year normal | bhavcopy |
-| Strongest and weakest five industries by one-month and 12-1 momentum | bhavcopy, NSE industry list |
-| Is momentum working: one-month return of the top fifth of `momentum_quality` minus the bottom fifth | bhavcopy |
-| Stocks locked at circuit; stocks newly in trade-for-trade | bhavcopy |
-| Bulk and block deals over Rs 10 crore | `deals` |
-| Results and ex-dates in the next five sessions | events, corporate actions |
-| Mutual fund, FII and DII stake changes of 1 point or more this quarter; pledge flags newly on | `shareholding_detail` |
-| FII and DII daily cash flows | **needs a feed** |
+Vendors found so far, such as FinancialFilings.com, are unverified. Try a
+sample before trusting any claim.
 
-## 6. Research, continued in the Lab
+### F6: fundamental signals, in the protocol
 
-The protocol is unchanged (CLAUDE.md, HANDOVER.md):
+Each signal is a new idea:
 
-- **Dev, 2013 to 2020.**
-- **Validation, 2021 to 2023:** one look, with the settings unchanged.
-- **Holdout, 2024 on:** owner only.
-- **Paper trading for 3 to 6 months** before real money.
-- **Every run logged**, and any change counts as a new strategy.
+- pre-registered in FINDINGS.md;
+- tested on dev;
+- given one validation look;
+- added to the trade finder's ranking only after it passes.
 
-**First, an honesty check on what is already validated.**
+Until then fundamentals are context on the card, labelled untested.
 
-- The backtester counts charges and slippage but not capital gains tax.
-- A monthly top 20 realizes mostly short-term gains. Those are taxed at
-  20%. An index fund's internal trading is not taxed in the holder's
-  hands.
-- Proposed fix:
-  - add tax to the backtest report;
-  - compare `momentum_quality_top20` after tax with the published returns
-    of a Nifty momentum index over the same years.
-
-  If it does not beat the index fund after tax, the fund is the better
-  way to own momentum.
-- Tax rates go into a data file with their source line, read from the
-  Income Tax Department's own text, per CLAUDE.md.
-
-**Candidate tests (at most three, settings to be pre-registered):**
-
-- **A1 `earnings_surprise`:**
+- **`earnings_surprise`** (needs F2 for live use).
   - **Score:** latest quarter's diluted EPS minus the same quarter a year
     earlier, divided by the standard deviation of that change over the
     previous 8 quarters.
-  - **Needs:** at least 9 quarters of results.
+  - **Needs:** at least 9 quarters.
   - **Usable:** from the session after `broadcast_at`, and stale after 120
     days.
-  - **Data:** 2013 to February 2025.
-  - **Live gap:** can run live only after the post-March 2025 XBRL is
-    found.
-- **A2 `momentum_earnings`:** the average of the percentile ranks of
-  `momentum_quality` and `earnings_surprise`, 50/50.
-- **B, a low-volatility sleeve:**
-  - **Allocation:** half the capital in `momentum_quality` top 20 and half
-    in `low_volatility` top 20, run as two portfolios, not a blended score.
-  - **Build needed:** a two-sleeve backtest mode.
+- **`quality`** (needs F3).
+  - **Score:** the average percentile rank of trailing ROE and minus debt
+    to equity.
+  - **Excluded:** loss-makers.
+  - **Banks:** excluded, or scored separately, decided before testing.
+- **Combinations with `momentum_quality`**, for example 50/50 ranks, are a
+  separate pre-registration, made only after each part has been tested on
+  its own.
 
-Shared settings: the existing universe filters, top 20, equal weight,
-monthly rebalance, next-open fills, 15 bps slippage, real charges.
+The data window for `quality` depends on F3's answer: dev needs balance
+sheets from 2013 to 2020.
 
-**Pass marks:**
+## 5. Fit with the trade finder order
 
-- **Ranking:** information coefficient t-statistic of 2 or more on dev.
-- **Standalone:** beats the equal-weight universe on Sharpe.
-- **Diversifier:**
-  - the 50/50 combination with `momentum_quality_top20` improves Sharpe or
-    the worst drawdown;
-  - its monthly returns correlate with momentum at below 0.7.
-- **Deflated Sharpe:** reported, counting every logged run.
+- **Data tasks:** F2 to F4 are `core/` work. They touch no app or advise
+  file and can run alongside the trade finder steps.
+- **F1:** a few lines in `advise.py`. Best done by whoever owns that file
+  now.
+- **F6:** waits for F2 or F3 and joins the queue of "shorter-horizon
+  candidates": a new candidate ranks only after it passes.
 
-**Data limits found while writing this:**
+## 6. Decisions for the owner
 
-- The stored results have no balance sheet, so ROE and leverage cannot be
-  scored.
-- Shareholding history starts in September 2021, so institutional
-  accumulation and pledges cannot get a dev test. They appear in Ideas and
-  the pulse as information.
-
-## 7. Suggested order, and how to avoid conflicts
-
-Most of the app work touches `app/server.py`, `app/static/` and
-`research/jobs.py`, which more than one agent edits. To keep merges
-small:
-
-- Each tab gets its own new files: its own job module and its own static
-  script. The shared files only gain a line to register it.
-- One agent owns the app shell, meaning tab navigation and the shared
-  layout. Others add tabs through that agent's registration point.
-
-| step | work | touches |
-| --- | --- | --- |
-| 1 | Tab shell in the app (navigation only) | `app/` (one owner) |
-| 2 | Ideas tab: copycat, screener, deals and SAST, labelled by evidence | new job and static files; the skills' CLIs |
-| 3 | Act tab: budget, risk and paper fill from any idea | new job and static files |
-| 4 | Scorecards: a paper ledger per idea source | `research/paper.py` or a new module |
-| 5 | Market pulse and daily brief | new module, new tab |
-| 6 | Portfolio tab from the dashboard | `dashboard/`, new tab |
-| 7 | After-tax backtest and the momentum index comparison | `research/backtest.py`, a tax data file |
-| 8 | Port trader-analyst and trader-tax to India | `trader-analyst/`, `trader-tax/` |
-| 9 | Candidate tests A1, A2 and B | `research/` |
-| 10 | Feeds: FII and DII flows; results XBRL since March 2025 | `core/` |
-
-Steps 7 and 8 do not touch the app and can run in parallel with steps 1
-to 6.
-
-## 8. Decisions for the owner
-
-1. The six-tab direction, or a smaller start: Ideas and Act first.
-2. The forward scorecard per idea source, and how many picks each source
-   puts into its ledger.
-3. The three candidate tests as written, or struck before
-   pre-registration.
-4. Whether the FII and DII flow feed is worth building.
-5. Which agent owns the app shell.
+1. Approve F1 to F4 as tasks to claim.
+2. Is a vendor API worth evaluating (F5), or are the Screener.in export and
+   NSE's own filings enough?
+3. Pre-register `earnings_surprise` now (it can be tested on 2013 to 2020
+   today), or wait for F3 and test it alongside `quality`?
