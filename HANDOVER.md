@@ -311,6 +311,95 @@ Order sheets only, as everywhere: nothing places an order, at any broker.
 5. The options calculator.
 6. Shorter-horizon candidates.
 7. Option overlay tests.
+8. The theme layer below. It can start in parallel with steps 3 to 7,
+   since its forward record needs months to build.
+
+### Themes and news, Option A (owner, 2026-10-28)
+
+The owner's concern: a policy announcement (for example a higher defence
+budget) moves a sector, and a price-only ranking misses it. A check on
+2023 found `momentum_quality` held HAL in its top 20 at the end of
+December 2022, but ranked the defence group 100th to 400th through 2023's
+rally.
+
+The owner chose Option A:
+
+- Tested signals still rank the trades.
+- News and themes are shown on every answer.
+- Themes are scored forward on paper, and promoted to ranking only once
+  their record holds up.
+
+The first move after an announcement happens within minutes and no
+end-of-day tool gets it. What is scored is the weeks after.
+
+**1. Theme calls, made by Claude through a new `trader-themes` skill.**
+
+- **Reads:**
+  - NSE announcements (already stored);
+  - government press releases (pib.gov.in);
+  - Union Budget documents (indiabudget.gov.in);
+  - RBI policy statements (rbi.org.in).
+- **Hosts:** the three government sites are not on the cloud allow-list.
+  Either the owner adds them, or the skill runs on the owner's Mac.
+- **Each call is one record in `trader/themes.jsonl`.** It is append-only,
+  never edited, and kept local. It holds:
+  - when it was made (IST);
+  - the source link and its publication time;
+  - the sector, from NSE's industry list in the store, never free text;
+  - the stocks, as ISINs that are in the universe that day, with the
+    sector's stocks from the store and Claude adding or removing named
+    companies with a one-line reason each;
+  - the direction (up or down);
+  - the horizon, fixed at one month and three months;
+  - a short rationale.
+- **No backdating.**
+  - A call counts only from the first open after it was recorded.
+  - Claude never writes calls about news older than the last session,
+    so hindsight cannot creep in.
+  - The scorer rejects any record whose made time is after its entry.
+
+**2. Confirmation from the data, computed by the engine, not Claude.**
+
+For each call:
+
+- the sector's one-month and three-month return against the
+  equal-weight universe;
+- the share of its stocks above their 50-day average;
+- delivery percentage against its one-year normal;
+- promoter (SAST), bulk and block deal and institutional (shareholding)
+  activity in the sector over the last 90 days.
+
+Shown as facts, never blended into a score until tested.
+
+**3. The forward scorecard (rules fixed now, before the first call).**
+
+- **The basket:** each call becomes an equal-weight paper basket of its
+  stocks.
+  - It is entered at the next open, with real charges.
+  - It is held for each horizon.
+  - It is measured against the equal-weight universe over the same days.
+- **The report:**
+  - the number of calls;
+  - the share beating the market;
+  - the mean excess return and its t-statistic;
+  - the worst call;
+  - the same figures for calls the data confirmed against calls it did
+    not.
+- **Promotion rule:**
+  - at least 30 calls and 6 months;
+  - a mean one-month excess return with t of 2 or more after charges;
+  - then themes may rank picks in the trade finder, with weight fixed
+    in advance.
+  - Below that, they stay context.
+  - Changing the rules after seeing results starts a new record.
+
+**4. In the answers.**
+
+- The trade card lists any live theme that touches the stock, with its
+  source, age and the scorecard's current record.
+- The daily brief lists themes made in the last month and how each is
+  doing.
+
 
 ## Tasks
 
