@@ -124,6 +124,54 @@ class Advise(unittest.TestCase):
         self.assertIn("Not available yet", text)
         json.dumps(advise._jsonable(a))
 
+    def levels_log(self, passed):
+        """A runs log with the decile record and one dev and one validation run per risk level."""
+        path = os.path.join(self.tmp.name, "levels.jsonl")
+        with open(self.runs) as src, open(path, "w") as fh:
+            fh.write(src.read())
+            for lvl, ok in passed.items():
+                for period in ("dev", "validation"):
+                    fh.write(json.dumps({"at": "2026-10-29T00:00:00", "signal": "momentum_quality", "period": period,
+                                         "profile": "risk:" + lvl, "cagr": 0.2 if ok else 0.05, "bench_cagr": 0.1,
+                                         "sharpe": 0.9, "bench_sharpe": 0.5, "max_drawdown": -0.3,
+                                         "worst_month": -0.12, "months_losing": 0.35, "offer_test": ok}) + "\n")
+        return path
+
+    def test_untested_levels_are_offered_and_said_to_be_pending(self):
+        a = self.ask(risk="high")
+        self.assertEqual(a["risk"], "high")
+        self.assertIsNone(a["fallback"])
+        self.assertIn(advise.LEVEL_PENDING, a["pending"])
+
+    def test_a_failed_level_hands_over_to_the_next_safer_one(self):
+        log = self.levels_log({"high": False, "medium": True, "low": True})
+        a = advise.advise(50000, "high", None, self.path, as_of=self.day, ticks={}, broker="zerodha",
+                          sector_of={}, strategy=strategy(), candidate_share=1.0, runs_log=log)
+        self.assertEqual(a["risk_asked"], "high")
+        self.assertEqual(a["risk"], "medium")
+        self.assertIn("high risk did not pass", a["fallback"])
+        self.assertIn("grew less than the average stock", a["fallback"])
+        self.assertNotIn(advise.LEVEL_PENDING, a["pending"])
+        self.assertEqual(a["level_record"]["dev"]["worst_month_rupees"], "-6000.00")  # 12% of Rs 50,000
+        self.assertTrue(a["picks"])
+        text = advise.report(a)
+        self.assertIn("Asked for high risk", text)
+        self.assertIn("medium risk, 2013 to 2020: 20.0% a year (average stock 10.0%)", text)
+
+    def test_every_level_failed_is_no_trade(self):
+        log = self.levels_log({"high": False, "medium": False, "low": False})
+        a = advise.advise(50000, "medium", None, self.path, as_of=self.day, ticks={}, broker="zerodha",
+                          sector_of={}, strategy=strategy(), candidate_share=1.0, runs_log=log)
+        self.assertEqual(a["picks"], [])
+        self.assertTrue(a["answer"].startswith("no trade: no risk level from medium down passed"))
+        self.assertNotIn("low_profile", a)
+
+    def test_level_to_offer(self):
+        rec = {"high": {"passed": None}, "medium": {"passed": False, "dev": {"offer_test": False}}, "low": {"passed": True}}
+        self.assertEqual(advise.level_to_offer("high", rec), ("high", None))
+        self.assertEqual(advise.level_to_offer("medium", rec)[0], "low")
+        self.assertEqual(advise.level_to_offer("low", rec), ("low", None))
+
     def test_bad_inputs(self):
         with self.assertRaises(advise.AdviseError):
             self.ask(amount=0)
