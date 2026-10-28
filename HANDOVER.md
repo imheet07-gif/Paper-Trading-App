@@ -482,8 +482,10 @@ Progress (second agent):
   test (top 1, 3, 5 and 20) and the three risk levels, with the settings
   and the "offered only if" rule fixed in FINDINGS.md first. Owner's
   machine: `python3 research/profiles.py --period dev --all`, then
-  `--period validation --all` once; record both in FINDINGS.md. Not yet:
-  `advise.py` showing each level's record and refusing a failed level.
+  `--period validation --all` once; record both in FINDINGS.md. `advise.py`
+  reads those runs: it shows the level's record (with the worst month in
+  rupees on the amount) and hands a failed level to the next safer one
+  that passed (branch `second-agent/advise-levels`).
 - Commodities (owner, 2026-10-28): all of these, after the trade finder's
   steps 1 and 2, each from the publisher's own files:
   - A. Context: daily prices of gold, silver, crude, natural gas, copper and

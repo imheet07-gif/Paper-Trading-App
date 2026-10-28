@@ -68,8 +68,9 @@ MAX_SHARE_OF_VALUE = 0.01         # the order at most 1% of the 60-session media
 LOOKBACK_DAYS = 90                # context window for shareholding, SAST and deals
 CANDIDATE_SHARE = 0.10            # the top tenth of the ranking (FINDINGS.md, 2026-10-28)
 RUNS_LOG = backtest.RUNS_LOG
-PENDING = ["the record of this profile on dev and validation (profile backtests pending)",
-           "the after-tax comparison with a Nifty momentum index fund (step 1, pending)",
+LEVEL_PENDING = "the record of this risk level on dev and validation (research/profiles.py, not yet run)"
+SAFER = ["high", "medium", "low"]
+PENDING = ["the after-tax comparison with a Nifty momentum index fund (step 1, pending)",
            "a results calendar: dates of upcoming results are not stored yet"]
 
 
@@ -108,6 +109,76 @@ def bucket(rank, of, record):
     for period, (at, dec) in record.items():
         out[period] = round(100 * dec[10 - t], 2)  # deciles are stored lowest score first
         out[period + "_logged"] = at
+    return out
+
+
+def level_record(runs_log=RUNS_LOG):
+    """Each risk level's latest logged run of research/profiles.py on dev and on validation:
+    {level: {"dev": entry, "validation": entry, "passed": True | False | None}}. passed is
+    None until both periods are logged; the rule is the one fixed in FINDINGS.md (2026-10-28)
+    and stored with each run as offer_test."""
+    out = {lvl: {"passed": None} for lvl in SAFER}
+    if not os.path.exists(runs_log):
+        return out
+    with open(runs_log, encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            kind, _, lvl = (e.get("profile") or "").partition(":")
+            if kind != "risk" or lvl not in out or e.get("period") not in ("dev", "validation"):
+                continue
+            prev = out[lvl].get(e["period"])
+            if prev is None or e.get("at", "") > prev.get("at", ""):
+                out[lvl][e["period"]] = e
+    for lvl, r in out.items():
+        if "dev" in r and "validation" in r:
+            r["passed"] = bool(r["dev"].get("offer_test") and r["validation"].get("offer_test"))
+    return out
+
+
+def level_to_offer(asked, record):
+    """(level, why): the asked level if it passed or is not yet tested, else the next safer one
+    that passed or is not yet tested; (None, why) when every level from it down failed."""
+    failed = []
+    for lvl in SAFER[SAFER.index(asked):]:
+        if record[lvl]["passed"] is False:
+            failed.append(lvl)
+            continue
+        if not failed:
+            return lvl, None
+        return lvl, "%s risk did not pass its backtest (%s), so this is the same ranking at %s risk" % (
+            asked, "; ".join(_failed_why(record[f]) for f in failed[:1]), lvl)
+    return None, "no risk level from %s down passed its backtest (%s)" % (
+        asked, "; ".join("%s: %s" % (f, _failed_why(record[f])) for f in failed))
+
+
+def _failed_why(r):
+    for period in ("dev", "validation"):
+        e = r.get(period) or {}
+        if not e.get("offer_test"):
+            beat = (e.get("cagr") or 0) > (e.get("bench_cagr") or 0)
+            return "%s: %s" % ({"dev": "2013 to 2020", "validation": "2021 to 2023"}[period],
+                               "a return for its risk below the average stock's" if beat else
+                               "it grew less than the average stock")
+    return "did not pass"
+
+
+def level_summary(r, amount):
+    """The record a card shows for a level: per period CAGR, Sharpe, worst drawdown, worst month,
+    share of months losing, and the worst month in rupees on this amount."""
+    out = {"passed": r["passed"]}
+    for period in ("dev", "validation"):
+        e = r.get(period)
+        if not e:
+            continue
+        wm = e.get("worst_month")
+        out[period] = {"cagr": e.get("cagr"), "sharpe": e.get("sharpe"), "max_drawdown": e.get("max_drawdown"),
+                       "worst_month": wm, "months_losing": e.get("months_losing"),
+                       "universe_cagr": e.get("bench_cagr"), "universe_sharpe": e.get("bench_sharpe"),
+                       "worst_month_rupees": str(paise(D(amount) * D(str(wm)))) if wm is not None else None,
+                       "logged": e.get("at")}
     return out
 
 
@@ -246,6 +317,9 @@ def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of
         raise AdviseError("the amount must be positive")
     if risk not in exits.RISK_SHARE:
         raise AdviseError("risk must be low, medium or high")
+    levels = level_record(runs_log)
+    asked = risk
+    risk, fallback = level_to_offer(asked, levels)
     strat = strategy if isinstance(strategy, dict) else scan.load_strategy(strategy)
     db = sqlite3.connect(db_path)
     day = as_of or scan.check_fresh(db, now_ist or dt.datetime.now(cal.IST))
@@ -264,8 +338,8 @@ def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of
     link_map = ca.links(db)
     ticks = ticks if ticks is not None else scan.ticks()
     sector_of = sector_of if sector_of is not None else scan.sectors()
-    args = (scores, elig, db, link_map, amount, risk)
-    n = exits.PROFILE_STOCKS[risk]
+    args = (scores, elig, db, link_map, amount, risk or asked)
+    n = exits.PROFILE_STOCKS[risk or asked]
 
     def pick(profile):
         k = exits.PROFILE_STOCKS[profile]
@@ -280,30 +354,36 @@ def advise(amount, risk="medium", stock=None, db_path=bhavcopy.DEFAULT_DB, as_of
                 break
         return picks, dropped
 
-    picks, dropped = pick(risk)
+    picks, dropped = pick(risk) if risk else ([], [])
     for c in picks:
         c["bucket"] = bucket(c["rank"], c["of"], record)
     try:
         review = scan.next_rebalance(day, db).isoformat()
     except Exception:  # the holiday calendar does not cover the year
         review = None
-    out = {"date": day.isoformat(), "amount": str(amount), "risk": risk,
+    pending = PENDING + ([] if record else ["each tenth's record: no logged evaluation of this signal yet"])
+    if risk is None or levels[risk]["passed"] is None:
+        pending = [LEVEL_PENDING] + pending
+    out = {"date": day.isoformat(), "amount": str(amount), "risk": risk or asked, "risk_asked": asked,
+           "level_record": level_summary(levels[risk or asked], amount), "fallback": fallback,
            "strategy": strategy if isinstance(strategy, str) else strat.get("name", "custom"),
            "evidence": strat.get("description", ""), "validated": strat.get("status", ""),
            "candidates": n_candidates, "picks": picks, "dropped": dropped,
-           "pending": PENDING + ([] if record else ["each tenth's record: no logged evaluation of this signal yet"]),
+           "pending": pending,
            "review_date": review,
            "rules": ["best means highest ranked by the tested signal, never a forecast",
                      "a one-month hold, entered at the next open from end-of-day data",
                      "a single stock swings far more than the tested basket of 20",
                      "candidates are the top tenth of the tested ranking, never below it",
                      "order sheet only: nothing places an order"]}
-    if len(picks) < n:
+    if risk is None:
+        out["answer"] = "no trade: " + fallback
+    elif len(picks) < n:
         out["note"] = ("only %d of the %d stocks this profile holds pass every filter among the top %d of the ranking"
                        % (len(picks), n, n_candidates))
-    if not picks:
+    if not picks and risk is not None:
         out["answer"] = "no trade: nothing in the top %d of the tested ranking passes the filters for this amount" % n_candidates
-    if risk != "low":
+    if risk not in ("low", None) and levels["low"]["passed"] is not False:
         low, _ = pick("low")
         out["low_profile"] = [{"symbol": c["symbol"], "rank": c["rank"], "order": c["plan"]["order"],
                                "loss_at_stop": c["plan"]["loss_at_stop"]} for c in low]
@@ -344,6 +424,17 @@ def _bucket_line(b):
 
 def report(a):
     L = ["Rs %s, %s risk, %s. Evidence: %s" % (inr(a["amount"], 0)[1:], a["risk"], a["date"], a["evidence"]), ""]
+    if a.get("fallback") and a["risk"] != a["risk_asked"]:
+        L.append("Asked for %s risk: %s." % (a["risk_asked"], a["fallback"]))
+    lr = a.get("level_record") or {}
+    for period, name in (("dev", "2013 to 2020"), ("validation", "2021 to 2023")):
+        x = lr.get(period)
+        if x:
+            L.append("%s risk, %s: %s a year (average stock %s), worst drop %s, worst month %s (%s on this amount), "
+                     "%s of months lost money" % (a["risk"], name, _p(x["cagr"]), _p(x["universe_cagr"]),
+                                                  _p(x["max_drawdown"]), _p(x["worst_month"]),
+                                                  inr(x["worst_month_rupees"]) if x["worst_month_rupees"] else "-",
+                                                  _p(x["months_losing"])))
     if a.get("answer"):
         L.append(a["answer"].upper())
     for k, c in enumerate(a["picks"], 1):
