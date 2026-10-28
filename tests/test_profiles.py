@@ -132,6 +132,13 @@ class Profiles(unittest.TestCase):
             res = self.run_(1 if risk == "high" else 5, risk)
             self.assertTrue((res["nav"] > 0).all())
 
+    def test_charges_take_adjusted_fractional_units(self):
+        fee = profiles.charges_fn("zerodha")
+        whole = fee("sell", 100, 250.0)
+        self.assertGreater(whole, 0)
+        self.assertAlmostEqual(fee("sell", 66.6667, 375.0), whole, places=1)  # same turnover after a 3:2 bonus
+        self.assertEqual(fee("buy", 1e-12, 100.0), 0.0)
+
     def test_month_stats(self):
         idx = pd.to_datetime(["2020-01-31", "2020-02-28", "2020-03-31"])
         m = profiles.month_stats(pd.Series([1.1, 0.99, 1.0], index=idx))
