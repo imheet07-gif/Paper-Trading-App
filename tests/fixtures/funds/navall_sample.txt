@@ -1,0 +1,8 @@
+Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date
+ 
+Open Ended Schemes(Children’s Fund - Childrens' Fund)
+151165;INF579M01AN2;-;360 ONE ELSS Tax Saver Nifty 50 Index Fund;Direct Plan;GROWTH Option;12.9132;28-Oct-2026
+151166;INF579M01AO0;-;360 ONE ELSS Tax Saver Nifty 50 Index Fund;Direct Plan;IDCW Option;12.9132;28-Oct-2026
+151164;INF579M01AL6;-;360 ONE ELSS Tax Saver Nifty 50 Index Fund;Regular Plan;GROWTH Option;12.7900;28-Oct-2026
+151167;INF579M01AM4;-;360 ONE ELSS Tax Saver Nifty 50 Index Fund;Regular Plan;IDCW Option;12.7900;28-Oct-2026
+149373;INF846K013D2;-;Axis Nifty 50 Index Fund;Direct Plan;Growth Option;13.8175;28-Oct-2026

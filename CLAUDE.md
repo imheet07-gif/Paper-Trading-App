@@ -69,6 +69,10 @@ broker-neutral holdings, trades and charges.
   the store, gold and silver ETFs picked from NSE's ETF list file, and the
   owner's physical metal ledger (`trader/metals.json`), valued only at
   rates the owner records with a date and source (`trader/metal_rates.json`).
+- `core/funds.py` AMFI mutual fund NAVs (`fund_nav` table: scheme code,
+  date, NAV as published; raw windows cached in `data/funds/`). This cloud
+  session cannot reach AMFI: downloads run on the owner's machine, and the
+  test samples are made up in AMFI's layout until a real cut replaces them.
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout

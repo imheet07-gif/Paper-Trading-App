@@ -135,12 +135,14 @@ def basket_vol(C, i, cols, days=VOL_DAYS):
 
 
 def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, broker="zerodha",
-             slippage_bps=SLIPPAGE_BPS, cash_yield=CASH_YIELD, use_exits=True, target_vol=None, index=None):
+             slippage_bps=SLIPPAGE_BPS, cash_yield=CASH_YIELD, use_exits=True, target_vol=None, index=None,
+             dividends=None):
     """Run one concentration (risk=None) or risk-level portfolio over [start, end].
     use_exits=False holds a risk level's stocks to the next rebalance (the exit test).
     target_vol scales the stock part to that yearly volatility (risk levels v2); index, an
     array of index closes aligned to p.dates, then holds the rest, traded at the close of
-    the day the stock orders fill.
+    the day the stock orders fill. dividends, rupees per share on each ex-date shaped like
+    p.close (panel.dividends), are paid in cash on shares held at the close before.
     Positions are held in adjusted units (raw shares / the adjustment multiplier at
     the rebalance), so splits and bonuses inside a month change nothing."""
     slip = slippage_bps / 1e4
@@ -160,8 +162,9 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
     pending, navs, invested, trades = None, [], [], []
     idx_units, idx_share, idx_day, exposures, idx_held = 0.0, 0.0, None, [], []
     IX = np.asarray(index, dtype=float) if index is not None else None
+    DV = np.asarray(dividends, dtype=float) if dividends is not None else None
     stats = {"rebalances": 0, "short_months": 0, "unfilled": 0, "blocked_sells": 0, "stops": 0, "targets": 0,
-             "delist_exits": 0, "costs": 0.0}
+             "delist_exits": 0, "costs": 0.0, "dividends": 0.0}
 
     def sell(s, q, px, why):
         nonlocal cash
@@ -178,6 +181,15 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
     for i in range(lo, hi):
         d = dates[i]
         entered = set()
+        # 0. cash dividends on shares held at yesterday's close (units are adjusted: raw = units x adj / raw price)
+        if DV is not None and i > 0:
+            for s in units:
+                k = col[s]
+                dv = DV[i, k]
+                if dv > 0 and not np.isnan(C[i - 1, k]) and R[i - 1, k] > 0:
+                    paid = units[s] * C[i - 1, k] / R[i - 1, k] * dv
+                    cash += paid
+                    stats["dividends"] += paid
         # 1. yesterday's rebalance orders at today's open: sells first, then buys
         if pending is not None:
             for s in list(units):
@@ -346,6 +358,19 @@ def safest_offered(asked, passed):
     return None
 
 
+def fund_nav(db_path, code):
+    """(NAV Series on dates, scheme name) from the store's fund_nav table; empty Series if none."""
+    import sqlite3
+    db = sqlite3.connect(db_path)
+    try:
+        rows = db.execute("SELECT date, nav, name FROM fund_nav WHERE scheme_code = ? ORDER BY date", (code,)).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    db.close()
+    s = pd.Series([float(r[1]) for r in rows], index=pd.to_datetime([r[0] for r in rows]), dtype=float)
+    return s, (rows[-1][2] if rows else "scheme %s" % code)
+
+
 def label(kind, value):
     if kind == "top":
         return "top %d, equal money" % value
@@ -382,14 +407,15 @@ def logged(period, profile, runs_log=backtest.RUNS_LOG):
 
 
 def run_one(p, scores, elig, period, kind, value, bench, note="", log=True, runs_log=backtest.RUNS_LOG, index=None,
-            index_metrics=None):
+            index_metrics=None, dividends=None, index_name=None):
     start, end = PERIODS[period]
     if kind == "vol":
         stocks, tv = VOL_LEVELS[value]
-        res = simulate(p, scores, elig, start, end, stocks, None, target_vol=tv, index=index)
+        res = simulate(p, scores, elig, start, end, stocks, None, target_vol=tv, index=index, dividends=dividends)
     else:
         stocks = value if kind == "top" else exits.PROFILE_STOCKS[value]
-        res = simulate(p, scores, elig, start, end, stocks, None if kind == "top" else value, use_exits=kind != "hold")
+        res = simulate(p, scores, elig, start, end, stocks, None if kind == "top" else value, use_exits=kind != "hold",
+                       dividends=dividends)
     m = backtest.metrics(res["nav"])
     ms = month_stats(res["nav"])
     entry = {"at": dt.datetime.now().isoformat(timespec="seconds"), "signal": "momentum_quality", "period": period,
@@ -397,7 +423,8 @@ def run_one(p, scores, elig, period, kind, value, bench, note="", log=True, runs
              "config": {"engine": "profiles.py", "candidate_share": CANDIDATE_SHARE, "capital": CAPITAL,
                         "slippage_bps": SLIPPAGE_BPS, "stocks": stocks, "risk": value if kind == "risk" else None,
                         "target_vol": VOL_LEVELS[value][1] if kind == "vol" else None,
-                        "index": INDEX if kind == "vol" and index is not None else None},
+                        "index": (index_name or INDEX) if kind == "vol" and index is not None else None,
+                        "dividends": dividends is not None},
              "sharpe": m.get("sharpe"), "cagr": m.get("cagr"), "max_drawdown": m.get("max_drawdown"),
              "worst_month": ms["worst_month"], "months_losing": ms["months_losing"],
              "bench_sharpe": bench.get("sharpe"), "bench_cagr": bench.get("cagr"), "stats": res["stats"],
@@ -435,9 +462,12 @@ def main(argv=None, runs_log=backtest.RUNS_LOG):
                    help="risk levels v2: stock count and a volatility target, the rest in the Nifty 500")
     g.add_argument("--exit-test", action="store_true",
                    help="each risk level held without its stop and target, against its logged --all run")
+    ap.add_argument("--fund", help="AMFI scheme code of the index fund for --vol-levels (FINDINGS 2026-10-29)")
     ap.add_argument("--db", default=panel_mod.bhavcopy.DEFAULT_DB)
     ap.add_argument("--note", default="")
     a = ap.parse_args(argv)
+    if a.vol_levels and not a.fund:
+        ap.error("--vol-levels needs --fund: the AMFI scheme code chosen with core/funds.py find")
     if a.exit_test:
         missing = [lvl for _, lvl in EXIT_RUNS if not logged(a.period, "risk:" + lvl, runs_log)]
         if missing:
@@ -456,22 +486,24 @@ def main(argv=None, runs_log=backtest.RUNS_LOG):
     print("momentum_quality, %s %s to %s, Rs %s start, top tenth candidates" % (a.period, start, end, "{:,.0f}".format(CAPITAL)))
     print("%-26s CAGR %6.1f%%  Sharpe %5.2f  worst drawdown %6.1f%%" % (
         "equal-weight universe", bench["cagr"] * 100, bench["sharpe"], bench["max_drawdown"] * 100))
-    index = index_metrics = None
+    index = index_metrics = index_name = None
     if a.vol_levels:
-        import regimes as regimes_mod
-        ix = regimes_mod.index_close(a.db, INDEX).reindex(p.dates).ffill()
-        if ix.loc[start:end].isna().all():
-            print("error: no %s closes stored for this period (research/scan.py update stores index closes)" % INDEX,
-                  file=sys.stderr)
+        ix, index_name = fund_nav(a.db, a.fund)
+        ix = ix.reindex(p.dates, method="ffill")
+        period = ix.loc[start:end]
+        if period.isna().any() or period.empty:
+            print("error: scheme %s has no NAV for part of %s to %s (core/funds.py fetch stores it); the index part "
+                  "never falls back to the price index" % (a.fund, start, end), file=sys.stderr)
             return 2
         index = ix.values
-        index_metrics = backtest.metrics(ix.loc[start:end].dropna() / ix.loc[start:end].dropna().iloc[0])
-        print("%-26s CAGR %6.1f%%  Sharpe %5.2f  worst drawdown %6.1f%%  (price index, no dividends)" % (
-            INDEX, index_metrics["cagr"] * 100, index_metrics["sharpe"], index_metrics["max_drawdown"] * 100))
+        index_metrics = backtest.metrics(period / period.iloc[0])
+        print("%-26s CAGR %6.1f%%  Sharpe %5.2f  worst drawdown %6.1f%%  (fund NAV: dividends in, costs out)" % (
+            index_name[:26], index_metrics["cagr"] * 100, index_metrics["sharpe"], index_metrics["max_drawdown"] * 100))
+    dividends = panel_mod.dividends(p, a.db).values
     runs = [("vol", lvl) for lvl in ("low", "medium", "high")] if a.vol_levels else EXIT_RUNS if a.exit_test else RUNS if a.all else [("top", a.stocks)] if a.stocks else [("risk", a.risk)]
     for kind, value in runs:
         entry, m = run_one(p, scores, elig, a.period, kind, value, bench, a.note, runs_log=runs_log, index=index,
-                           index_metrics=index_metrics)
+                           index_metrics=index_metrics, dividends=dividends, index_name=index_name)
         print(report(a.period, entry, m))
         if kind == "hold":
             w = logged(a.period, "risk:" + value, runs_log)

@@ -595,6 +595,31 @@ average, and recent market volatility, may be shown as untested context.
 They never change a trade: timing by trend and breadth failed validation
 (2026-10-27).
 
+## 2026-10-29: dividends, and a real index fund for v2's index part (owner agreed; before any v2 run)
+
+Changes to the v2 settings above, made before any run of them:
+
+- **Stock dividends.** `research/profiles.py` credits each cash dividend
+  NSE recorded in the corporate actions (`corporate_actions.dividend`,
+  rupees per share) as cash on its ex-date, for the shares held at the
+  close before it. Gross, before tax: tax is the after-tax check's job.
+  This applies to every `profiles.py` run from now on, so earlier runs
+  and new ones are not compared as like for like; FINDINGS says which
+  each used.
+- **The index part is a real index fund's NAV, not the price index.** A
+  fund's NAV has its dividends reinvested and its expense ratio and
+  tracking error taken out. Nifty 500 index funds start around 2021, too
+  late for dev, so the fund is a **Nifty 50 index fund, direct plan,
+  growth option**: the one with the longest daily NAV history in AMFI's
+  data, chosen on that rule alone, before any run, with
+  `core/funds.py find`. The NAV of the day the stock orders fill is used,
+  as a fund order placed that day before the cut-off. No exit load or
+  stamp duty on fund purchases is modelled (not yet read from the
+  publishers' pages). If the fund's NAV is missing for the period, the
+  run stops with an error; it never falls back to the price index.
+
+Everything else in v2 is unchanged.
+
 ## 2026-10-29: the after-tax check, settings fixed before any run (owner's agent)
 
 The trade finder leads with an index fund if the fund beats the tested

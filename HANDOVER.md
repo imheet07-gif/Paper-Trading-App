@@ -505,7 +505,12 @@ Progress (second agent):
   volatility target per level, the rest in the Nifty 500 (FINDINGS.md
   2026-10-29). `research/profiles.py --period dev --vol-levels`, then one
   validation look. `advise.py` still reads only the `risk:` runs; wiring
-  `vol:` levels into it waits for results.
+  `vol:` levels into it waits for results. Since 2026-10-29, before any v2
+  run: stock dividends are credited on ex-dates in every `profiles.py` run,
+  and v2's index part is a real Nifty 50 index fund's NAV from AMFI
+  (`core/funds.py`, `--fund CODE`), not the price index. Tax is the
+  owner's local session (dated rates from the Income Tax Department's own
+  text into a data file).
 - Commodities (owner, 2026-10-28): all of these, after the trade finder's
   steps 1 and 2, each from the publisher's own files:
   - A. Context: daily prices of gold, silver, crude, natural gas, copper and
