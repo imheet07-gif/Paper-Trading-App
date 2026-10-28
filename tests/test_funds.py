@@ -41,6 +41,15 @@ class Funds(unittest.TestCase):
         self.assertEqual([(r["code"], r["date"], r["nav"]) for r in hist],
                          [("900001", "2013-01-01", "100"), ("900002", "2013-01-01", "99"), ("900001", "2013-01-02", "101.5")])
 
+    def test_plan_and_option_are_not_repeated_in_the_name(self):
+        rows = funds.parse("Scheme Code;NAV Name;Plan;Option;Net Asset Value;Date\n"
+                           "1;X Index Fund - Direct Plan - Growth;Direct Plan;Growth;10;01-Jan-2013\n")
+        self.assertEqual(rows[0]["name"], "X Index Fund - Direct Plan - Growth")
+
+    def test_waits_for_another_writer(self):
+        db = funds.connect(self.db)
+        self.assertEqual(db.execute("PRAGMA busy_timeout").fetchone()[0], funds.BUSY_MS)
+
     def test_an_unknown_layout_is_an_error(self):
         with self.assertRaises(funds.FundsError):
             funds.parse("Code;Fund;Price\n1;X;2\n")
