@@ -38,6 +38,20 @@ class Arguments(unittest.TestCase):
             server.build_args("save-strategy", {"result_id": "../x", "name": "a"})
 
 
+class Advise(unittest.TestCase):
+    def test_advise_arguments_are_checked(self):
+        self.assertEqual(server.build_args("advise", {"amount": "50000", "risk": "low"}),
+                         ["--amount", "50000", "--risk", "low"])
+        self.assertEqual(server.build_args("advise", {"amount": 25000.7, "stock": " tcs "}),
+                         ["--amount", "25000", "--risk", "medium", "--stock", "TCS"])
+        self.assertEqual(server.build_args("advise", {"amount": 1e5, "stock": "M&M"})[-1], "M&M")
+        for p in ({"amount": "abc"}, {"amount": 10}, {"amount": 1e12}, {"amount": 5e4, "risk": "yolo"},
+                  {"amount": 5e4, "stock": "--db=/etc/passwd"}, {"amount": 5e4, "stock": "A B"},
+                  {"amount": 5e4, "stock": "X" * 21}):
+            with self.assertRaises(ValueError, msg=p):
+                server.build_args("advise", p)
+
+
 class Http(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -84,6 +98,15 @@ class Http(unittest.TestCase):
         status, _ = self.req("POST", "/api/jobs", {"kind": "update"}, {"X-App-Token": "t0k3n"})
         self.assertEqual(status, 202)
         self.assertEqual(self.Fake.started[-1], ("update", []))
+
+    def test_advice_reads_the_latest_answer(self):
+        status, body = self.req("GET", "/api/advice")
+        self.assertEqual(status, 200)
+        self.assertIsInstance(json.loads(body), dict)
+        status, _ = self.req("POST", "/api/jobs", {"kind": "advise", "params": {"amount": 50000, "risk": "high"}},
+                             {"X-App-Token": "t0k3n"})
+        self.assertEqual(status, 202)
+        self.assertEqual(self.Fake.started[-1], ("advise", ["--amount", "50000", "--risk", "high"]))
 
     def test_foreign_host_is_refused(self):
         status, _ = self.req("GET", "/api/state", headers={"Host": "attacker.example:%d" % server.Handler.port})

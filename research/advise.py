@@ -104,7 +104,7 @@ def bucket(rank, of, record):
     if not rank or not of:
         return None
     t = tenth_of(rank, of)
-    out = {"tenth": t, "label": "top 10%" if t == 1 else "%d0%% to %d0%% down the ranking" % (t - 1, t)}
+    out = {"tenth": t, "label": "top 10%" if t == 1 else "%d0%% to %d0%% band" % (t - 1, t)}
     for period, (at, dec) in record.items():
         out[period] = round(100 * dec[10 - t], 2)  # deciles are stored lowest score first
         out[period + "_logged"] = at
