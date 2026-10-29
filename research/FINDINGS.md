@@ -789,3 +789,75 @@ Changing the bar now, for example to the index fund, would be choosing
 the rule after seeing the results. If the owner wants that, it is written
 here first as a new rule, and the only clean test of it is the holdout
 (2024 onward), opened once, when the owner asks.
+
+## 2026-10-29: fundamentals batch F6, settings fixed before any run (owner agreed; second agent)
+
+The NSE rows of the metrics catalogue in `docs/PROPOSAL.md` and its three
+composites, each tested as its own signal. Built in
+`research/fundamentals.py`, registered in `research/signals.py` with the
+prefix `f_`, run with `research/evaluate.py` like every signal before it.
+**20 dev runs, declared now**; nothing is added to the batch after a run.
+
+**Inputs, point in time.** The `financials` table (F3 lines included). A
+figure counts from the session after its `broadcast_at`; a revision
+replaces the original from its own broadcast on. Per company and quarter,
+consolidated figures when filed, else standalone. Lenders (a quarter
+with interest earned and no revenue) are left out of every metric that
+needs revenue or finance costs. A metric whose latest quarter ended more
+than 365 days before the date is dropped (no score).
+
+**Shares and prices.** Market cap = today's adjusted close times the
+shares of the latest filing (paid-up capital over face value) restated
+through the corporate action factors. EPS is restated the same way.
+
+**Trailing four quarters (TTM)** = the sum of the four latest quarters,
+only when they are four consecutive quarters.
+
+| signal | definition | higher score |
+| --- | --- | --- |
+| `f_revenue_growth_q` | latest quarter's revenue over the same quarter a year earlier, less 1 | higher |
+| `f_revenue_growth_ttm` | TTM revenue over the TTM a year earlier, less 1 | higher |
+| `f_eps_growth_q` | change in restated EPS on the same quarter a year earlier, over its absolute value | higher |
+| `f_eps_growth_ttm` | the same on TTM restated EPS | higher |
+| `f_surprise` | the EPS change on a year earlier over the standard deviation of that change in up to 8 earlier quarters (at least 4: needs 9 quarters); dropped 120 days after its broadcast | higher |
+| `f_operating_margin` | TTM (PBT + finance costs + depreciation - other income) over TTM revenue | higher |
+| `f_net_margin` | TTM profit to owners (else profit) over TTM revenue | higher |
+| `f_roe` | TTM profit to owners over the latest year-end net worth (paid-up capital + reserves) | higher |
+| `f_interest_coverage` | (TTM PBT + TTM finance costs) over TTM finance costs; no finance costs ranks first | higher |
+| `f_profit_share_8q` | share of the last 8 quarters with a profit | higher |
+| `f_margin_stability` | minus the standard deviation of quarterly operating margin over the last 8 quarters | higher (steadier) |
+| `f_other_income_share` | minus TTM other income over TTM PBT | higher (less) |
+| `f_exceptional_share` | minus the absolute TTM exceptional items over TTM PBT | higher (less) |
+| `f_earnings_yield` | TTM profit to owners over market cap | higher |
+| `f_book_to_price` | latest year-end net worth over market cap | higher |
+| `f_sales_to_price` | TTM revenue over market cap | higher |
+| `f_small_size` | minus the log of market cap | higher (smaller) |
+| `f_quality` | average percentile rank of `f_roe`, `f_interest_coverage`, `f_profit_share_8q` | higher |
+| `f_value` | of `f_earnings_yield`, `f_book_to_price`, `f_sales_to_price` | higher |
+| `f_growth` | of `f_revenue_growth_q`, `f_eps_growth_q`, `f_surprise` | higher |
+
+Directions are the conventional ones, fixed here, never chosen from
+results. Loss-makers and negative net worth sort last: a ratio whose
+denominator is zero or negative (PBT, base-year EPS or revenue, net worth)
+gives the worst score, not none. Composites rank within the eligible
+universe each date and need at least two of their three parts. Earnings
+yield uses profit over market cap rather than EPS over price: the same
+ratio when the share count is unchanged, and it needs no EPS restatement.
+The operating margin follows the proposal, so it excludes exceptional items
+only when the company files them below PBT.
+
+**Each run.** The eligible universe and month-end rebalance of
+`momentum_quality_top20`; IC and deciles by `research/evaluate.py` (next
+month's return); the top 20, equal weight, monthly, with the same costs.
+
+**The bar (option B, owner 2026-10-29), on dev and then on validation:**
+
+- the IC t-statistic above 3 (not 2: twenty signals are tested at once);
+- the deciles orderly: `monotonic` above 0.5;
+- the top 20's Sharpe above the equal-weight universe's.
+
+A signal passes dev only with all three; only those get one validation
+look, with the same bar. Combinations with `momentum_quality`, and a
+quarterly-rebalance version, are later ideas with their own entries.
+Ownership metrics (shareholding history from 2021 only) stay card
+context, untested.

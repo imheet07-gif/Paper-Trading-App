@@ -88,6 +88,23 @@ SIGNALS["results_reaction"] = results_reaction
 SIGNALS["promoter_buying"] = promoter_buying
 
 
+def _fundamental(name):
+    def fn(p):
+        import fundamentals
+        return fundamentals.signal(name)(p)
+    fn.__name__ = "f_" + name
+    return fn
+
+
+# the F6 batch (FINDINGS.md 2026-10-29): 20 signals from the results XBRL, declared before any run
+FUNDAMENTALS = ("revenue_growth_q", "revenue_growth_ttm", "eps_growth_q", "eps_growth_ttm", "surprise",
+                "operating_margin", "net_margin", "roe", "interest_coverage", "profit_share_8q", "margin_stability",
+                "other_income_share", "exceptional_share", "earnings_yield", "book_to_price", "sales_to_price",
+                "small_size", "quality", "value", "growth")
+for _name in FUNDAMENTALS:
+    SIGNALS["f_" + _name] = _fundamental(_name)
+
+
 DESCRIPTIONS = {
     "momentum_12_1": "Return over the past 12 months, skipping the most recent month",
     "momentum_6_1": "Return over the past 6 months, skipping the most recent month",
@@ -100,6 +117,7 @@ DESCRIPTIONS = {
     "promoter_buying": "Percent of the company promoters bought in the open market (SAST Regulation 29 disclosures) in the last 90 days",
     "results_reaction": "Two-session return around the latest quarterly results, above the market's, while it is under a quarter old. Failed dev (FINDINGS.md)",
 }
+DESCRIPTIONS.update({"f_" + k: v + " (F6, untested)" for k, v in __import__("fundamentals").DESCRIPTIONS.items()})
 
 
 def composite(p, weights):
