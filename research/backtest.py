@@ -155,9 +155,12 @@ def select_top(scores, elig, i, top):
     return list(row.sort_values(ascending=False).index[:top])
 
 
-def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None):
+def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None, on_day=None):
     """Simulate. exposure: Series of the share of capital to invest, read at
     each rebalance date (default fully invested); the rest stays in cash.
+    on_day(i, date, units, trades): called after each session's close is
+    marked; what it returns is added to cash (research/aftertax.py credits
+    dividends and pays each year's tax through it).
     Returns {"nav": Series, "bench": Series, "trades": [...], "stats": {...}}."""
     cfg = cfg or Config()
     buy_cost, sell_cost = cost_rates()
@@ -241,6 +244,8 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None):
             else:
                 missing[s] = 0
                 last_px[s] = c
+        if on_day is not None:
+            cash += on_day(i, d, units, trades)
         cash *= 1 + daily_cash
         navs.append(cash + sum(u * last_px[s] for s, u in units.items()))
         # benchmark: equal weight of the eligible universe, rebalanced with the strategy, no costs

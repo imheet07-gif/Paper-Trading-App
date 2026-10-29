@@ -58,6 +58,20 @@ broker-neutral holdings, trades and charges.
   the scan's evening update. NSE publishes only the latest session, so a
   missed evening is lost; raw files cached in `data/deals_raw/`. Client
   names include private individuals: they stay in the local store only.
+- `core/tax.py` income tax per financial year on listed equity gains
+  and dividends for a resident individual: sells matched oldest first by
+  `core/lots.py`, sections 111A and 112A rates by transfer date, the 1
+  April 2018 end of the 10(38) exemption, 31 January 2018 grandfathering,
+  set-off and eight-year carry-forward, dividends at the slab rate from
+  April 2020 (typed in, never stored), cess. Every rule is in
+  `core/tax_rates.json`, dated and quoted from incometaxindia.gov.in's
+  section pages, under the Income-tax Act, 1961 to March 2026 and the
+  Income-tax Act, 2025 from April 2026 (sections 196, 198, 90, 108, 111,
+  92). Dates it does not cover (before FY2012-13, or from 1 April 2027,
+  which needs the Finance Act, 2027) are refused. Surcharge is
+  left out. `research/aftertax.py` runs a strategy with each year's tax
+  paid from the portfolio (a hook in `backtest.run`) against an index
+  fund, dev_2016 and validation only.
 - `core/metals.py` gold and silver: Sovereign Gold Bonds (series GB) from
   the store, gold and silver ETFs picked from NSE's ETF list file, and the
   owner's physical metal ledger (`trader/metals.json`), valued only at

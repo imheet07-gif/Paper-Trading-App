@@ -1,0 +1,14 @@
+{
+  "trades": [
+    {"date": "2019-05-02", "isin": "INE000X01001", "symbol": "ALPHA", "side": "buy", "qty": 100, "price": "500"},
+    {"date": "2019-11-04", "isin": "INE000X01001", "symbol": "ALPHA", "side": "sell", "qty": 100, "price": "200"},
+    {"date": "2019-06-03", "isin": "INE000X01002", "symbol": "BETA", "side": "buy", "qty": 100, "price": "1000"},
+    {"date": "2020-09-01", "isin": "INE000X01002", "symbol": "BETA", "side": "sell", "qty": 100, "price": "600"},
+    {"date": "2020-10-01", "isin": "INE000X01003", "symbol": "GAMMA", "side": "buy", "qty": 100, "price": "100"},
+    {"date": "2021-01-04", "isin": "INE000X01003", "symbol": "GAMMA", "side": "sell", "qty": 100, "price": "300"},
+    {"date": "2021-04-05", "isin": "INE000X01004", "symbol": "DELTA", "side": "buy", "qty": 100, "price": "1000"},
+    {"date": "2022-06-01", "isin": "INE000X01004", "symbol": "DELTA", "side": "sell", "qty": 100, "price": "3500"},
+    {"date": "2021-05-03", "isin": "INE000X01005", "symbol": "EPSILON", "side": "buy", "qty": 100, "price": "100"},
+    {"date": "2021-08-02", "isin": "INE000X01005", "symbol": "EPSILON", "side": "sell", "qty": 100, "price": "500"}
+  ]
+}
