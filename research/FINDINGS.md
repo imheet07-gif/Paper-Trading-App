@@ -670,3 +670,36 @@ about what the top 3 did (27.3%) with a much smaller worst drawdown
 and Sharpe.
 
 Next: one validation look for the three levels, settings unchanged.
+
+## 2026-10-29: risk levels v2 on validation, one look (owner's machine)
+
+Settings unchanged. Validation 2021 to 2023.
+
+| run | CAGR | Sharpe | worst drawdown | worst month | months losing | in stocks | in the fund | passes validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| equal-weight universe | 34.6% | 1.41 | -23.2% | | | | | |
+| the index fund alone | 16.9% | 0.70 | -16.4% | | | | | |
+| low v2 | 27.1% | 1.32 | -18.4% | -5.6% | 27.8% | 33.1% | 52.6% | no |
+| medium v2 | 29.7% | 1.14 | -19.6% | -7.0% | 41.7% | 47.6% | 34.0% | no |
+| high v2 | 33.8% | 1.11 | -26.5% | -10.9% | 44.4% | 59.5% | 18.4% | no |
+
+**Verdict under the fixed rule: no v2 level passes.** Each needed a CAGR
+above the equal-weight universe's 34.6% (and low a Sharpe above 1.41);
+all three fell short, high by 0.8 point. The trade finder keeps answering
+"no trade".
+
+What the numbers also show, not judged:
+
+- Every level beat the index fund in both periods, on CAGR and Sharpe:
+  on validation 27.1% to 33.8% against 16.9%, Sharpe 1.11 to 1.32
+  against 0.70.
+- Low kept its worst drawdown (-18.4%) close to the index fund's
+  (-16.4%) while earning 10 points a year more.
+- The bar the rule set is the equal-weight average of about 430 stocks,
+  rebalanced monthly at no cost. No fund holds it, and in 2021 to 2023
+  small and mid caps led it.
+
+Changing the bar now, for example to the index fund, would be choosing
+the rule after seeing the results. If the owner wants that, it is written
+here first as a new rule, and the only clean test of it is the holdout
+(2024 onward), opened once, when the owner asks.
