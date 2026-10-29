@@ -644,6 +644,92 @@ lowest scheme code. Franklin and HDFC tie on the first NAV and on the
 count, so the fund is **118581, Franklin India NSE Nifty 50 Index Fund,
 Direct Plan, Growth**. No return figure was looked at to choose it.
 
+## 2026-10-29: the after-tax check, settings fixed before any run (owner's agent)
+
+The trade finder leads with an index fund if the fund beats the tested
+strategy after tax (HANDOVER.md). Run by `research/aftertax.py`; tax by
+`core/tax.py` from `core/tax_rates.json`, every rule dated and quoted from
+the Income Tax Department's own section pages.
+
+**Strategy.** `momentum_quality_top20` exactly as validated: top 20,
+month-end rebalance, next-open fills, 15 bps slippage, charges from
+`core/charges.json`, Rs 10,00,000 at the start. Added for this check
+only: dividends credited on the ex-date (rupees per share from the
+store's corporate actions, on the shares held the session before); each
+financial year's tax paid from the portfolio at the year's last close;
+everything sold at the window's last close (less slippage and charges)
+and that year's tax paid. Gains are on fill prices; charges are not
+deducted from gains (slightly more tax than a filed return).
+
+**Fund.** Bought at the window's first close, held, sold at its last; a
+growth plan, so its dividends stay inside the fund untaxed. Its value is
+the stored price index plus the index's own daily dividend yield (no
+total return index is stored), less an expense ratio of 1.0% a year,
+fixed here. The fund's own factsheet was not read; direct plans of
+momentum index funds are quoted around 0.4 to 0.5% by aggregator sites,
+so 1.0% handicaps the fund. Rerun with the factsheet figure for the
+card. Purchase stamp duty and redemption STT on fund units are left out.
+
+**Windows.** `dev_2016` (2016 to 2020) against a Nifty 50 fund, since
+Nifty200 Momentum 30 is stored only from August 2020; `validation`
+(2021 to 2023) against a Nifty200 Momentum 30 fund. One run each. The
+holdout stays closed.
+
+**Reported.** Per financial year: return before and after tax, short and
+long gains, dividends, tax paid, losses carried. Overall: CAGR before
+tax, after gains tax only, and after all tax at a slab rate typed in for
+the run (dividends); the end value of each after tax. The slab rate is
+never written down: the run log keeps the result with dividends
+untaxed. Tax is before surcharge (it depends on total income).
+
+**The rule.** If the fund's after-tax end value beats the strategy's on
+a window, the trade finder's low profile should lead with the fund for
+that kind of market; the owner decides.
+
+## 2026-10-29: the after-tax check on dev_2016 and validation (owner's machine)
+
+Settings as pre-registered above, one run each, both in `runs.jsonl`
+(`profile: after_tax`). Rs 10,00,000; tax before surcharge; the fund at a
+1.0% expense ratio; the strategy's dividends taxed at the slab rate typed
+for the printout only (the log keeps them untaxed). The dev_2016 run
+crashed on its last two print lines after it was logged (a formatting
+bug, fixed); its numbers below come from the run's own output and log.
+
+| window | | CAGR before tax | after gains tax | end value after gains tax |
+| --- | --- | --- | --- | --- |
+| dev_2016 (2016 to 2020) | `momentum_quality_top20` | 20.5% | 17.7% | Rs 22.6 lakh |
+| | Nifty 50 fund | 12.2% | 11.8% | Rs 17.5 lakh |
+| validation (2021 to 2023) | `momentum_quality_top20` | 47.2% | 40.4% | Rs 27.5 lakh |
+| | Nifty200 Momentum 30 fund | 26.2% | 24.2% | Rs 19.1 lakh |
+
+**What tax does to each.**
+
+- The strategy's gains are almost all short term: no long-term gain at
+  all in validation, and at most Rs 18,527 in a dev year. It paid 15% (plus
+  cess) every year it gained: Rs 72,780 for FY2017-18, Rs 1.43 lakh for
+  April to December 2020, Rs 1.53 lakh for FY2021-22 and Rs 1.80 lakh for
+  FY2023-24. Tax took about 2.8 points a year off its CAGR on dev and 6.8 on
+  validation.
+- Losses carried forward did their job: the FY2015-16 short-term loss
+  (Rs 1.11 lakh) cut FY2017-18's bill, FY2018-19's loss cut FY2019-20's,
+  and FY2022-23's Rs 1.49 lakh loss cut FY2023-24's.
+- The fund paid once, at the end, at the long-term rate above the Rs 1
+  lakh limit; on dev its cost was the 31 January 2018 NAV
+  (grandfathering). Tax took 0.4 points a year off on dev and 2.0 on
+  validation.
+- Dividends barely matter at this size: Rs 58,719 over dev and Rs 29,415
+  over validation, untaxed before April 2020.
+
+**Verdict.** The strategy stays ahead of the fund after tax on both
+windows, by a wide margin, so the trade finder need not lead with the
+fund on this evidence. Limits of the check: the momentum index is stored
+only from August 2020, so dev compares against a Nifty 50 fund; the fund
+is a price index plus its dividend yield, not a total return index; the
+expense ratio was not read from a factsheet; surcharge is left out, and
+it would hit the strategy's yearly gains harder than the fund's single
+sale at high incomes. With Rs 50,000 instead of Rs 10 lakh the Rs 1 to
+1.25 lakh long-term limit would cover far more of the fund's gain.
+
 ## 2026-10-29: risk levels v2 on dev (owner's machine)
 
 Settings as fixed above, the index part in fund 118581, stock dividends
