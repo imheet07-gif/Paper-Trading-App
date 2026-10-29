@@ -67,13 +67,31 @@ class Funds(unittest.TestCase):
             asked.append(url)
             return text("history_sample.txt").encode() if len(asked) == 1 else b""
         db = funds.connect(self.db)
-        n = funds.fetch(db, ["900001"], "2013-01-01", "2013-05-15", get=get, pause=0, log=None,
-                        raw=os.path.join(self.tmp.name, "raw"))
-        self.assertEqual(n, 2)
-        self.assertEqual(len(asked), 2)  # 135 days: two windows of at most 90
-        self.assertIn("frmdt=01-Jan-2013&todt=31-Mar-2013", asked[0])
+        n, failed = funds.fetch(db, ["900001"], "2013-01-01", "2013-02-15", get=get, pause=0, log=None,
+                                raw=os.path.join(self.tmp.name, "raw"))
+        self.assertEqual((n, failed), (2, []))
+        self.assertEqual(len(asked), 2)  # 46 days: two windows of at most 30
+        self.assertIn("frmdt=01-Jan-2013&todt=30-Jan-2013", asked[0])
         self.assertEqual(funds.history(db, "900001"), [("2013-01-01", Decimal("100")), ("2013-01-02", Decimal("101.5"))])
         self.assertEqual(funds.history(db, "900002"), [])
+
+    def test_a_failed_window_is_skipped_and_retried_next_run(self):
+        calls = []
+
+        def flaky(url):
+            calls.append(url)
+            if len(calls) == 1:
+                raise TimeoutError("The read operation timed out")
+            return text("history_sample.txt").encode()
+        raw = os.path.join(self.tmp.name, "raw")
+        db = funds.connect(self.db)
+        n, failed = funds.fetch(db, ["900001"], "2013-01-01", "2013-02-15", get=flaky, pause=0, log=None, raw=raw)
+        self.assertEqual(failed, ["2013-01-01 to 2013-01-30"])
+        self.assertEqual(n, 2)  # the second window still read
+        self.assertFalse(os.path.exists(os.path.join(raw, "history_2013-01-01_2013-01-30.txt")))  # not cached
+        n, failed = funds.fetch(db, ["900001"], "2013-01-01", "2013-02-15", get=flaky, pause=0, log=None, raw=raw)
+        self.assertEqual(failed, [])
+        self.assertEqual(len(calls), 3)  # only the failed window was asked for again
 
     def test_cli_import_show_and_find(self):
         path = os.path.join(DIR, "history_sample.txt")
