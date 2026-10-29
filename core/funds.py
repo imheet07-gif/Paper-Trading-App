@@ -29,6 +29,8 @@ import os
 import sqlite3
 import sys
 import time
+import urllib.error
+import urllib.request
 from decimal import Decimal, InvalidOperation
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -37,7 +39,8 @@ import bhavcopy  # noqa: E402
 LIST_URL = "https://www.amfiindia.com/spages/NAVAll.txt"
 HISTORY_URL = "https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx?frmdt=%s&todt=%s"
 RAW = os.path.join(bhavcopy.ROOT, "data", "funds")
-WINDOW_DAYS = 90  # history is asked for in windows, every scheme at once
+WINDOW_DAYS = 30  # history is asked for in windows, every scheme at once: 90 days timed out (2026-10-29)
+TIMEOUT = 300     # seconds; AMFI is slow to build a window's report
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS fund_nav (
   scheme_code TEXT NOT NULL, date TEXT NOT NULL, nav TEXT NOT NULL, name TEXT, isin TEXT,
@@ -134,12 +137,31 @@ def history(db, code):
         "SELECT date, nav FROM fund_nav WHERE scheme_code = ? ORDER BY date", (code,))]
 
 
-def fetch(db, codes, start, end=None, get=bhavcopy.http_get, pause=1.0, log=print, raw=RAW):
-    """Download the history in windows and keep the given schemes. Each window's raw answer is
-    cached in data/funds/; a window already cached and fully in the past is not asked for again."""
+def slow_get(url, tries=3, timeout=TIMEOUT):
+    """Bytes, or None for a 404, with a long timeout: AMFI takes minutes for a large window."""
+    req = urllib.request.Request(url, headers={"User-Agent": bhavcopy.UA})
+    for i in range(tries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            if i == tries - 1:
+                raise
+        except (urllib.error.URLError, OSError):
+            if i == tries - 1:
+                raise
+        time.sleep(5 * (i + 1))
+
+
+def fetch(db, codes, start, end=None, get=slow_get, pause=1.0, log=print, raw=RAW):
+    """Download the history in windows and keep the given schemes: (NAVs stored, windows that failed).
+    Each window's raw answer is cached in data/funds/; a window already cached and fully in the past
+    is not asked for again. A window that fails is logged and skipped; the next run asks for it again."""
     a = dt.date.fromisoformat(start)
     end_d = dt.date.fromisoformat(end) if end else dt.date.today()
-    n = 0
+    n, failed = 0, []
     os.makedirs(raw, exist_ok=True)
     while a <= end_d:
         b = min(a + dt.timedelta(days=WINDOW_DAYS - 1), end_d)
@@ -148,7 +170,14 @@ def fetch(db, codes, start, end=None, get=bhavcopy.http_get, pause=1.0, log=prin
             with open(path, encoding="utf-8", errors="replace") as fh:
                 text = fh.read()
         else:
-            blob = get(HISTORY_URL % (a.strftime("%d-%b-%Y"), b.strftime("%d-%b-%Y")))
+            try:
+                blob = get(HISTORY_URL % (a.strftime("%d-%b-%Y"), b.strftime("%d-%b-%Y")))
+            except (urllib.error.URLError, OSError) as e:
+                failed.append("%s to %s" % (a, b))
+                if log:
+                    log("%s to %s: failed (%s); run again to retry" % (a, b, e))
+                a = b + dt.timedelta(days=1)
+                continue
             text = (blob or b"").decode("utf-8", errors="replace")
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(text)
@@ -158,7 +187,7 @@ def fetch(db, codes, start, end=None, get=bhavcopy.http_get, pause=1.0, log=prin
         if log:
             log("%s to %s: %d NAVs kept" % (a, b, got))
         a = b + dt.timedelta(days=1)
-    return n
+    return n, failed
 
 
 def main(argv=None):
@@ -202,8 +231,9 @@ def main(argv=None):
             return 0
         db = connect(a.db)
         if a.cmd == "fetch":
-            n = fetch(db, a.scheme, a.start, a.end)
-            print("%d NAVs stored" % n)
+            n, failed = fetch(db, a.scheme, a.start, a.end)
+            print("%d NAVs stored%s" % (n, "; %d window(s) failed, run the same command again to retry them" % len(failed)
+                                        if failed else ""))
         elif a.cmd == "import":
             with open(a.file, encoding="utf-8", errors="replace") as fh:
                 n = store(db, parse(fh.read()), set(a.scheme))
