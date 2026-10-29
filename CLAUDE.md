@@ -53,7 +53,10 @@ broker-neutral holdings, trades and charges.
   file with no quarter context gives the quarter only when the year
   confirms it (half-year less December, no EPS, or a quarter dated as the
   half-year), flagged in `derived`. The scan's evening update fetches new
-  filings.
+  filings. Since F3 it also reads the expense lines, finance costs,
+  depreciation, exceptional items, face value, paid-up capital and, from
+  the year's column of March files, reserves; each cached file keeps every
+  plain figure of its quarter and year (`facts`, `FACTS_VERSION`).
 - `core/deals.py` NSE bulk and block deals (`deals` table), collected by
   the scan's evening update. NSE publishes only the latest session, so a
   missed evening is lost; raw files cached in `data/deals_raw/`. Client
