@@ -2,12 +2,44 @@
 """Quarterly results from the XBRL filed with each NSE results announcement,
 keyed on when the results became public.
 
-Where the files are: NSE's results feed (corporates-financial-results, cached
-by core/events.py under data/events_raw/results/) carries an `xbrl` link per
-filing, nsearchives.nseindia.com/corporate/xbrl/<INDAS|BANKING|...>_*.xml,
-from 2013 to February 2025, when that feed stopped. The announcements that
-carry results since then flag `hasXbrl` but give no link; where those files
-live is still open (HANDOVER.md), so quarters from March 2025 are not here.
+Where the files are, both feeds cached month by month by core/events.py:
+
+  - NSE's results feed (corporates-financial-results, data/events_raw/results/)
+    carries an `xbrl` link per filing,
+    nsearchives.nseindia.com/corporate/xbrl/<INDAS|BANKING|...>_*.xml, from
+    2013 to March 2025 (the December 2024 quarter), when that feed stopped.
+    Its `broadCastDate` is when the results were disseminated.
+  - From April 2025 (the March 2025 quarter), SEBI's Integrated Filing (Financials)
+    (integrated-filing-results, data/events_raw/integrated/), whose `xbrl`
+    links INTEGRATED_FILING_<INDAS|BANKING|NBFC|...>_*.xml in the same
+    taxonomy. Its `broadcast_Date` is seconds after the file was created and
+    a median of two hours after the results PDF was announced (October 2026),
+    so the figures are stamped no earlier than they were public. Revisions
+    carry no `broadcast_Date`: their `creation_Date` is used. A revision
+    leaves the original in the feed; both are stored, each under its own
+    time, so a reader takes the latest one published by the day it looks at.
+    The feed gives no ISIN: it comes from the prices table for the symbol on
+    the filing day. Some files type the ISIN wrong (a letter O for a zero,
+    swapped digits, the ISIN from before a split): when the file's own Symbol
+    is the feed's, the filing is kept under the prices ISIN. Insurers' files
+    (COM, LI, GI) use other line names, so most metrics are empty for them.
+
+Half-yearly files. At half-year ends some files have no quarter context,
+only one dated over the half (October to March, April to September), and
+the year. That context is not always what it says: in March 2025 most such
+main-board files (Coforge, CG Power, ...) put the March quarter's figures
+under an October start. So the March quarter is taken from such a file only
+when the year confirms it: the year less the three quarters already stored
+(published before the file) must match, within 1% of total income (or
+revenue, or interest earned), either
+  - the context less the December quarter: a true half-year, so the quarter
+    is the difference; only amounts that add up, EPS empty (the share count
+    can change within the half); `derived` names the December quarter, or
+  - the context itself: a quarter dated wrong, stored as the quarter it is,
+    EPS included; `derived` is "period".
+Otherwise nothing is stored. A September file has no year to check
+against, so its quarter is never derived. Derived rows have seq "D" plus
+the file's seq and its publication time.
 
 What is read, for the quarter only (not the year to date):
 
@@ -52,12 +84,13 @@ import events  # noqa: E402
 
 RAW = os.path.join(bhavcopy.ROOT, "data", "financials_raw")
 RESULTS_RAW = os.path.join(events.RAW, "results")
+INTEGRATED_RAW = os.path.join(events.RAW, "integrated")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS financials (
   seq TEXT PRIMARY KEY, symbol TEXT, isin TEXT, nature TEXT, audited TEXT, period_start TEXT, period_end TEXT,
   revenue TEXT, other_income TEXT, total_income TEXT, pbt TEXT, tax TEXT, net_profit TEXT, net_profit_owners TEXT,
   eps_basic TEXT, eps_diluted TEXT, interest_earned TEXT, interest_expended TEXT, operating_profit TEXT,
-  provisions TEXT, rounding TEXT, broadcast_at TEXT, xbrl TEXT);
+  provisions TEXT, rounding TEXT, broadcast_at TEXT, xbrl TEXT, derived TEXT);
 CREATE INDEX IF NOT EXISTS financials_isin ON financials (isin, period_end);
 """
 # our name -> the elements that carry it, first found wins (company Ind-AS first, then banks)
@@ -84,6 +117,11 @@ TEXT = {"Symbol": "symbol", "ISIN": "isin", "NatureOfReportStandaloneConsolidate
         "LevelOfRoundingUsedInFinancialStatements": "rounding",
         "DateOfStartOfReportingPeriod": "start", "DateOfEndOfReportingPeriod": "end"}
 QUARTERS = ("first quarter", "second quarter", "third quarter", "fourth quarter")
+# amounts that add up over a period, so a quarter is the half-year less the other quarter
+CHECK = ("total_income", "revenue", "interest_earned")  # the first present is checked against the year
+ADDITIVE = ("revenue", "other_income", "total_income", "pbt", "tax", "net_profit", "net_profit_owners",
+            "interest_earned", "interest_expended", "operating_profit", "provisions")
+NO_PERIOD = "no quarter or half-year context ending"  # cached errors from before half-years were kept say "no quarter context"
 
 
 def _local(tag):
@@ -107,9 +145,10 @@ def _amount(text):
 
 
 def parse(blob):
-    """A results XBRL file -> {"symbol", "isin", "nature", "audited", "rounding",
-    "period_start", "period_end", metric: str rupees, ...} for the quarter, or
-    raise ValueError when the file has no quarter it can be sure of."""
+    """A results XBRL file -> {"span", "symbol", "isin", "nature", "audited", "rounding",
+    "period_start", "period_end", metric: str rupees, ...} for the quarter, or,
+    when it has none, the half-year ending on the same day (span "half");
+    raise ValueError when the file has neither."""
     try:
         root = ET.fromstring(blob)
     except ET.ParseError as e:
@@ -153,15 +192,27 @@ def parse(blob):
         ends = [ref for ref, (start, end) in periods.items() if end == period_end and not start]
         if len(ends) == 1 and (texts.get("quarter") or "").strip().lower() in QUARTERS:
             quarter = [(len(facts[ends[0]]), ends[0], None)]
+    span = "quarter"
     if not quarter:
-        raise ValueError("no quarter context ending %s" % period_end)
+        quarter = [(len(facts[ref]), ref, start) for ref, (start, end) in periods.items()
+                   if end == period_end and start and 170 <= (end - start).days <= 190]
+        span = "half"
+        year = [(len(facts[ref]), ref) for ref, (start, end) in periods.items()
+                if end == period_end and start and 360 <= (end - start).days <= 370]
+    if not quarter:
+        raise ValueError("%s %s" % (NO_PERIOD, period_end))
     _, ref, start = max(quarter)
     f = facts[ref]
-    out = {"symbol": (texts.get("symbol") or "").upper() or None, "isin": (texts.get("isin") or "").upper() or None,
-           "nature": texts.get("nature"), "audited": texts.get("audited"), "rounding": texts.get("rounding"),
+    out = {"span": span, "symbol": (texts.get("symbol") or "").upper() or None,
+           "isin": (texts.get("isin") or "").upper() or None, "nature": texts.get("nature"),
+           "audited": texts.get("audited"), "rounding": texts.get("rounding"),
            "period_start": start.isoformat() if start else None, "period_end": period_end.isoformat()}
     for name, elements in METRICS.items():
         out[name] = next((_amount(f[e]) for e in elements if e in f and _amount(f[e]) is not None), None)
+    if span == "half":
+        y = facts[max(year)[1]] if year else None
+        out["year"] = {name: next((_amount(y[e]) for e in METRICS[name] if e in y and _amount(y[e]) is not None),
+                                  None) for name in ADDITIVE} if y else None
     return out
 
 
@@ -174,27 +225,46 @@ def xbrl_name(url):
     return name[:-4]
 
 
-def filings(results_raw=RESULTS_RAW, since=None, symbols=None):
-    """Results feed rows that link an XBRL file: [(seq, symbol, isin, broadcast_at, url)]."""
+def _feed_rows(folder):
+    if not os.path.isdir(folder):
+        return
+    for f in sorted(os.listdir(folder)):
+        with open(os.path.join(folder, f), encoding="utf-8") as fh:
+            yield from json.load(fh)
+
+
+def filings(results_raw=RESULTS_RAW, since=None, symbols=None, integrated_raw=INTEGRATED_RAW):
+    """Results and Integrated Filing rows that link an XBRL file:
+    [(seq, symbol, isin or None, broadcast_at, url)]. Integrated Filing seqs
+    are prefixed "I" so they never meet the results feed's numbers."""
     want = {s.upper() for s in symbols} if symbols else None
+    found = []
+    for r in _feed_rows(results_raw):
+        found.append((r.get("seqNumber"), r.get("symbol"), r.get("isin"), events.stamp(r.get("broadCastDate")),
+                      r.get("xbrl")))
+    for r in _feed_rows(integrated_raw):
+        if r.get("type") != "Integrated Filing- Financials":
+            continue
+        at = events.stamp(r.get("broadcast_Date")) or events.stamp(r.get("creation_Date"))
+        found.append(("I%s" % r["seq_Id"] if r.get("seq_Id") else None, r.get("symbol"), None, at, r.get("xbrl")))
     out = []
-    if not os.path.isdir(results_raw):
-        return out
-    for f in sorted(os.listdir(results_raw)):
-        with open(os.path.join(results_raw, f), encoding="utf-8") as fh:
-            rows = json.load(fh)
-        for r in rows:
-            url = str(r.get("xbrl") or "")
-            at = events.stamp(r.get("broadCastDate"))
-            sym = (r.get("symbol") or "").strip().upper()
-            if not url.startswith("https://") or not url.endswith(".xml") or not at or not r.get("seqNumber"):
-                continue
-            if want is not None and sym not in want:
-                continue
-            if since and at[:10] < since:
-                continue
-            out.append((str(r["seqNumber"]), sym, (r.get("isin") or "").upper() or None, at, url))
+    for seq, sym, isin, at, url in found:
+        url, sym = str(url or ""), (sym or "").strip().upper()
+        if not url.startswith("https://") or not url.endswith(".xml") or not at or not seq:
+            continue
+        if want is not None and sym not in want:
+            continue
+        if since and at[:10] < since:
+            continue
+        out.append((str(seq), sym, (isin or "").upper() or None, at, url))
     return out
+
+
+def _stale(path):
+    """A cached file without a quarter, read before half-years and their year were kept: read it again."""
+    with open(path, encoding="utf-8") as fh:
+        p = json.load(fh)
+    return str(p.get("error", "")).startswith("no quarter context") or (p.get("span") == "half" and "year" not in p)
 
 
 def fetch(rows, get=bhavcopy.http_get, raw=RAW, pause=0.6, log=print):
@@ -203,7 +273,7 @@ def fetch(rows, get=bhavcopy.http_get, raw=RAW, pause=0.6, log=print):
     n = 0
     for seq, sym, isin, at, url in rows:
         out = os.path.join(raw, xbrl_name(url) + ".json")
-        if os.path.exists(out):
+        if os.path.exists(out) and not _stale(out):
             continue
         try:
             blob = get(url)
@@ -235,8 +305,8 @@ def connect(path=bhavcopy.DEFAULT_DB):
 
 
 def rebuild(db, rows, raw=RAW, log=print):
-    """Every cached, parsed filing into the financials table, stamped with the
-    results feed's broadcast time. A filing whose ISIN is not the feed row's is
+    """Every cached, parsed filing into the financials table, stamped with its
+    feed's broadcast time. A filing whose ISIN is not the feed row's is
     refused rather than stored under the wrong company.
 
     NSE's results feed keeps a company's old ISIN for years after a split or
@@ -245,7 +315,9 @@ def rebuild(db, rows, raw=RAW, log=print):
     trading on the filing day is first replaced by the ISIN the symbol traded
     under that day, from the prices table; only then are the two compared."""
     db.executescript("DROP TABLE IF EXISTS financials;" + SCHEMA)
-    counts = {"stored": 0, "no_quarter": 0, "isin_mismatch": 0, "isin_updated": 0}
+    counts = {"stored": 0, "no_quarter": 0, "isin_mismatch": 0, "isin_updated": 0, "isin_typo": 0,
+              "half": 0, "derived": 0}
+    halves = []
     index = events.symbol_index(db)
     live = {}  # isin: (first, last) traded
     for spans in index.values():
@@ -253,8 +325,10 @@ def rebuild(db, rows, raw=RAW, log=print):
             lo, hi = live.get(i, (first, last))
             live[i] = (min(lo, first), max(hi, last))
     for seq, sym, isin, at, url in rows:
-        on, span = at[:10], live.get(isin)
-        if isin and (not span or not span[0] <= on <= span[1]):
+        on, span, integrated = at[:10], live.get(isin), not isin
+        if integrated:  # Integrated Filing rows name no ISIN
+            isin = events.isin_for(index, sym, on)
+        elif not span or not span[0] <= on <= span[1]:
             current = events.isin_for(index, sym, on)
             if current and current != isin:
                 isin = current
@@ -268,23 +342,79 @@ def rebuild(db, rows, raw=RAW, log=print):
             counts["no_quarter"] += 1
             continue
         if isin and p.get("isin") and p["isin"] != isin:
-            counts["isin_mismatch"] += 1
+            if not (integrated and p.get("symbol") == sym):  # a mistyped ISIN in the company's own file
+                counts["isin_mismatch"] += 1
+                continue
+            counts["isin_typo"] += 1
+        row = dict(p, seq=seq, symbol=sym, isin=isin or p.get("isin"), broadcast_at=at, xbrl=url, derived=None)
+        if p.get("span") == "half":
+            halves.append(row)
+            counts["half"] += 1
             continue
-        row = dict(p, seq=seq, symbol=sym, isin=isin or p.get("isin"), broadcast_at=at, xbrl=url)
-        db.execute("INSERT OR REPLACE INTO financials VALUES (:seq,:symbol,:isin,:nature,:audited,:period_start,"
-                   ":period_end,:revenue,:other_income,:total_income,:pbt,:tax,:net_profit,:net_profit_owners,"
-                   ":eps_basic,:eps_diluted,:interest_earned,:interest_expended,:operating_profit,:provisions,"
-                   ":rounding,:broadcast_at,:xbrl)", row)
+        _insert(db, row)
         counts["stored"] += 1
+    for row in halves:
+        d = _derive(db, row)
+        if d:
+            _insert(db, d)
+            counts["derived"] += 1
     db.commit()
     if log:
-        log("financials: %(stored)d quarters stored, %(no_quarter)d files without a clear quarter, "
-            "%(isin_mismatch)d refused for an ISIN mismatch (%(isin_updated)d stale feed ISINs updated first)" % counts)
+        log("financials: %(stored)d quarters stored, %(derived)d derived from %(half)d half-year files, "
+            "%(no_quarter)d files without a quarter or half-year, %(isin_mismatch)d refused for an ISIN mismatch "
+            "(%(isin_updated)d stale feed ISINs updated first, %(isin_typo)d mistyped file ISINs kept by symbol)" % counts)
     return counts
 
 
+def _insert(db, row):
+    db.execute("INSERT OR REPLACE INTO financials VALUES (:seq,:symbol,:isin,:nature,:audited,:period_start,"
+               ":period_end,:revenue,:other_income,:total_income,:pbt,:tax,:net_profit,:net_profit_owners,"
+               ":eps_basic,:eps_diluted,:interest_earned,:interest_expended,:operating_profit,:provisions,"
+               ":rounding,:broadcast_at,:xbrl,:derived)", row)
+
+
+def _derive(db, half):
+    """The quarter ending with a half-year file, checked against the year (module
+    docstring), or None."""
+    year = half.get("year")
+    if not half["isin"] or not half["period_start"] or not year:
+        return None
+    if db.execute("SELECT 1 FROM financials WHERE isin = ? AND nature IS ? AND period_end = ?",
+                  (half["isin"], half["nature"], half["period_end"])).fetchone():
+        return None
+    end = dt.date.fromisoformat(half["period_end"])
+    latest = {}  # period_end -> the latest version published before the file
+    for r in db.execute("SELECT seq, period_start, period_end, %s FROM financials WHERE isin = ? AND nature IS ? "
+                        "AND period_end > ? AND period_end < ? AND broadcast_at <= ? AND derived IS NULL "
+                        "ORDER BY broadcast_at" % ", ".join(ADDITIVE),
+                        (half["isin"], half["nature"], (end - dt.timedelta(days=360)).isoformat(),
+                         half["period_end"], half["broadcast_at"])):
+        latest[r[2]] = dict(zip(("seq", "period_start", "period_end") + ADDITIVE, r))
+    before = [latest[e] for e in sorted(latest)]
+    if len(before) != 3 or before[-1]["period_start"] != half["period_start"]:
+        return None
+    key = next((k for k in CHECK if all(x.get(k) is not None for x in [half, year] + before)), None)
+    if not key:
+        return None
+    rest = Decimal(year[key]) - sum(Decimal(q[key]) for q in before)
+    tolerance = abs(rest) / 100
+    last = before[-1]
+    start = (dt.date.fromisoformat(last["period_end"]) + dt.timedelta(days=1)).isoformat()
+    row = dict(half, seq="D" + half["seq"], period_start=start)
+    if abs(Decimal(half[key]) - Decimal(last[key]) - rest) <= tolerance:
+        row.update(eps_basic=None, eps_diluted=None, derived=last["seq"])
+        for name in ADDITIVE:
+            whole, earlier = half.get(name), last[name]
+            row[name] = (format((Decimal(whole) - Decimal(earlier)).normalize(), "f")
+                         if whole is not None and earlier is not None else None)
+        return row
+    if abs(Decimal(half[key]) - rest) <= tolerance:
+        return dict(row, derived="period")
+    return None
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Quarterly results from NSE's results XBRL into the store.")
+    ap = argparse.ArgumentParser(description="Quarterly results from NSE's results and Integrated Filing XBRL into the store.")
     ap.add_argument("--db", default=bhavcopy.DEFAULT_DB)
     sub = ap.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="download and read the XBRL of cached results filings (run events.py fetch first)")

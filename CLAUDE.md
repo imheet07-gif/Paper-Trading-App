@@ -44,11 +44,16 @@ broker-neutral holdings, trades and charges.
   include private individuals and stay in the local store only. Pledged
   quantities are not read yet (no sample with pledges seen).
 - `core/financials.py` quarterly results from the XBRL linked in NSE's
-  results feed (`financials` table: revenue, profit, EPS, and for banks
-  interest and provisions, for the quarter only, in rupees, keyed on the
-  feed's broadcast time; parsed files cached in `data/financials_raw/`).
-  The feed and its links stop in February 2025; where NSE serves the XBRL
-  for later results is still open.
+  results feed (2013 to March 2025) and, from April 2025 (the March 2025
+  quarter), in its Integrated Filing (Financials) feed (`financials` table:
+  revenue, profit, EPS, and for banks interest and provisions, for the
+  quarter only, in rupees, keyed on the feed's broadcast time; parsed files cached in
+  `data/financials_raw/`). A revision is stored beside its original under
+  its own time; readers take the latest published by their day. A March
+  file with no quarter context gives the quarter only when the year
+  confirms it (half-year less December, no EPS, or a quarter dated as the
+  half-year), flagged in `derived`. The scan's evening update fetches new
+  filings.
 - `core/deals.py` NSE bulk and block deals (`deals` table), collected by
   the scan's evening update. NSE publishes only the latest session, so a
   missed evening is lost; raw files cached in `data/deals_raw/`. Client

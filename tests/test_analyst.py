@@ -64,6 +64,18 @@ class Analyst(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_a_revised_filing_wins_over_the_original(self):
+        db = results.connect(self.db)
+        original = db.execute("SELECT * FROM financials WHERE seq = 'a4'").fetchone()
+        db.execute("DELETE FROM financials WHERE seq = 'a4'")
+        db.execute("INSERT INTO financials (seq, symbol, isin, nature, period_end, revenue, net_profit, broadcast_at) "
+                   "VALUES ('a4r', 'ALPHA', ?, 'Consolidated', ?, '1200000000', '1700000000', ?)",
+                   (ALPHA, ENDS[-1], ENDS[-1] + "T19:00:00"))
+        db.execute("INSERT INTO financials VALUES (%s)" % ",".join("?" * len(original)), original)  # stored after
+        db.commit()
+        qs, _ = results.quarters(db, ALPHA)
+        self.assertEqual((qs[0]["period_end"], qs[0]["net_profit"]), (ENDS[-1], Decimal("1700000000")))
+
     def test_quarters_growth_ttm_and_one_offs(self):
         c = results.company(results.connect(self.db), "ALPHA", 4)
         self.assertEqual(c["nature"], "Consolidated")

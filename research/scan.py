@@ -43,6 +43,7 @@ import bhavcopy  # noqa: E402
 import corporate_actions as ca  # noqa: E402
 import deals as deals_mod  # noqa: E402
 import events as events_mod  # noqa: E402
+import financials as financials_mod  # noqa: E402
 import instruments as instruments_mod  # noqa: E402
 import nse_calendar as cal  # noqa: E402
 import panel as panel_mod  # noqa: E402
@@ -158,6 +159,11 @@ def update(db_path=bhavcopy.DEFAULT_DB, today=None, log=print):
     edb = events_mod.connect(db_path)
     events_mod.rebuild(edb, log=log)
     edb.close()
+    # results XBRL filed since last month (revisions of older quarters included); parsed files stay cached
+    financials_mod.fetch(financials_mod.filings(since=last_month + "-01"), log=log)
+    fdb = financials_mod.connect(db_path)
+    financials_mod.rebuild(fdb, financials_mod.filings(), log=log)
+    fdb.close()
     # bulk and block deals: NSE keeps only the latest session, so a missed evening is lost
     deals_mod.fetch(log=log)
     ddb = deals_mod.connect(db_path)

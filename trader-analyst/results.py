@@ -35,7 +35,7 @@ CRORE = Decimal("10000000")
 ONE_OFF_SHARE = Decimal("0.25")  # other income above this share of profit before tax is pointed out
 COLUMNS = ("period_end", "nature", "audited", "revenue", "other_income", "total_income", "pbt", "tax", "net_profit",
            "net_profit_owners", "eps_basic", "eps_diluted", "interest_earned", "interest_expended",
-           "operating_profit", "provisions", "broadcast_at")
+           "operating_profit", "provisions", "broadcast_at", "derived")
 
 
 class AnalystError(Exception):
@@ -74,8 +74,9 @@ def _d(x):
 
 def quarters(db, isin, nature=None):
     """The company's quarters, newest first, all of one nature: consolidated when the newest
-    quarter has it (or when asked), else standalone."""
-    rows = [dict(zip(COLUMNS, r)) for r in _q(db, "SELECT %s FROM financials WHERE isin = ? ORDER BY period_end DESC"
+    quarter has it (or when asked), else standalone. A revised filing wins over the original."""
+    rows = [dict(zip(COLUMNS, r)) for r in _q(db, "SELECT %s FROM financials WHERE isin = ? "
+                                                "ORDER BY period_end DESC, broadcast_at DESC"
                                                 % ", ".join(COLUMNS), (isin,))]
     if not rows:
         return [], None
@@ -87,7 +88,7 @@ def quarters(db, isin, nature=None):
     for r in rows:
         if r["nature"] == nature and r["period_end"] not in seen:
             seen.add(r["period_end"])
-            out.append({k: (_d(v) if k not in ("period_end", "nature", "audited", "broadcast_at") else v)
+            out.append({k: (_d(v) if k not in ("period_end", "nature", "audited", "broadcast_at", "derived") else v)
                         for k, v in r.items()})
     return out, nature
 
@@ -145,6 +146,10 @@ def analyse(qs):
                          % (q["other_income"] / q["pbt"] * 100).quantize(Decimal("1")))
         if r["profit"] is not None and r["profit"] < 0:
             flags.append("a loss")
+        if q.get("derived") == "period":
+            flags.append("filed under a half-year date; the year's total shows it is this quarter")
+        elif q.get("derived"):
+            flags.append("derived: the company filed only the half-year, less the quarter before (no EPS)")
         r["flags"] = flags
         out.append(r)
     return out
