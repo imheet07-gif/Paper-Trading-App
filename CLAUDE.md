@@ -90,7 +90,9 @@ broker-neutral holdings, trades and charges.
   (`trader/paper.json`), `exits.py` stops, targets and sizing,
   `advise.py` the trade finder (only the top tenth of the tested ranking, hard filters,
   evidence cards), `profiles.py` its concentration and risk-level backtests
-  (dev and validation only). The scan runs only strategies in
+  (dev and validation only), `fundamentals.py` the F6 batch of 20
+  fundamentals signals (`f_*` in `signals.py`, point in time from the
+  `financials` table). The scan runs only strategies in
   `research/strategies.json` and selects with `backtest.select_top`, so it
   trades exactly what was validated; changing a strategy means validating
   the new version first. Never open the holdout without the user asking; every run is
