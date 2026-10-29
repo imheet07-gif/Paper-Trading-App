@@ -49,8 +49,10 @@ broker-neutral holdings, trades and charges.
   revenue, profit, EPS, and for banks interest and provisions, for the
   quarter only, in rupees, keyed on the feed's broadcast time; parsed files cached in
   `data/financials_raw/`). A revision is stored beside its original under
-  its own time; readers take the latest published by their day. The scan's
-  evening update fetches new filings.
+  its own time; readers take the latest published by their day. Where a
+  company filed only the half-year, the quarter is the half-year less the
+  quarter before, flagged in `derived` (no EPS). The scan's evening update
+  fetches new filings.
 - `core/deals.py` NSE bulk and block deals (`deals` table), collected by
   the scan's evening update. NSE publishes only the latest session, so a
   missed evening is lost; raw files cached in `data/deals_raw/`. Client

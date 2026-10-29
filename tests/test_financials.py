@@ -61,9 +61,12 @@ class Parse(unittest.TestCase):
                          ("20922522000", "12194900000", "6609121000", "1200000000"))
         self.assertEqual((p["net_profit"], p["eps_basic"]), ("4159121000", "4.2"))
 
-    def test_half_yearly_filer_has_no_quarter(self):
-        with self.assertRaisesRegex(ValueError, "no quarter"):  # SME: October to March, then the year
-            fi.parse(xml("INTEGRATED_NONINDAS_SWARAJ_2025-03_consolidated.xml"))
+    def test_half_yearly_filer_gives_the_half_year(self):
+        p = fi.parse(xml("INTEGRATED_NONINDAS_SWARAJ_2025-03_consolidated.xml"))  # October to March, then the year
+        self.assertEqual((p["span"], p["isin"], p["period_start"], p["period_end"]),
+                         ("half", "INE0GMR01016", "2024-10-01", "2025-03-31"))
+        self.assertEqual((p["revenue"], p["other_income"], p["net_profit"]), ("2550609000", "-5583000", "235751000"))
+        self.assertEqual(fi.parse(xml("INDAS_INFY_2022-06_standalone.xml"))["span"], "quarter")
 
     def test_no_clear_quarter_is_an_error(self):
         with self.assertRaises(ValueError):
@@ -190,12 +193,75 @@ class IntegratedFiling(unittest.TestCase):
                           dict(p, date="2026-10-27", isin="INE491A01021", symbol="CUB")])
         db.commit()
         counts = fi.rebuild(db, rows, raw=raw, log=None)
-        self.assertEqual((counts["stored"], counts["no_quarter"], counts["isin_mismatch"]), (3, 1, 0))
+        self.assertEqual((counts["stored"], counts["half"], counts["derived"], counts["no_quarter"],
+                          counts["isin_mismatch"]), (3, 1, 0, 0, 0))  # SWARAJ: no quarter to subtract
         got = db.execute("SELECT seq, isin, period_end, net_profit, broadcast_at FROM financials ORDER BY seq").fetchall()
         self.assertEqual(got, [("I205676", "INE491A01021", "2026-09-30", "4159121000", "2026-10-28T18:11:07"),
                                ("I205791", "INE0UOS01011", "2026-09-30", "766000000", "2026-10-28T19:17:28"),
                                ("I205833", "INE0UOS01011", "2026-09-30", "766000000", "2026-10-28T19:49:25")])
         db.close()
+
+
+class HalfYearsAndTypos(unittest.TestCase):
+    """rebuild on hand-made cached files: a quarter derived from a half-year, and mistyped file ISINs."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.raw = os.path.join(self.tmp.name, "raw")
+        os.makedirs(self.raw)
+        self.db = fi.connect(os.path.join(self.tmp.name, "m.db"))
+        bc = load("core", "bhavcopy")
+        p = {"date": "2024-12-02", "series": "EQ", "open": 1, "high": 1, "low": 1, "close": 1, "last": 1,
+             "prev_close": 1, "volume": 1, "value": 1, "trades": 1}
+        bc.store_day(self.db, [dict(p, isin="INE0GMR01016", symbol="SWARAJ"),
+                               dict(p, isin="INE903I01023", symbol="TYPO"),
+                               dict(p, isin="INE001A01011", symbol="NEWNAME")])
+        self.db.commit()
+        half = fi.parse(xml("INTEGRATED_NONINDAS_SWARAJ_2025-03_consolidated.xml"))
+        december = dict(half, span="quarter", audited="Unaudited", period_start="2024-10-01",
+                        period_end="2024-12-31", revenue="1000000000", other_income="1000000",
+                        total_income="1001000000", pbt="100000000", tax="25000000", net_profit="75000000",
+                        eps_basic="3.4", eps_diluted="3.4")
+        typo = dict(december, symbol="TYPO", isin="INE903I01010")  # digits swapped in the company's own file
+        renamed = dict(december, symbol="OLDNAME", isin="INE009Z01019")
+        self.rows = []
+        for seq, sym, at, name, p in (("I1", "SWARAJ", "2025-02-10T18:00:00", "Q3", december),
+                                      ("I2", "SWARAJ", "2025-05-30T19:44:41", "H2", half),
+                                      ("I3", "TYPO", "2025-02-11T18:00:00", "T", typo),
+                                      ("I4", "NEWNAME", "2025-02-11T18:00:00", "R", renamed)):
+            with open(os.path.join(self.raw, name + ".json"), "w") as fh:
+                json.dump(p, fh)
+            self.rows.append((seq, sym, None, at, "https://x/%s.xml" % name))
+
+    def tearDown(self):
+        self.db.close()
+        self.tmp.cleanup()
+
+    def test_quarter_derived_from_the_half_year(self):
+        counts = fi.rebuild(self.db, self.rows, raw=self.raw, log=None)
+        self.assertEqual((counts["stored"], counts["half"], counts["derived"]), (2, 1, 1))
+        got = self.db.execute("SELECT seq, period_start, period_end, revenue, other_income, net_profit, eps_basic, "
+                              "broadcast_at, derived FROM financials WHERE seq = 'DI2'").fetchone()
+        self.assertEqual(got, ("DI2", "2025-01-01", "2025-03-31", "1550609000", "-6583000", "160751000", None,
+                               "2025-05-30T19:44:41", "I1"))
+
+    def test_no_derivation_from_a_quarter_published_later(self):
+        late = [(s, sym, i, "2025-06-01T10:00:00" if s == "I1" else at, u) for s, sym, i, at, u in self.rows]
+        self.assertEqual(fi.rebuild(self.db, late, raw=self.raw, log=None)["derived"], 0)
+
+    def test_mistyped_isin_kept_by_symbol_and_a_different_symbol_refused(self):
+        counts = fi.rebuild(self.db, self.rows, raw=self.raw, log=None)
+        self.assertEqual((counts["isin_typo"], counts["isin_mismatch"]), (1, 1))
+        self.assertEqual(self.db.execute("SELECT isin FROM financials WHERE seq = 'I3'").fetchone(), ("INE903I01023",))
+        self.assertIsNone(self.db.execute("SELECT 1 FROM financials WHERE seq = 'I4'").fetchone())
+
+    def test_old_no_quarter_answers_are_read_again(self):
+        with open(os.path.join(self.raw, "H2.json"), "w") as fh:
+            json.dump({"error": "no quarter context ending 2025-03-31"}, fh)
+        got = fi.fetch([self.rows[1]], get=lambda url: xml("INTEGRATED_NONINDAS_SWARAJ_2025-03_consolidated.xml"),
+                       raw=self.raw, pause=0, log=None)
+        self.assertEqual(got, 1)
+        self.assertEqual(fi.fetch([self.rows[1]], get=None, raw=self.raw, pause=0, log=None), 0)
 
 
 if __name__ == "__main__":
