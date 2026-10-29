@@ -146,7 +146,9 @@ def analyse(qs):
                          % (q["other_income"] / q["pbt"] * 100).quantize(Decimal("1")))
         if r["profit"] is not None and r["profit"] < 0:
             flags.append("a loss")
-        if q.get("derived"):
+        if q.get("derived") == "period":
+            flags.append("filed under a half-year date; the year's total shows it is this quarter")
+        elif q.get("derived"):
             flags.append("derived: the company filed only the half-year, less the quarter before (no EPS)")
         r["flags"] = flags
         out.append(r)

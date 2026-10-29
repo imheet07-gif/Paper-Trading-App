@@ -66,6 +66,7 @@ class Parse(unittest.TestCase):
         self.assertEqual((p["span"], p["isin"], p["period_start"], p["period_end"]),
                          ("half", "INE0GMR01016", "2024-10-01", "2025-03-31"))
         self.assertEqual((p["revenue"], p["other_income"], p["net_profit"]), ("2550609000", "-5583000", "235751000"))
+        self.assertEqual((p["year"]["total_income"], p["year"]["net_profit"]), ("4183639000", "334789000"))
         self.assertEqual(fi.parse(xml("INDAS_INFY_2022-06_standalone.xml"))["span"], "quarter")
 
     def test_no_clear_quarter_is_an_error(self):
@@ -203,7 +204,9 @@ class IntegratedFiling(unittest.TestCase):
 
 
 class HalfYearsAndTypos(unittest.TestCase):
-    """rebuild on hand-made cached files: a quarter derived from a half-year, and mistyped file ISINs."""
+    """rebuild on hand-made cached files: the March quarter from a half-year file, checked against the
+    year, and mistyped file ISINs. SWARAJ's year has total income 4,183,639,000 and its October to March
+    context 2,545,026,000; the December quarter below has 1,001,000,000."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -224,8 +227,13 @@ class HalfYearsAndTypos(unittest.TestCase):
                         eps_basic="3.4", eps_diluted="3.4")
         typo = dict(december, symbol="TYPO", isin="INE903I01010")  # digits swapped in the company's own file
         renamed = dict(december, symbol="OLDNAME", isin="INE009Z01019")
+        # June and September sum to 1,638,613,000: the year less the three quarters is the context less December
+        june = dict(december, period_start="2024-04-01", period_end="2024-06-30", total_income="800000000")
+        september = dict(december, period_start="2024-07-01", period_end="2024-09-30", total_income="838613000")
         self.rows = []
-        for seq, sym, at, name, p in (("I1", "SWARAJ", "2025-02-10T18:00:00", "Q3", december),
+        for seq, sym, at, name, p in (("I5", "SWARAJ", "2024-08-10T18:00:00", "Q1", june),
+                                      ("I6", "SWARAJ", "2024-11-10T18:00:00", "Q2", september),
+                                      ("I1", "SWARAJ", "2025-02-10T18:00:00", "Q3", december),
                                       ("I2", "SWARAJ", "2025-05-30T19:44:41", "H2", half),
                                       ("I3", "TYPO", "2025-02-11T18:00:00", "T", typo),
                                       ("I4", "NEWNAME", "2025-02-11T18:00:00", "R", renamed)):
@@ -239,11 +247,27 @@ class HalfYearsAndTypos(unittest.TestCase):
 
     def test_quarter_derived_from_the_half_year(self):
         counts = fi.rebuild(self.db, self.rows, raw=self.raw, log=None)
-        self.assertEqual((counts["stored"], counts["half"], counts["derived"]), (2, 1, 1))
+        self.assertEqual((counts["stored"], counts["half"], counts["derived"]), (4, 1, 1))
         got = self.db.execute("SELECT seq, period_start, period_end, revenue, other_income, net_profit, eps_basic, "
                               "broadcast_at, derived FROM financials WHERE seq = 'DI2'").fetchone()
         self.assertEqual(got, ("DI2", "2025-01-01", "2025-03-31", "1550609000", "-6583000", "160751000", None,
                                "2025-05-30T19:44:41", "I1"))
+
+    def test_a_quarter_dated_as_the_half_year_is_kept_as_the_quarter(self):
+        with open(os.path.join(self.raw, "Q2.json")) as fh:
+            september = json.load(fh)
+        with open(os.path.join(self.raw, "Q2.json"), "w") as fh:  # June and September now sum to 637,613,000
+            json.dump(dict(september, total_income="-162387000"), fh)
+        self.assertEqual(fi.rebuild(self.db, self.rows, raw=self.raw, log=None)["derived"], 1)
+        got = self.db.execute("SELECT period_start, revenue, eps_basic, derived FROM financials WHERE seq = 'DI2'")
+        self.assertEqual(got.fetchone(), ("2025-01-01", "2550609000", "10.71", "period"))
+
+    def test_nothing_when_the_year_matches_neither(self):
+        with open(os.path.join(self.raw, "Q1.json")) as fh:
+            june = json.load(fh)
+        with open(os.path.join(self.raw, "Q1.json"), "w") as fh:
+            json.dump(dict(june, total_income="900000000"), fh)
+        self.assertEqual(fi.rebuild(self.db, self.rows, raw=self.raw, log=None)["derived"], 0)
 
     def test_no_derivation_from_a_quarter_published_later(self):
         late = [(s, sym, i, "2025-06-01T10:00:00" if s == "I1" else at, u) for s, sym, i, at, u in self.rows]
@@ -252,16 +276,18 @@ class HalfYearsAndTypos(unittest.TestCase):
     def test_mistyped_isin_kept_by_symbol_and_a_different_symbol_refused(self):
         counts = fi.rebuild(self.db, self.rows, raw=self.raw, log=None)
         self.assertEqual((counts["isin_typo"], counts["isin_mismatch"]), (1, 1))
+        self.assertEqual(counts["stored"], 4)
         self.assertEqual(self.db.execute("SELECT isin FROM financials WHERE seq = 'I3'").fetchone(), ("INE903I01023",))
         self.assertIsNone(self.db.execute("SELECT 1 FROM financials WHERE seq = 'I4'").fetchone())
 
     def test_old_no_quarter_answers_are_read_again(self):
         with open(os.path.join(self.raw, "H2.json"), "w") as fh:
             json.dump({"error": "no quarter context ending 2025-03-31"}, fh)
-        got = fi.fetch([self.rows[1]], get=lambda url: xml("INTEGRATED_NONINDAS_SWARAJ_2025-03_consolidated.xml"),
-                       raw=self.raw, pause=0, log=None)
-        self.assertEqual(got, 1)
-        self.assertEqual(fi.fetch([self.rows[1]], get=None, raw=self.raw, pause=0, log=None), 0)
+        with open(os.path.join(self.raw, "Q1.json"), "w") as fh:  # a half-year read before the year was kept
+            json.dump({"span": "half", "period_end": "2025-03-31"}, fh)
+        swaraj = lambda url: xml("INTEGRATED_NONINDAS_SWARAJ_2025-03_consolidated.xml")  # noqa: E731
+        self.assertEqual(fi.fetch(self.rows[:4], get=swaraj, raw=self.raw, pause=0, log=None), 2)
+        self.assertEqual(fi.fetch(self.rows[:4], get=None, raw=self.raw, pause=0, log=None), 0)
 
 
 if __name__ == "__main__":

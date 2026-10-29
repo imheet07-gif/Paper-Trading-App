@@ -24,15 +24,22 @@ Where the files are, both feeds cached month by month by core/events.py:
     is the feed's, the filing is kept under the prices ISIN. Insurers' files
     (COM, LI, GI) use other line names, so most metrics are empty for them.
 
-Half-yearly files. At half-year ends (March, September) some companies file
-the half-year and the year but no quarter. The half-year is kept, and the
-missing quarter is derived as the half-year less the half's first quarter,
-when that quarter was filed for the same company and nature and published
-before the half-year. Only the amounts that add up are derived; EPS is left
-empty (the share count can change within the half). A derived row has seq
-"D" plus the half-year's seq, `derived` naming the quarter subtracted, and
-the later of the two publication times. Companies that file only half-years
-(mostly SME) have no quarter to subtract and stay without one.
+Half-yearly files. At half-year ends some files have no quarter context,
+only one dated over the half (October to March, April to September), and
+the year. That context is not always what it says: in March 2025 most such
+main-board files (Coforge, CG Power, ...) put the March quarter's figures
+under an October start. So the March quarter is taken from such a file only
+when the year confirms it: the year less the three quarters already stored
+(published before the file) must match, within 1% of total income (or
+revenue, or interest earned), either
+  - the context less the December quarter: a true half-year, so the quarter
+    is the difference; only amounts that add up, EPS empty (the share count
+    can change within the half); `derived` names the December quarter, or
+  - the context itself: a quarter dated wrong, stored as the quarter it is,
+    EPS included; `derived` is "period".
+Otherwise nothing is stored. A September file has no year to check
+against, so its quarter is never derived. Derived rows have seq "D" plus
+the file's seq and its publication time.
 
 What is read, for the quarter only (not the year to date):
 
@@ -111,6 +118,7 @@ TEXT = {"Symbol": "symbol", "ISIN": "isin", "NatureOfReportStandaloneConsolidate
         "DateOfStartOfReportingPeriod": "start", "DateOfEndOfReportingPeriod": "end"}
 QUARTERS = ("first quarter", "second quarter", "third quarter", "fourth quarter")
 # amounts that add up over a period, so a quarter is the half-year less the other quarter
+CHECK = ("total_income", "revenue", "interest_earned")  # the first present is checked against the year
 ADDITIVE = ("revenue", "other_income", "total_income", "pbt", "tax", "net_profit", "net_profit_owners",
             "interest_earned", "interest_expended", "operating_profit", "provisions")
 NO_PERIOD = "no quarter or half-year context ending"  # cached errors from before half-years were kept say "no quarter context"
@@ -189,6 +197,8 @@ def parse(blob):
         quarter = [(len(facts[ref]), ref, start) for ref, (start, end) in periods.items()
                    if end == period_end and start and 170 <= (end - start).days <= 190]
         span = "half"
+        year = [(len(facts[ref]), ref) for ref, (start, end) in periods.items()
+                if end == period_end and start and 360 <= (end - start).days <= 370]
     if not quarter:
         raise ValueError("%s %s" % (NO_PERIOD, period_end))
     _, ref, start = max(quarter)
@@ -199,6 +209,10 @@ def parse(blob):
            "period_start": start.isoformat() if start else None, "period_end": period_end.isoformat()}
     for name, elements in METRICS.items():
         out[name] = next((_amount(f[e]) for e in elements if e in f and _amount(f[e]) is not None), None)
+    if span == "half":
+        y = facts[max(year)[1]] if year else None
+        out["year"] = {name: next((_amount(y[e]) for e in METRICS[name] if e in y and _amount(y[e]) is not None),
+                                  None) for name in ADDITIVE} if y else None
     return out
 
 
@@ -247,9 +261,10 @@ def filings(results_raw=RESULTS_RAW, since=None, symbols=None, integrated_raw=IN
 
 
 def _stale(path):
-    """A cached file without a quarter, read before half-years were kept: read it again."""
+    """A cached file without a quarter, read before half-years and their year were kept: read it again."""
     with open(path, encoding="utf-8") as fh:
-        return str(json.load(fh).get("error", "")).startswith("no quarter context")
+        p = json.load(fh)
+    return str(p.get("error", "")).startswith("no quarter context") or (p.get("span") == "half" and "year" not in p)
 
 
 def fetch(rows, get=bhavcopy.http_get, raw=RAW, pause=0.6, log=print):
@@ -359,30 +374,43 @@ def _insert(db, row):
 
 
 def _derive(db, half):
-    """The quarter ending with a half-year, as the half-year less the half's first
-    quarter, or None. Not derived when that quarter was filed itself, or when the
-    first quarter was not published before the half-year."""
-    if not half["isin"] or not half["period_start"]:
+    """The quarter ending with a half-year file, checked against the year (module
+    docstring), or None."""
+    year = half.get("year")
+    if not half["isin"] or not half["period_start"] or not year:
         return None
     if db.execute("SELECT 1 FROM financials WHERE isin = ? AND nature IS ? AND period_end = ?",
                   (half["isin"], half["nature"], half["period_end"])).fetchone():
         return None
-    first = db.execute("SELECT seq, period_end, %s FROM financials WHERE isin = ? AND nature IS ? "
-                       "AND period_start = ? AND broadcast_at <= ? AND derived IS NULL "
-                       "ORDER BY broadcast_at DESC LIMIT 1" % ", ".join(ADDITIVE),
-                       (half["isin"], half["nature"], half["period_start"], half["broadcast_at"])).fetchone()
-    if not first:
+    end = dt.date.fromisoformat(half["period_end"])
+    latest = {}  # period_end -> the latest version published before the file
+    for r in db.execute("SELECT seq, period_start, period_end, %s FROM financials WHERE isin = ? AND nature IS ? "
+                        "AND period_end > ? AND period_end < ? AND broadcast_at <= ? AND derived IS NULL "
+                        "ORDER BY broadcast_at" % ", ".join(ADDITIVE),
+                        (half["isin"], half["nature"], (end - dt.timedelta(days=360)).isoformat(),
+                         half["period_end"], half["broadcast_at"])):
+        latest[r[2]] = dict(zip(("seq", "period_start", "period_end") + ADDITIVE, r))
+    before = [latest[e] for e in sorted(latest)]
+    if len(before) != 3 or before[-1]["period_start"] != half["period_start"]:
         return None
-    end = dt.date.fromisoformat(first[1])
-    if not 80 <= (dt.date.fromisoformat(half["period_end"]) - end).days <= 100:
+    key = next((k for k in CHECK if all(x.get(k) is not None for x in [half, year] + before)), None)
+    if not key:
         return None
-    row = dict(half, seq="D" + half["seq"], period_start=(end + dt.timedelta(days=1)).isoformat(),
-               eps_basic=None, eps_diluted=None, derived=first[0])
-    for name, earlier in zip(ADDITIVE, first[2:]):
-        whole = half.get(name)
-        row[name] = (format((Decimal(whole) - Decimal(earlier)).normalize(), "f")
-                     if whole is not None and earlier is not None else None)
-    return row
+    rest = Decimal(year[key]) - sum(Decimal(q[key]) for q in before)
+    tolerance = abs(rest) / 100
+    last = before[-1]
+    start = (dt.date.fromisoformat(last["period_end"]) + dt.timedelta(days=1)).isoformat()
+    row = dict(half, seq="D" + half["seq"], period_start=start)
+    if abs(Decimal(half[key]) - Decimal(last[key]) - rest) <= tolerance:
+        row.update(eps_basic=None, eps_diluted=None, derived=last["seq"])
+        for name in ADDITIVE:
+            whole, earlier = half.get(name), last[name]
+            row[name] = (format((Decimal(whole) - Decimal(earlier)).normalize(), "f")
+                         if whole is not None and earlier is not None else None)
+        return row
+    if abs(Decimal(half[key]) - rest) <= tolerance:
+        return dict(row, derived="period")
+    return None
 
 
 def main(argv=None):
