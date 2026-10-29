@@ -66,6 +66,7 @@ named in ReportingQuarter as a quarter is taken as that quarter.
   python3 core/financials.py fetch --symbols TCS INFY
   python3 core/financials.py rebuild
   python3 core/financials.py show TCS
+  python3 core/financials.py coverage                          # F3: how often each widened line is filed
 """
 
 import argparse
@@ -90,7 +91,10 @@ CREATE TABLE IF NOT EXISTS financials (
   seq TEXT PRIMARY KEY, symbol TEXT, isin TEXT, nature TEXT, audited TEXT, period_start TEXT, period_end TEXT,
   revenue TEXT, other_income TEXT, total_income TEXT, pbt TEXT, tax TEXT, net_profit TEXT, net_profit_owners TEXT,
   eps_basic TEXT, eps_diluted TEXT, interest_earned TEXT, interest_expended TEXT, operating_profit TEXT,
-  provisions TEXT, rounding TEXT, broadcast_at TEXT, xbrl TEXT, derived TEXT);
+  provisions TEXT, rounding TEXT, broadcast_at TEXT, xbrl TEXT, derived TEXT,
+  cost_of_materials TEXT, purchases TEXT, inventory_change TEXT, employee_cost TEXT, finance_costs TEXT,
+  depreciation TEXT, other_expenses TEXT, expenses TEXT, exceptional TEXT, face_value TEXT, paid_up TEXT,
+  reserves TEXT);
 CREATE INDEX IF NOT EXISTS financials_isin ON financials (isin, period_end);
 """
 # our name -> the elements that carry it, first found wins (company Ind-AS first, then banks)
@@ -111,7 +115,29 @@ METRICS = {
     "interest_expended": ("InterestExpended",),
     "operating_profit": ("OperatingProfitBeforeProvisionAndContingencies",),
     "provisions": ("ProvisionsOtherThanTaxAndContingencies",),
+    # F3 (docs/PROPOSAL.md): the expense lines, exceptional items and the share capital, every quarter
+    "cost_of_materials": ("CostOfMaterialsConsumed",),
+    "purchases": ("PurchasesOfStockInTrade",),
+    "inventory_change": ("ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade",),
+    "employee_cost": ("EmployeeBenefitExpense",),
+    "finance_costs": ("FinanceCosts",),
+    "depreciation": ("DepreciationDepletionAndAmortisationExpense",),
+    "other_expenses": ("OtherExpenses",),
+    "expenses": ("Expenses",),
+    "exceptional": ("ExceptionalItemsBeforeTax",),
+    "face_value": ("FaceValueOfEquityShareCapital",),
+    "paid_up": ("PaidUpValueOfEquityShareCapital",),
 }
+# filed in the year's column of year-end files: net worth is paid-up capital plus these reserves
+YEAR_METRICS = {"reserves": ("ReserveExcludingRevaluationReserves",)}
+COLUMNS = ("seq", "symbol", "isin", "nature", "audited", "period_start", "period_end", "revenue", "other_income",
+           "total_income", "pbt", "tax", "net_profit", "net_profit_owners", "eps_basic", "eps_diluted",
+           "interest_earned", "interest_expended", "operating_profit", "provisions", "rounding", "broadcast_at",
+           "xbrl", "derived", "cost_of_materials", "purchases", "inventory_change", "employee_cost",
+           "finance_costs", "depreciation", "other_expenses", "expenses", "exceptional", "face_value", "paid_up",
+           "reserves")
+# version 2 (F3) keeps every plain figure of the quarter and the year, so a new line never needs a download again
+FACTS_VERSION = 2
 TEXT = {"Symbol": "symbol", "ISIN": "isin", "NatureOfReportStandaloneConsolidated": "nature",
         "WhetherResultsAreAuditedOrUnaudited": "audited", "ReportingQuarter": "quarter",
         "LevelOfRoundingUsedInFinancialStatements": "rounding",
@@ -120,7 +146,9 @@ QUARTERS = ("first quarter", "second quarter", "third quarter", "fourth quarter"
 # amounts that add up over a period, so a quarter is the half-year less the other quarter
 CHECK = ("total_income", "revenue", "interest_earned")  # the first present is checked against the year
 ADDITIVE = ("revenue", "other_income", "total_income", "pbt", "tax", "net_profit", "net_profit_owners",
-            "interest_earned", "interest_expended", "operating_profit", "provisions")
+            "interest_earned", "interest_expended", "operating_profit", "provisions", "cost_of_materials",
+            "purchases", "inventory_change", "employee_cost", "finance_costs", "depreciation", "other_expenses",
+            "expenses", "exceptional")
 NO_PERIOD = "no quarter or half-year context ending"  # cached errors from before half-years were kept say "no quarter context"
 
 
@@ -197,8 +225,8 @@ def parse(blob):
         quarter = [(len(facts[ref]), ref, start) for ref, (start, end) in periods.items()
                    if end == period_end and start and 170 <= (end - start).days <= 190]
         span = "half"
-        year = [(len(facts[ref]), ref) for ref, (start, end) in periods.items()
-                if end == period_end and start and 360 <= (end - start).days <= 370]
+    year = [(len(facts[ref]), ref) for ref, (start, end) in periods.items()
+            if end == period_end and start and 360 <= (end - start).days <= 370]
     if not quarter:
         raise ValueError("%s %s" % (NO_PERIOD, period_end))
     _, ref, start = max(quarter)
@@ -209,10 +237,16 @@ def parse(blob):
            "period_start": start.isoformat() if start else None, "period_end": period_end.isoformat()}
     for name, elements in METRICS.items():
         out[name] = next((_amount(f[e]) for e in elements if e in f and _amount(f[e]) is not None), None)
+    y = facts[max(year)[1]] if year else None
+    for name, elements in YEAR_METRICS.items():
+        out[name] = next((_amount(src[e]) for src in (y or {}, f) for e in elements
+                          if e in src and _amount(src[e]) is not None), None)
     if span == "half":
-        y = facts[max(year)[1]] if year else None
         out["year"] = {name: next((_amount(y[e]) for e in METRICS[name] if e in y and _amount(y[e]) is not None),
                                   None) for name in ADDITIVE} if y else None
+    numeric = lambda d: {k: _amount(v) for k, v in (d or {}).items() if _amount(v) is not None}
+    out["facts"] = {"quarter": numeric(f), "year": numeric(y) if y else None}
+    out["version"] = FACTS_VERSION
     return out
 
 
@@ -261,10 +295,13 @@ def filings(results_raw=RESULTS_RAW, since=None, symbols=None, integrated_raw=IN
 
 
 def _stale(path):
-    """A cached file without a quarter, read before half-years and their year were kept: read it again."""
+    """A cached file to read again: one without a quarter read before half-years and their year were kept,
+    or a quarter read before FACTS_VERSION (F3 widened the lines and keeps every figure)."""
     with open(path, encoding="utf-8") as fh:
         p = json.load(fh)
-    return str(p.get("error", "")).startswith("no quarter context") or (p.get("span") == "half" and "year" not in p)
+    if p.get("error"):
+        return str(p["error"]).startswith("no quarter context")
+    return (p.get("span") == "half" and "year" not in p) or p.get("version", 1) < FACTS_VERSION
 
 
 def fetch(rows, get=bhavcopy.http_get, raw=RAW, pause=0.6, log=print):
@@ -346,7 +383,8 @@ def rebuild(db, rows, raw=RAW, log=print):
                 counts["isin_mismatch"] += 1
                 continue
             counts["isin_typo"] += 1
-        row = dict(p, seq=seq, symbol=sym, isin=isin or p.get("isin"), broadcast_at=at, xbrl=url, derived=None)
+        row = dict({c: None for c in COLUMNS}, **{k: v for k, v in p.items() if k in COLUMNS or k in ("span", "year")})
+        row.update(seq=seq, symbol=sym, isin=isin or p.get("isin"), broadcast_at=at, xbrl=url, derived=None)
         if p.get("span") == "half":
             halves.append(row)
             counts["half"] += 1
@@ -367,10 +405,8 @@ def rebuild(db, rows, raw=RAW, log=print):
 
 
 def _insert(db, row):
-    db.execute("INSERT OR REPLACE INTO financials VALUES (:seq,:symbol,:isin,:nature,:audited,:period_start,"
-               ":period_end,:revenue,:other_income,:total_income,:pbt,:tax,:net_profit,:net_profit_owners,"
-               ":eps_basic,:eps_diluted,:interest_earned,:interest_expended,:operating_profit,:provisions,"
-               ":rounding,:broadcast_at,:xbrl,:derived)", row)
+    db.execute("INSERT OR REPLACE INTO financials (%s) VALUES (%s)" % (
+        ", ".join(COLUMNS), ", ".join(":" + c for c in COLUMNS)), {c: row.get(c) for c in COLUMNS})
 
 
 def _derive(db, half):
@@ -413,6 +449,25 @@ def _derive(db, half):
     return None
 
 
+F3_COLUMNS = ("finance_costs", "depreciation", "employee_cost", "other_expenses", "expenses", "exceptional",
+              "face_value", "paid_up", "reserves")
+
+
+def coverage(db):
+    """F3's open checks (docs/PROPOSAL.md): per year of the quarter's end, how many quarters are stored and the
+    share of them that carry each widened line; reserves counted on March quarters only (year-end files)."""
+    out = []
+    for year, n, march, *have in db.execute(
+            "SELECT substr(period_end, 1, 4), COUNT(*), SUM(substr(period_end, 6, 2) = '03'), %s FROM financials "
+            "GROUP BY 1 ORDER BY 1" % ", ".join(
+                "SUM(%s IS NOT NULL%s)" % (c, " AND substr(period_end, 6, 2) = '03'" if c == "reserves" else "")
+                for c in F3_COLUMNS)):
+        out.append({"year": year, "quarters": n, "march": march,
+                    **{c: (h / (march if c == "reserves" else n)) if (march if c == "reserves" else n) else None
+                       for c, h in zip(F3_COLUMNS, have)}})
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Quarterly results from NSE's results and Integrated Filing XBRL into the store.")
     ap.add_argument("--db", default=bhavcopy.DEFAULT_DB)
@@ -421,6 +476,7 @@ def main(argv=None):
     f.add_argument("--since", metavar="YYYY-MM-DD", help="only filings broadcast on or after this day")
     f.add_argument("--symbols", nargs="*", help="only these symbols")
     sub.add_parser("rebuild")
+    sub.add_parser("coverage", help="per year: the share of stored quarters carrying each F3 line")
     s = sub.add_parser("show")
     s.add_argument("symbol")
     a = ap.parse_args(argv)
@@ -430,6 +486,11 @@ def main(argv=None):
         rebuild(db, filings())
     elif a.cmd == "rebuild":
         rebuild(db, filings())
+    elif a.cmd == "coverage":
+        print("year  quarters  " + "  ".join("%-9s" % c[:9] for c in F3_COLUMNS) + "  (reserves: of March quarters)")
+        for r in coverage(db):
+            print("%s  %8d  " % (r["year"], r["quarters"]) + "  ".join(
+                "%8.0f%%" % (100 * r[c]) if r[c] is not None else "%9s" % "-" for c in F3_COLUMNS))
     else:
         for r in db.execute("SELECT period_end, nature, revenue, net_profit, eps_basic, broadcast_at FROM financials "
                             "WHERE symbol = ? ORDER BY period_end, nature", (a.symbol.upper(),)):

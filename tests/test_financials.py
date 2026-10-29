@@ -26,6 +26,34 @@ class Parse(unittest.TestCase):
         self.assertEqual(p["rounding"], "Crores")
         self.assertIsNone(p["interest_earned"])
 
+    def test_f3_lines_and_net_worth_from_the_year(self):
+        p = fi.parse(xml("INDAS_TCS_2020-03_consolidated.xml"))
+        self.assertEqual((p["employee_cost"], p["finance_costs"], p["depreciation"], p["other_expenses"], p["expenses"]),
+                         ("220510000000", "2510000000", "9510000000", "69190000000", "301720000000"))
+        self.assertEqual((p["exceptional"], p["face_value"], p["paid_up"]), ("0", "1", "3750000000"))
+        self.assertEqual(p["reserves"], "843740000000")  # the year's column: paid-up plus this is Rs 84,749 crore
+        self.assertEqual(p["facts"]["quarter"]["FinanceCosts"], "2510000000")
+        self.assertEqual(p["facts"]["year"]["FinanceCosts"], "9240000000")  # every figure kept, for later lines
+        self.assertEqual(p["version"], fi.FACTS_VERSION)
+        q = fi.parse(xml("INDAS_INFY_2022-06_standalone.xml"))
+        self.assertIsNone(q["reserves"])  # June: no year-end net worth
+        self.assertIsNotNone(q["finance_costs"])
+        self.assertIsNone(q["facts"]["year"])
+        b = fi.parse(xml("BANKING_HDFCBANK_2020-06_consolidated.xml"))
+        self.assertIsNone(b["finance_costs"])  # banks file interest expended instead
+
+    def test_quarters_cached_before_f3_are_read_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old, new, err = (os.path.join(tmp, n) for n in ("old.json", "new.json", "err.json"))
+            for path, doc in ((old, {"span": "quarter", "revenue": "1"}),
+                              (new, {"span": "quarter", "version": fi.FACTS_VERSION}),
+                              (err, {"error": "no DateOfEndOfReportingPeriod in the filing"})):
+                with open(path, "w") as fh:
+                    json.dump(doc, fh)
+            self.assertTrue(fi._stale(old))
+            self.assertFalse(fi._stale(new))
+            self.assertFalse(fi._stale(err))  # a file that can never be read is not asked for again
+
     def test_declared_contexts(self):
         p = fi.parse(xml("INDAS_INFY_2022-06_standalone.xml"))
         self.assertEqual((p["symbol"], p["nature"], p["period_start"], p["period_end"]),
@@ -143,6 +171,12 @@ class FetchAndStore(unittest.TestCase):
         self.assertEqual(got, [("TCS", "INE467B01029", "2020-03-31", "80930000000", "21.45", "2020-04-16T20:27:28"),
                                ("HDFCBANK", "INE040A01034", "2020-06-30", "69408800000", "12.6", "2020-07-19T20:40:08"),
                                ("INFY", "INE009A01021", "2022-06-30", "49010000000", "11.65", "2022-07-24T18:21:00")])
+        self.assertEqual(db.execute("SELECT finance_costs, paid_up, reserves FROM financials WHERE seq = '1'").fetchone(),
+                         ("2510000000", "3750000000", "843740000000"))
+        cov = {r["year"]: r for r in fi.coverage(db)}
+        self.assertEqual((cov["2020"]["quarters"], cov["2020"]["march"]), (2, 1))
+        self.assertEqual(cov["2020"]["reserves"], 1.0)  # of March quarters only
+        self.assertEqual(cov["2020"]["finance_costs"], 0.5)  # the bank files none
         db.close()
 
 
