@@ -620,6 +620,30 @@ Changes to the v2 settings above, made before any run of them:
 
 Everything else in v2 is unchanged.
 
+## 2026-10-29: the index fund for v2, chosen by the rule (before any v2 run)
+
+AMFI's list on 2026-10-28 had 23 schemes matching "nifty 50 index",
+direct plan, growth option. The 360 ONE ELSS Tax Saver Nifty 50 Index
+Fund was left out (a tax-saver fund with a three-year lock-in, not a
+plain index fund). The NAV history of the other 22 was fetched from
+2012-12-01 on the owner's machine.
+
+| scheme | fund | first NAV | NAVs to 2026-10-28 |
+| --- | --- | --- | --- |
+| 118581 | Franklin India NSE Nifty 50 Index Fund | 2013-01-01 | 3,403 |
+| 119063 | HDFC Nifty 50 Index Fund | 2013-01-01 | 3,403 |
+| 118482 | Bandhan Nifty 50 Index Fund | 2013-01-02 | 3,411 |
+| 119648 | Aditya Birla Sun Life Nifty 50 Index Fund | 2013-01-02 | 3,402 |
+| 120716 | UTI Nifty 50 Index Fund | 2013-01-02 | 3,402 |
+| 120307 | LIC MF Nifty 50 Index Fund | 2013-01-02 | 3,392 |
+| 118881 | Taurus Nifty 50 Index Fund | 2013-01-03 | 3,407 |
+| 15 others | | 2019-02-21 or later | |
+
+The rule: the earliest first NAV; on a tie, the most NAVs stored; then the
+lowest scheme code. Franklin and HDFC tie on the first NAV and on the
+count, so the fund is **118581, Franklin India NSE Nifty 50 Index Fund,
+Direct Plan, Growth**. No return figure was looked at to choose it.
+
 ## 2026-10-29: the after-tax check, settings fixed before any run (owner's agent)
 
 The trade finder leads with an index fund if the fund beats the tested
