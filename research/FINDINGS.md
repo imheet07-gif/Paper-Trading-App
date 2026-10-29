@@ -729,3 +729,63 @@ expense ratio was not read from a factsheet; surcharge is left out, and
 it would hit the strategy's yearly gains harder than the fund's single
 sale at high incomes. With Rs 50,000 instead of Rs 10 lakh the Rs 1 to
 1.25 lakh long-term limit would cover far more of the fund's gain.
+
+## 2026-10-29: risk levels v2 on dev (owner's machine)
+
+Settings as fixed above, the index part in fund 118581, stock dividends
+credited. Dev 2013 to 2020, Rs 1,00,000 start.
+
+| run | CAGR | Sharpe | worst drawdown | worst month | months losing | in stocks | in the fund | passes dev |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| equal-weight universe | 8.8% | 0.20 | -58.2% | | | | | |
+| the index fund alone | 12.0% | 0.37 | -37.6% | | | | | |
+| low v2 (20 stocks, 10%) | 15.5% | 0.57 | -29.5% | -17.9% | 37.5% | 37.9% | 51.5% | yes |
+| medium v2 (5 stocks, 20%) | 23.3% | 0.79 | -32.9% | -15.8% | 34.4% | 56.5% | 30.7% | yes |
+| high v2 (3 stocks, 30%) | 28.7% | 0.84 | -46.3% | -28.6% | 40.6% | 66.7% | 17.2% | yes |
+
+The volatility target set the stock share at 48% (low), 69% (medium)
+and 83% (high) on average. Low had three months with fewer than 20
+stocks (whole shares on a small amount). Unfilled limit buys stay common
+(279 in 95 months for low).
+
+Beside the first design's runs (no dividends there, so not like for
+like): medium v2 earned less than the plain top 5 (26.9%) with a
+slightly smaller worst drawdown (-32.9% against -35.9%); high v2 earned
+about what the top 3 did (27.3%) with a much smaller worst drawdown
+(-46.3% against -61.6%). Every v2 level beat the index fund on both CAGR
+and Sharpe.
+
+Next: one validation look for the three levels, settings unchanged.
+
+## 2026-10-29: risk levels v2 on validation, one look (owner's machine)
+
+Settings unchanged. Validation 2021 to 2023.
+
+| run | CAGR | Sharpe | worst drawdown | worst month | months losing | in stocks | in the fund | passes validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| equal-weight universe | 34.6% | 1.41 | -23.2% | | | | | |
+| the index fund alone | 16.9% | 0.70 | -16.4% | | | | | |
+| low v2 | 27.1% | 1.32 | -18.4% | -5.6% | 27.8% | 33.1% | 52.6% | no |
+| medium v2 | 29.7% | 1.14 | -19.6% | -7.0% | 41.7% | 47.6% | 34.0% | no |
+| high v2 | 33.8% | 1.11 | -26.5% | -10.9% | 44.4% | 59.5% | 18.4% | no |
+
+**Verdict under the fixed rule: no v2 level passes.** Each needed a CAGR
+above the equal-weight universe's 34.6% (and low a Sharpe above 1.41);
+all three fell short, high by 0.8 point. The trade finder keeps answering
+"no trade".
+
+What the numbers also show, not judged:
+
+- Every level beat the index fund in both periods, on CAGR and Sharpe:
+  on validation 27.1% to 33.8% against 16.9%, Sharpe 1.11 to 1.32
+  against 0.70.
+- Low kept its worst drawdown (-18.4%) close to the index fund's
+  (-16.4%) while earning 10 points a year more.
+- The bar the rule set is the equal-weight average of about 430 stocks,
+  rebalanced monthly at no cost. No fund holds it, and in 2021 to 2023
+  small and mid caps led it.
+
+Changing the bar now, for example to the index fund, would be choosing
+the rule after seeing the results. If the owner wants that, it is written
+here first as a new rule, and the only clean test of it is the holdout
+(2024 onward), opened once, when the owner asks.
