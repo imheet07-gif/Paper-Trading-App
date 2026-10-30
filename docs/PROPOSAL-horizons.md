@@ -136,6 +136,72 @@ exits, not as stops added to the monthly book.
 - **Alerts:** `trader-alerts` rings when a stock on the watchlist
   triggers a setup.
 
+### 4.5 Plain-English screener (owner approved 2026-10-30)
+
+The owner saw social posts of Claude driving TradingView with the mouse
+to screen, chart and backtest. The useful part is asking for a screen in
+plain words. That runs faster and more honestly on the local store than
+by clicking a website.
+
+- **What the owner types:** for example, "NSE stocks with RSI(14) below
+  30, above their 200-day average, volume at least twice the 50-day
+  average".
+- **What Claude does:** turns it into a fixed, readable rule from a
+  library of indicators computed from the stored daily bars. The library
+  covers:
+  - moving averages;
+  - RSI;
+  - ATR;
+  - 52-week high and low;
+  - volume and delivery ratios;
+  - gaps;
+  - the F6 fundamentals.
+- **What the owner sees first:** the rule as it will run, before it runs.
+- **How it runs:** over every eligible NSE stock as of the latest
+  stored session, in seconds, with no website involved.
+- **Output:**
+  - matching stocks;
+  - each one's chart (4.3) and card context;
+  - the label "screen, untested".
+- **Turning a screen into a strategy:** a screen the owner wants to trade
+  becomes a setup. It is pre-registered and tested like those in 4.4, and
+  until then it is never a pick.
+- **Where it lives:**
+  - the indicator library in a new `research/indicators.py`, shared with
+    the setups;
+  - `trader-screener` reading rules from it;
+  - optionally a Screen tab in the app.
+- **End-of-day only.** "RSI below 30 right now" during market hours needs
+  live quotes (Kite, read-only), which is a later step.
+
+### 4.6 Pine Script export, for viewing on TradingView (owner approved 2026-10-30)
+
+For each setup that passes testing, and for any saved screen, generate a
+matching TradingView Pine Script indicator. The owner can then see the
+same signals on TradingView's charts.
+
+- **One-way and for viewing only.** Nothing flows back from TradingView
+  into the project's tests.
+- **Built from the same rule text** as the project's own code, with a
+  header that names:
+  - the setup;
+  - its pre-registration date;
+  - its tested record;
+  - and that it is untested if it is.
+- **Known differences, listed in the header:**
+  - TradingView's data, adjustments and holiday handling can differ from
+    NSE's own files, so a signal can land a day apart or not at all;
+  - TradingView's Strategy Tester leaves out delisted stocks and Indian
+    charges unless set up for them. Its backtest numbers are not the
+    project's and are never logged as a test.
+- **No orders.** No alert or order hooks are generated. If the owner's
+  TradingView account is linked to a broker, an indicator from this
+  project must never trade through it (CLAUDE.md: nothing places an
+  order). No Claude computer use or browser control is run against a
+  broker-linked TradingView session.
+- **Where it lives:** a new `research/pine.py`, with tests comparing its
+  output against fixed samples.
+
 ### 4.4 Setups to test (each pre-registered on its own)
 
 **The rules for each setup:**
@@ -195,16 +261,23 @@ collected.
 | --- | --- | --- |
 | 1 | M3 peer table and the valuation-against-own-history view | new `research/` module, card or app tab |
 | 2 | Candlestick chart in the app | new static file, a line in `app/` |
+| 2a | Indicator library and the plain-English screener (4.5) | new `research/indicators.py`, `trader-screener/` |
 | 3 | M1 FII and DII flows | new `core/` module, a line in the scan's update |
 | 4 | Event backtester | new `research/` file |
 | 5 | Short-term setups, pre-registered and run on dev | `research/`, FINDINGS |
+| 5a | Pine Script export for setups that pass, and for saved screens (4.6) | new `research/pine.py` |
 | 6 | Long-term tests, pre-registered after F6's dev results | `research/`, FINDINGS |
 | 7 | M2 macro series | new `core/` module; hosts decided first |
 
-Steps 1 to 3 are cheap and useful on their own. Steps 4 and 5 are the
+Steps 1 to 3 and 2a are cheap and useful on their own. Steps 4 and 5 are the
 main build for the short-term book.
 
 ## 7. Decisions for the owner
+
+Made by the owner, 2026-10-30: add the plain-English screener (4.5) and
+the Pine Script export (4.6).
+
+Still open:
 
 1. Approve the three books and the order above, or change it.
 2. Approve the five short-term setups as the first batch, or add or
