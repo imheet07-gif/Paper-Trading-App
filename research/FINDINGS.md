@@ -861,3 +861,66 @@ look, with the same bar. Combinations with `momentum_quality`, and a
 quarterly-rebalance version, are later ideas with their own entries.
 Ownership metrics (shareholding history from 2021 only) stay card
 context, untested.
+
+## 2026-10-31: F6 on dev, and what the data allowed (owner's machine)
+
+Coverage first (`financials.py coverage`, after the F3 re-fetch): the
+results XBRL starts with the December 2017 quarter (17 quarters dated
+2017, 7,879 in 2018). There is nothing from 2013 to 2016: NSE's results
+feed has no XBRL link for those filings. The pre-registration assumed
+quarters from 2013. From 2018 every F3 line is filed in 97% to 100% of
+quarters, and reserves in 95% to 99% of March quarters (74% in 2018).
+
+So on dev (2013 to 2020) the signals could only score from 2018. The
+months with 50 or more scored stocks, which are the months the IC counts:
+
+| months | signals |
+| --- | --- |
+| 31 | `f_book_to_price`, `f_small_size` |
+| 22 | `f_operating_margin`, `f_net_margin`, `f_roe`, `f_interest_coverage`, `f_other_income_share`, `f_exceptional_share`, `f_earnings_yield`, `f_sales_to_price`, `f_quality`, `f_value` |
+| 19 | `f_revenue_growth_q`, `f_eps_growth_q`, `f_growth` |
+| 10 | `f_revenue_growth_ttm`, `f_eps_growth_ttm`, `f_profit_share_8q`, `f_margin_stability` |
+| 7 | `f_surprise` |
+
+Momentum's IC was measured on 95 months. The top-20 backtests spent 2013
+to 2017 in cash, so their CAGRs mix cash with 2018 to 2020 and say little.
+
+| signal | IC | t | IC > 0 | top-bottom a month | monotonic | top 20 Sharpe |
+| --- | --- | --- | --- | --- | --- | --- |
+| `f_revenue_growth_q` | 0.032 | 1.33 | 79% | +0.46% | 0.67 | -0.08 |
+| `f_revenue_growth_ttm` | -0.032 | -0.89 | 40% | -0.87% | -0.52 | 0.19 |
+| `f_eps_growth_q` | 0.030 | 1.21 | 63% | +1.64% | 0.38 | -0.04 |
+| `f_eps_growth_ttm` | -0.032 | -1.18 | 40% | -1.07% | -0.35 | 0.13 |
+| `f_surprise` | -0.043 | -1.10 | 29% | -0.66% | -0.38 | 0.74 |
+| `f_operating_margin` | 0.001 | 0.05 | 50% | +0.79% | 0.12 | 0.02 |
+| `f_net_margin` | -0.011 | -0.35 | 50% | -0.57% | -0.25 | -0.00 |
+| `f_roe` | 0.004 | 0.16 | 55% | +0.11% | 0.01 | 0.27 |
+| `f_interest_coverage` | 0.010 | 0.23 | 55% | +0.47% | 0.47 | 0.19 |
+| `f_profit_share_8q` | 0.011 | 0.25 | 50% | -0.51% | -0.38 | 0.24 |
+| `f_margin_stability` | 0.001 | 0.02 | 30% | -1.41% | -0.52 | 0.16 |
+| `f_other_income_share` | 0.007 | 0.25 | 59% | -0.24% | -0.20 | 0.13 |
+| `f_exceptional_share` | -0.001 | -0.07 | 41% | -0.48% | -0.38 | 0.11 |
+| `f_earnings_yield` | -0.017 | -0.81 | 36% | -0.26% | -0.47 | -0.13 |
+| `f_book_to_price` | -0.031 | -1.43 | 39% | -0.74% | -0.90 | -0.46 |
+| `f_sales_to_price` | -0.023 | -0.52 | 59% | -0.49% | -0.52 | -0.23 |
+| `f_small_size` | -0.047 | -1.35 | 35% | -1.45% | -0.14 | -0.62 |
+| `f_quality` | 0.011 | 0.30 | 50% | -0.12% | 0.07 | 0.25 |
+| `f_value` | -0.034 | -0.90 | 45% | -0.74% | -0.61 | -0.06 |
+| `f_growth` | 0.036 | 1.37 | 63% | +1.70% | 0.72 | 0.26 |
+
+The universe's Sharpe was 0.20.
+
+**Verdict under the fixed bar: no signal passes dev.** None reaches an IC
+t of 3. The nearest are `f_growth` (1.37, deciles 0.72),
+`f_revenue_growth_q` (1.33, 0.67) and `f_eps_growth_q` (1.21). Value and
+size pointed the wrong way: `f_book_to_price` had its deciles almost
+perfectly reversed (-0.90), and the smallest companies trailed. That is
+2018 to 2020, when India's small and cheap stocks fell hardest.
+
+**What this test could and could not show.** With 7 to 31 months, a t of 3
+needs a far stronger and steadier signal than momentum's: momentum's IC
+of 0.045, measured over 22 months with the same spread, would give a t
+near 1.2. So "no pass" here is mostly "too little data to tell", not "no
+edge". By the protocol, a signal that fails dev gets no validation look.
+Any further test of these signals is a new entry with its reasons, fixed
+before it runs.
