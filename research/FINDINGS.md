@@ -955,3 +955,89 @@ crore", "BE series"). Labelled untested, never sized, never in the pick
 list or order sheet. Built as a `jobs.py` task first, as every engine
 feature is. BE stays a hard filter everywhere: it is NSE's
 trade-for-trade surveillance series, not a choice of ours.
+
+
+## 2026-11-04: multibagger miss audit, step 1 results (owner's machine; owner's agent)
+
+Step 1 of the section above, run once as written: `research/misses.py`,
+dev only, settings unchanged. The store was loaded from 2012-01-01 to
+2020-12-31 and no later (the script refuses a panel with a later date); the
+holdout was not opened and nothing after 2020-12-31 was read. Month-ends
+2013-01 to 2018-12 (72), windows of 24 months, 3 times or more.
+Descriptive: it adopts nothing, ranks nothing for trading and is not a
+variant. Logged once in `runs.jsonl` with kind `audit`. Tested offline on a
+made-up panel first (`tests/test_misses.py`).
+
+Choices the section left open, fixed before the run and stated so they can
+be checked: "inside the window" means the 24 month-ends t to t + 23 (a pick
+at t + 24 earns nothing in the window). Forward prices are the adjusted
+close, carried at most 20 sessions; a stock silent for longer is treated as
+delisted and valued at its last close less the backtest's 50% haircut, so
+dead stocks count against their group. "Would rank in the top 20 if
+eligible" means a score at or above the 20th best score of the actual
+universe. Tripled and halved are measured at 24 months, as the multibagger
+test is. "Circuit lock or BE" is any session in the next 12 months with a
+single-price day after a move of 2% or more (the backtest's rule), or a
+stock that had a price but was not in the EQ series. A miss's "main"
+blocker is the filter that blocked it in most of its window's months.
+
+**Totals.** 821 multibaggers (2 more were listed apart for a failed
+corporate action check). Caught (in the top 20 at some month-end of its
+window): 104, 12.7%. Missed: 717. In the top tenth of the eligible ranking
+at some point (the trade finder's candidates): 168, 20.5%. The caught ones
+were first found a median 16 months into their 24-month window, and the
+strategy held them for a median 8.7% of the window's log return, so even
+the "caught" are mostly caught late.
+
+**Misses by blocking filter** (717 missed stocks; a stock can be blocked by
+several filters in different months):
+
+| Filter | Stocks blocked by it at least once | Stocks it blocked most | Blocked stock-months |
+|---|---|---|---|
+| traded value under Rs 2 crore | 574 | 424 | 9,282 |
+| price under Rs 20 | 271 | 138 | 3,102 |
+| not EQ (BE or BZ) | 390 | 77 | 2,620 |
+| ranked below the top 20 (passed every filter) | 179 | 66 | 1,895 |
+| history under 250 sessions | 48 | 12 | 307 |
+| no score | 2 | 0 | 2 |
+| failed corporate action check | 0 | 0 | 0 |
+
+Of 17,208 blocked stock-months, 54% were the value floor, 18% the price
+floor, 15% not EQ, 11% rank. Only 66 of the 717 misses were mostly blocked
+by rank alone, that is, were in the universe and simply not high enough.
+
+**By price at window start** (caught of multibaggers):
+under Rs 20 6 of 216 (2.8%); Rs 20 to 100 40 of 292 (13.7%); over Rs 100
+58 of 255 (22.7%); no price that day 0 of 58 (carried from an earlier
+session).
+
+**By median traded value at window start:**
+under Rs 50 lakh 36 of 537 (6.7%); Rs 50 lakh to 2 crore 30 of 86 (34.9%);
+over Rs 2 crore 27 of 76 (35.5%); not enough history for a median 11 of 122
+(9.0%). Top-tenth counts: 63, 44, 46 and 15.
+
+**Look-alikes** (blocked only by the Rs 2 crore value floor, at least
+Rs 50 lakh, score at or above the actual 20th; 723 stock-months, 10 a
+month), against the actual top 20 (1,440 stock-months) and the whole
+universe (28,456), pooled stock-months, before any costs:
+
+| | Look-alikes | Actual top 20 | Whole universe |
+|---|---|---|---|
+| next 1 month, mean / median | +3.5% / +1.0% | +2.4% / +1.2% | +0.7% / +0.1% |
+| next 12 months, mean / median | +22.5% / +7.0% | +17.4% / +5.5% | +8.2% / +0.8% |
+| tripled within 24 months | 7.5% | 6.1% | 2.4% |
+| halved within 24 months | 21.7% | 19.4% | 17.1% |
+| circuit lock or BE within 12 months | 14.0% | 15.1% | 5.4% |
+
+**Reading.** Most multibaggers were never reachable by this strategy:
+657 of 821 (80%) began below Rs 2 crore a day or below Rs 20 a share (the
+two floors together; 623 of them under the value floor alone), and the biggest single reason for a miss is the value floor,
+not the ranking. But the look-alikes are not a free lunch on this evidence:
+their mean returns are somewhat higher than the top 20's, their median
+12-month return is higher by 1.5 points, and they halved more often (21.7%
+against 19.4%); the differences rest on 723 overlapping stock-months, carry
+no costs or slippage, and Rs 50 lakh a day is thin to trade (1% of it is
+Rs 50,000 an order). Multibaggers are also chosen with hindsight, so a high
+miss count does not by itself say the filters are wrong. Nothing here picks
+or changes the Rs 50 lakh floor of step 2, which was fixed before the run
+and is tested on its own through the harness.
