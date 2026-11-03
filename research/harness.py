@@ -12,7 +12,10 @@ and Rs 10 lakh):
               liquidity limit, circuit locks, the top tenth as candidates
   after tax   the same run with each financial year's tax (core/tax.py) paid
               from the portfolio, and everything sold at the last close
-  capital     the minimum capital for the idea's picks (retail.min_capital)
+  capital     the minimum capital for the idea's own picks (retail.min_capital),
+              the maximum before the liquidity limit passes over too many of
+              them (retail.idea_maximum), and the share of its own picks each
+              level actually bought
   the bar     option B: IC t above 3, deciles monotonic above 0.5, Sharpe
               above the equal-weight universe's
 
@@ -246,6 +249,21 @@ def minimum_capital(p, scores, elig, idea, start, end, rules):
     return retail.idea_minimum(per, rules)
 
 
+def maximum_capital(p, scores, elig, idea, start, end, rules):
+    """The idea's maximum capital: every own pick on every decision session inside [start, end]
+    gives the capital above which the liquidity limit passes it over (retail.liquidity_threshold)."""
+    rebal, _ = rebalance_dates(p.dates, start, end, idea.hold)
+    days = int(rules["liquidity"]["value_days"])
+    med = p.value.rolling(days, min_periods=int(days * 0.8)).median()  # as profiles.simulate
+    out = []
+    for d in rebal:
+        i = p.dates.get_loc(d)
+        for s in backtest.select_top(scores, elig, i, idea.positions):
+            v = med.iat[i, med.columns.get_loc(s)]
+            out.append(retail.liquidity_threshold(None if np.isnan(v) else D("%.2f" % v), idea.positions, rules))
+    return retail.idea_maximum(out, rules)
+
+
 def bar(ic, m, bench, rules):
     """Option B (FINDINGS.md 2026-10-29) on one capital level: each test, then all three."""
     b = rules["bar"]
@@ -341,7 +359,8 @@ def run(p, idea, period, rules, walk=True, dividends=None):
     out = {"idea": idea.as_dict(), "period": period, "start": start, "end": end, "ic": ic,
            "bench": {k: bench.get(k) for k in ("cagr", "sharpe", "max_drawdown")},
            "fractional": {k: fractional.get(k) for k in ("cagr", "sharpe", "max_drawdown")},
-           "min_capital": minimum_capital(p, scores, elig, idea, start, end, rules), "levels": {}}
+           "min_capital": minimum_capital(p, scores, elig, idea, start, end, rules),
+           "max_capital": maximum_capital(p, scores, elig, idea, start, end, rules), "levels": {}}
     for lv in retail.capital_levels(rules):
         lv = float(lv)
         pre = simulate(p, scores, elig, idea, start, end, lv, rules, tax=False, dividends=dividends)
@@ -355,6 +374,8 @@ def run(p, idea, period, rules, walk=True, dividends=None):
             "cagr_sold": pre["cagr_sold"], "cagr_after_tax": post["cagr_after_tax"],
             "value_after_tax": post["value_after_tax"], "tax_paid": post["tax_paid"],
             "stats": {k: v for k, v in pre["stats"].items() if k not in ("exposure_avg", "index_avg")},
+            "own_picks_bought": pre["stats"]["own_picks"] / pre["stats"]["picks_wanted"]
+            if pre["stats"]["picks_wanted"] else None,
             "bar": bar(ic, m, bench, rules)}
     if walk and period in rules["walk_forward"]["periods"]:
         out["walk_forward"] = walk_forward(p, scores, elig, fwd, ref["bench"], idea, start, end, rules)
@@ -423,7 +444,7 @@ def log_entry(res, batch, note, rules):
         "sharpe": top["sharpe"], "cagr": top["cagr"], "max_drawdown": top["max_drawdown"],
         "bench_sharpe": res["bench"]["sharpe"], "bench_cagr": res["bench"]["cagr"],
         "ic_report": res["ic"], "levels": res["levels"], "fractional": res["fractional"],
-        "min_capital": res["min_capital"], "walk_forward": res.get("walk_forward"), "note": note})
+        "min_capital": res["min_capital"], "max_capital": res["max_capital"], "walk_forward": res.get("walk_forward"), "note": note})
 
 
 # ---------------------------------------------------------------- report
@@ -461,6 +482,7 @@ def report(res, batch_n, total_n, batch, dsr=None):
                    "  costs %s" % ("", _pct(x["cagr_sold"]), _pct(x["cagr_after_tax"]),
                                    inr(sum(x["tax_paid"].values()), 0), s["unfilled"], s["short_months"],
                                    s["rebalances"], inr(s["costs"], 0)))
+        out.append("  %12s bought %s of the idea's own picks" % ("", _pct(x.get("own_picks_bought"))))
         bb = x["bar"]
         out.append("  %12s bar: IC t>3 %s, monotonic>0.5 %s, Sharpe>universe %s: %s" % (
             "", "yes" if bb["ic_t"] else "no", "yes" if bb["monotonic"] else "no", "yes" if bb["sharpe"] else "no",
@@ -473,6 +495,20 @@ def report(res, batch_n, total_n, batch, dsr=None):
         if mc["fails"]:
             out.append("  %12s FLAG: fails at %s; never shown to a smaller account than %s" % (
                 "", ", ".join("Rs " + inr(x, 0, "") for x in mc["fails"]), inr(mc["minimum"], 0)))
+    xc = res.get("max_capital") or {}
+    if xc.get("picks"):
+        sk = ", ".join("Rs %s passes over %.0f%%" % (inr(float(k), 0, ""), v * 100) for k, v in xc["skipped_at"].items())
+        out.append("  capital   maximum %s (the liquidity limit passes over at most %s%% of %d own picks); %s" % (
+            "none reached" if xc["maximum"] is None else inr(xc["maximum"], 0), D(str(xc["share"])) * 100, xc["picks"], sk))
+        if xc["fails"]:
+            out.append("  %12s FLAG: above the maximum at %s: too many of its own picks are too small to trade there" % (
+                "", ", ".join("Rs " + inr(x, 0, "") for x in xc["fails"])))
+    for lv in res["min_capital"]["fails"]:
+        x = res["levels"].get(str(int(lv)))
+        if x:
+            out.append("  %12s at the flagged Rs %s, following the skip rule got CAGR %s (%s after gains tax), "
+                       "buying %s of its own picks" % ("", inr(float(lv), 0, ""), _pct(x["cagr"]),
+                                                       _pct(x["cagr_after_tax"]), _pct(x.get("own_picks_bought"))))
     wf = res.get("walk_forward")
     if wf and wf["windows"]:
         out.append("  walk-forward (train years 1..k, test year k+1; fresh capital each test year)")

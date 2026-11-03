@@ -8,6 +8,8 @@
                every position is at least one whole share and the fixed DP
                charge per scrip sold (core/charges.json) is at most a stated
                share of the position
+  max capital  the largest capital at which the liquidity limit passes over
+               at most a stated share of the idea's own picks
   inventory    what the market store holds that a retail account can buy:
                company shares, ETFs and fund units, Sovereign Gold Bonds, and
                every other series as stored, with counts and date ranges.
@@ -36,7 +38,7 @@ from money import D, inr  # noqa: E402
 RULES_PATH = os.path.join(HERE, "retail.json")
 DEFAULT_DB = os.path.join(ROOT, "data", "market.db")
 REQUIRED = ("capital_levels", "leverage", "short_selling", "liquidity", "circuits", "orders", "settlement",
-            "candidates", "cash", "charges", "tax", "min_capital", "walk_forward", "bar")
+            "candidates", "cash", "charges", "tax", "min_capital", "max_capital", "walk_forward", "bar")
 
 
 # ---------------------------------------------------------------- rules
@@ -62,6 +64,8 @@ def load(path=RULES_PATH):
     share = D(r["min_capital"]["max_fixed_charge_share"])
     if not 0 < share < 1:
         raise ValueError("max_fixed_charge_share must be between 0 and 1")
+    if not 0 <= D(r["max_capital"]["max_skipped_share"]) < 1:
+        raise ValueError("max_skipped_share must be at least 0 and below 1")
     return r
 
 
@@ -120,6 +124,31 @@ def idea_minimum(per_date, rules):
     covered = {str(lv): (sum(1 for v in vals if v <= lv) / len(vals) if vals else None) for lv in levels}
     return {"minimum": m, "median": quantile(vals, "0.5"), "max": max(vals) if vals else None, "dates": len(vals),
             "quantile": q, "covered": covered, "fails": [lv for lv in levels if m is None or m > lv]}
+
+
+def liquidity_threshold(median_value, positions, rules):
+    """The capital above which one pick is passed over for liquidity: with equal money per
+    position, capital / positions above max_share_of_median_value x its median traded value.
+    No median value (None) means it is always passed over (threshold 0)."""
+    if median_value is None:
+        return D(0)
+    return D(positions) * D(str(rules["liquidity"]["max_share_of_median_value"])) * D(median_value)
+
+
+def idea_maximum(thresholds, rules):
+    """An idea's maximum capital from every (decision date, own pick) threshold: the largest capital
+    at which at most max_skipped_share of them would be passed over (a pick is passed over when the
+    capital is above its threshold). Returns {"maximum", "picks", "skipped_at": {level: share},
+    "fails": [levels above the maximum]}."""
+    t = sorted(D(x) for x in thresholds)
+    levels = capital_levels(rules)
+    if not t:
+        return {"maximum": None, "picks": 0, "skipped_at": {}, "fails": []}
+    allowed = int(D(rules["max_capital"]["max_skipped_share"]) * len(t))  # whole picks, rounded down
+    maximum = t[allowed] if allowed < len(t) else None  # None: no capital skips too many
+    skipped = {str(lv): sum(1 for x in t if x < lv) / len(t) for lv in levels}
+    return {"maximum": maximum, "picks": len(t), "share": rules["max_capital"]["max_skipped_share"],
+            "skipped_at": skipped, "fails": [lv for lv in levels if maximum is not None and lv > maximum]}
 
 
 # ---------------------------------------------------------------- inventory

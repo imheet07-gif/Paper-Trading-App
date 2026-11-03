@@ -1,6 +1,6 @@
 {
   "_about": "The retail limits every idea is tested under (HANDOVER.md, Direction 2026-11-03, Phase 1). Each value has a source: the owner's direction, a setting already fixed in research/FINDINGS.md or the code that uses it, or a reason written here before any run. Published rates (charges, tax) are not copied here: they stay in core/charges.json and core/tax_rates.json and are read from there. research/retail.py loads this file and refuses one whose values drift from the code that enforces them. A change is a new version: record it in FINDINGS.md first.",
-  "version": 1,
+  "version": 2,
   "capital_levels": {
     "value": [20000, 1000000],
     "source": "HANDOVER.md Direction 2026-11-03: every idea is tested at Rs 20,000 and Rs 10 lakh; one that fails at the low end is flagged with its minimum and never shown to a smaller account"
@@ -60,6 +60,10 @@
     "max_fixed_charge_share": 0.005,
     "coverage_quantile": 0.9,
     "source": "set in Phase 1 before any run, never tuned on results; owner to confirm. A position must be at least one whole share and large enough that the fixed DP charge (core/charges.json, per scrip sold) is at most 0.5% of it: Rs 15.34 / 0.005 = Rs 3,068 a position at today's rate. An idea's minimum is the capital that meets this for every pick on 90% of its rebalance dates; one whose minimum is above Rs 20,000 is flagged with it"
+  },
+  "max_capital": {
+    "max_skipped_share": 0.10,
+    "source": "owner 2026-11-04 (FINDINGS.md, retail rules version 2), before any run: with equal money per position a pick is passed over when capital / positions is above the liquidity limit (1% of its median traded value); an idea's maximum is the largest capital at which at most 10% of its own picks, over all its decision dates, would be passed over. A capital level above it is flagged"
   },
   "walk_forward": {
     "first_train_years": 3,

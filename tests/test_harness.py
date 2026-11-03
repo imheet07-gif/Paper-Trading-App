@@ -109,6 +109,18 @@ class Harness(unittest.TestCase):
         self.assertIn(retail.capital_levels(self.rules)[0], mc["fails"])
         self.assertNotIn(retail.capital_levels(self.rules)[1], mc["fails"])
 
+    def test_maximum_capital_and_the_share_of_own_picks_bought(self):
+        xc = self.res["max_capital"]
+        self.assertEqual(xc["picks"], 5 * 25)  # five own picks on each of 25 decision dates
+        self.assertGreater(xc["maximum"], 1000000)  # every made-up stock trades about Rs 1 crore or more a day
+        self.assertEqual(xc["fails"], [])
+        for lv in self.res["levels"].values():
+            self.assertTrue(0 <= lv["own_picks_bought"] <= 1)
+        self.assertLess(self.res["levels"]["20000"]["own_picks_bought"], 1)  # Rs 4,000 a slot misses the dear ones
+        text = harness.report(self.res, 1, 1, "B")
+        self.assertIn("capital   maximum", text)
+        self.assertIn("at the flagged Rs 20,000, following the skip rule got CAGR", text)
+
     def test_rebalance_dates(self):
         d = self.p.dates
         rebal, first = harness.rebalance_dates(d, "2013-01-01", "2013-12-31", "monthly")

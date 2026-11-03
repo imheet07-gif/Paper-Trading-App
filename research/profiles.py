@@ -169,7 +169,7 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
     IX = np.asarray(index, dtype=float) if index is not None else None
     DV = np.asarray(dividends, dtype=float) if dividends is not None else None
     stats = {"rebalances": 0, "short_months": 0, "unfilled": 0, "blocked_sells": 0, "stops": 0, "targets": 0,
-             "delist_exits": 0, "costs": 0.0, "dividends": 0.0}
+             "delist_exits": 0, "costs": 0.0, "dividends": 0.0, "own_picks": 0, "picks_wanted": 0}
 
     def sell(s, q, px, why):
         nonlocal cash
@@ -314,6 +314,9 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
                     idx_share, idx_day = 1.0 - w, i + 1
             picks = choose(p, scores, elig, i, amount, stocks, risk, arrays, broker, candidate_share)
             stats["rebalances"] += 1
+            want = set(backtest.select_top(scores, elig, i, stocks))  # the idea's own picks, before any filter
+            stats["picks_wanted"] += len(want)
+            stats["own_picks"] += len(want & {x[0] for x in picks})
             if len(picks) < stocks:
                 stats["short_months"] += 1
             pending = {}

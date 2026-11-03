@@ -97,7 +97,7 @@ broker-neutral holdings, trades and charges.
   tested under (capital levels Rs 20,000 and Rs 10 lakh, no leverage or
   shorts, 1% liquidity, circuits, T+1, charges and tax read from `core/`),
   each value with its source; `retail.py` (standard library) loads them,
-  checks an idea's minimum capital and lists what the store holds
+  checks an idea's minimum and maximum capital and lists what the store holds
   (`inventory`, read-only); `harness.py` tests any score frame with its
   holding period and positions at both capital levels (IC and deciles,
   `profiles.simulate` with whole shares and limit buys, after-tax through

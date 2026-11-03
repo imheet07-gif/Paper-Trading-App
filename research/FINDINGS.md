@@ -928,3 +928,42 @@ universe's 6.5%; top 20 beat the universe in 4 of 5 test years.
 Sharpe pass. `momentum_quality` stays the benchmark under the rule it was
 validated by (t above 2); the higher bar applies to new batches from Phase 3.
 No setting was changed after these runs.
+
+## 2026-11-04: retail rules version 2, a maximum capital (owner chose 10%; settings fixed before any run)
+
+The owner kept the minimum-capital rule of version 1 as it is: the DP
+charge at most 0.5% of a position, 90% of decision dates covered, and the
+minimum measured on the idea's own picks. Two additions, fixed now, before
+any run:
+
+- **Maximum capital.** The liquidity limit (an order at most 1% of the
+  stock's 60-session median traded value) caps how much money an idea
+  can take. With equal money per position, a pick is passed over when
+  capital / positions is above 1% of its median traded value. An idea's
+  maximum is the largest capital at which at most **10%** of its own picks,
+  counted over all its decision dates, would be passed over for liquidity
+  (owner, 2026-11-04). A capital level above it is flagged. Rupees at the
+  time of each decision, not adjusted for growth.
+- **The small account's own result beside the flag.** Each capital level
+  reports the share of the idea's own picks its simulation actually bought,
+  so a flagged level still shows what following the skip rule got, and
+  how far it strayed from the tested ranking.
+
+`research/retail.json` becomes version 2 with `max_capital.max_skipped_share`
+0.10. Nothing else changes.
+
+**Maximum capital of momentum_quality on dev, under version 2.** Selection
+only, on the same decision dates as the 2026-11-04 check (no returns
+computed, so no new trial):
+
+| run | maximum capital | own picks passed over at Rs 20,000 / Rs 10 lakh | flagged |
+| --- | --- | --- | --- |
+| top 20 | Rs 55.1 lakh | 0% / 0% | no |
+| top 5 | Rs 13.2 lakh | 0% / 0% | no |
+| top 3 | Rs 7.3 lakh | 0% / 22.6% | at Rs 10 lakh |
+
+The maximum is counted at a fixed capital. A compounding account crosses
+it: the top 5 run started at Rs 10 lakh, grew past Rs 13.2 lakh within a
+few years, and so passed over 20% of its own picks over the whole run (the
+selection count above). The engine sizes to the capital typed on the day,
+so the check applies to that day's amount.

@@ -53,6 +53,8 @@ class Rules(unittest.TestCase):
         self.bad(lambda r: r["liquidity"].update(source=""))
         self.bad(lambda r: r.pop("tax"))
         self.bad(lambda r: r["min_capital"].update(max_fixed_charge_share=0))
+        self.bad(lambda r: r["max_capital"].update(max_skipped_share=1))
+        self.bad(lambda r: r.pop("max_capital"))
 
 
 class MinCapital(unittest.TestCase):
@@ -84,6 +86,22 @@ class MinCapital(unittest.TestCase):
         self.assertEqual(m["minimum"], Decimal(25000))
         self.assertEqual(m["fails"], [Decimal(20000)])
         self.assertEqual(m["dates"], 10)
+
+    def test_maximum_capital_from_the_liquidity_limit(self):
+        self.assertEqual(self.r["max_capital"]["max_skipped_share"], 0.10)
+        # 20 positions, 1% of a Rs 2 crore median: above Rs 40 lakh the pick is passed over
+        self.assertEqual(retail.liquidity_threshold(Decimal(20000000), 20, self.r), Decimal(4000000))
+        self.assertEqual(retail.liquidity_threshold(None, 20, self.r), Decimal(0))
+        t = [Decimal(x) for x in (500000, 2000000, 3000000, 4000000, 5000000, 6000000, 7000000, 8000000, 9000000,
+                                  10000000)]
+        m = retail.idea_maximum(t, self.r)
+        self.assertEqual(m["maximum"], Decimal(2000000))  # one of ten (10%) passed over at Rs 20 lakh, two above it
+        self.assertEqual(m["skipped_at"], {"20000": 0.0, "1000000": 0.1})
+        self.assertEqual(m["fails"], [])
+        m = retail.idea_maximum([Decimal(800000)] * 2 + t[2:], self.r)
+        self.assertEqual(m["maximum"], Decimal(800000))
+        self.assertEqual(m["fails"], [Decimal(1000000)])
+        self.assertIsNone(retail.idea_maximum([], self.r)["maximum"])
 
     def test_quantile_is_nearest_rank(self):
         self.assertEqual(retail.quantile([5, 1, 3, 2, 4], "0.5"), 3)
