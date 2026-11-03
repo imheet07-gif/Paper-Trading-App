@@ -188,6 +188,12 @@ results, trading windows and pledge changes are shown as risk warnings.
 - Phone access to the app stays off (it answers on 127.0.0.1 only) until
   the owner chooses a safe way (a password on the home network, or a
   private network tool).
+- **No Claude at run time (owner, 2026-11-03), to save the owner's Claude
+  usage.** News runs on stored filings and keyword rules; any AI reading of
+  news uses a local model on the Mac or is skipped, never the Claude API.
+  Claude sessions are for building only: short briefs, fresh sessions
+  that start from this file and FINDINGS.md, a lighter model for routine
+  work.
 
 **Known limits to say plainly:** many ideas tested means many lucky
 passes, hence the attempt count and the higher bar; the results XBRL
