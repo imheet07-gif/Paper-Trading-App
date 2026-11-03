@@ -1,0 +1,76 @@
+{
+  "_about": "The retail limits every idea is tested under (HANDOVER.md, Direction 2026-11-03, Phase 1). Each value has a source: the owner's direction, a setting already fixed in research/FINDINGS.md or the code that uses it, or a reason written here before any run. Published rates (charges, tax) are not copied here: they stay in core/charges.json and core/tax_rates.json and are read from there. research/retail.py loads this file and refuses one whose values drift from the code that enforces them. A change is a new version: record it in FINDINGS.md first.",
+  "version": 1,
+  "capital_levels": {
+    "value": [20000, 1000000],
+    "source": "HANDOVER.md Direction 2026-11-03: every idea is tested at Rs 20,000 and Rs 10 lakh; one that fails at the low end is flagged with its minimum and never shown to a smaller account"
+  },
+  "leverage": {
+    "value": false,
+    "source": "HANDOVER.md Direction 2026-11-03: no leverage, no idea needing large margin. research/profiles.py never buys more than the cash it has"
+  },
+  "short_selling": {
+    "value": false,
+    "source": "HANDOVER.md Direction 2026-11-03: no short selling. The simulator only buys and sells what it holds"
+  },
+  "liquidity": {
+    "max_share_of_median_value": 0.01,
+    "value_days": 60,
+    "source": "the 1% of the 60-session median traded value already used by research/advise.py (MAX_SHARE_OF_VALUE) and research/profiles.py (MAX_SHARE_OF_VALUE, VALUE_DAYS); fixed in FINDINGS.md 2026-10-28"
+  },
+  "circuits": {
+    "locked_move": 0.02,
+    "rule": "a session with high equal to low after a close-to-close move of at least 2% is locked: no buy at an upper lock, a sell is blocked at a lower lock and tried again the next session",
+    "source": "backtest.locked as research/backtest.py and research/profiles.py use it (FINDINGS.md 2026-10-28). NSE's daily price band file is not stored, so bands are inferred from locked sessions only (HANDOVER.md gaps table)"
+  },
+  "orders": {
+    "limit_band": 0.01,
+    "slippage_bps": 15,
+    "source": "a buy limit at the decision close plus 1%, filled at the next open plus 15 bps and never above the limit, not filled above it; sells at the open less 15 bps (research/profiles.py LIMIT_BAND, SLIPPAGE_BPS; FINDINGS.md 2026-10-28)"
+  },
+  "settlement": {
+    "value": "T+1",
+    "modelled_as": "decisions after the close from end-of-day data, orders entered by hand for the next session's open; sells fill before buys at that open and their proceeds fund the buys",
+    "source": "HANDOVER.md Direction 2026-11-03 (T+1, the owner enters orders the next morning). Same-day use of sale proceeds is the broker's rule and is not yet in data with a source line (HANDOVER.md gaps table): the simulator assumes it, as research/profiles.py always has"
+  },
+  "candidates": {
+    "share_of_ranking": 0.10,
+    "source": "the top tenth of the idea's ranking, rounded up, never further down; the first positions that pass every filter are bought, the rest stays in cash (FINDINGS.md 2026-10-28, research/profiles.py CANDIDATE_SHARE)"
+  },
+  "cash": {
+    "yield": 0.06,
+    "delist_after_sessions": 20,
+    "delist_haircut": 0.5,
+    "source": "uninvested cash at 6% a year; a holding without a price for 20 sessions is sold at half its last price (FINDINGS.md common setup, research/profiles.py CASH_YIELD, DELIST_AFTER, DELIST_HAIRCUT)"
+  },
+  "charges": {
+    "file": "core/charges.json",
+    "broker": "zerodha",
+    "product": "delivery",
+    "exchange": "NSE",
+    "source": "every rate, the Rs 15.34 DP charge per scrip sold included, is read from core/charges.json through core/charges.py; nothing is copied here"
+  },
+  "tax": {
+    "module": "core/tax.py",
+    "rates": "core/tax_rates.json",
+    "dividend_slab_pct": 0,
+    "source": "core/tax.py on the simulation's own fills, each financial year's tax paid from the portfolio at the year's last session, everything sold at the window's last close and that year's tax paid, as research/aftertax.py does. The holder's slab rate is never stored, so dividends are credited untaxed and results read 'after gains tax' (the same convention as aftertax.py's run log). Surcharge is left out (core/tax_rates.json)"
+  },
+  "min_capital": {
+    "max_fixed_charge_share": 0.005,
+    "coverage_quantile": 0.9,
+    "source": "set in Phase 1 before any run, never tuned on results; owner to confirm. A position must be at least one whole share and large enough that the fixed DP charge (core/charges.json, per scrip sold) is at most 0.5% of it: Rs 15.34 / 0.005 = Rs 3,068 a position at today's rate. An idea's minimum is the capital that meets this for every pick on 90% of its rebalance dates; one whose minimum is above Rs 20,000 is flagged with it"
+  },
+  "walk_forward": {
+    "first_train_years": 3,
+    "test_years": 1,
+    "periods": ["dev"],
+    "source": "train on dev years 1..k, test on year k+1, roll forward a year at a time (HANDOVER.md Direction 2026-11-03, Phase 2). Three training years is the shortest that gives an IC t-statistic over 36 months. Dev only: validation is a later one-time look, the holdout is never touched"
+  },
+  "bar": {
+    "ic_t_above": 3.0,
+    "monotonic_above": 0.5,
+    "sharpe_above": "the equal-weight universe",
+    "source": "option B, owner 2026-10-29 (FINDINGS.md fundamentals batch F6): IC t above 3, deciles monotonic above 0.5, the top positions' Sharpe above the equal-weight universe's"
+  }
+}
