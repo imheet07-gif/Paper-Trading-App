@@ -861,3 +861,97 @@ look, with the same bar. Combinations with `momentum_quality`, and a
 quarterly-rebalance version, are later ideas with their own entries.
 Ownership metrics (shareholding history from 2021 only) stay card
 context, untested.
+
+## 2026-11-04: multibagger misses, settings fixed before any run (owner agreed; owner's agent)
+
+**Why.** The owner does not want to miss multibaggers such as APOLLO
+(Apollo Micro Systems, INE713T01028). A one-stock look in chat on
+2026-11-04, with no strategy run and nothing logged, used data to
+2023-12-31 only (the holdout was not opened). It touched the validation
+years 2021 to 2023, said here so the look is on record. What it showed,
+for `momentum_quality_top20` as in `research/strategies.json`:
+
+- 2020 to 2022 (about 7x, split-adjusted Rs 4.5 to Rs 30): outside the
+  universe almost every month-end, because its 60-session median traded
+  value was under Rs 2 crore (Rs 0.5 to 1.8 crore); BE series in early
+  and late 2022.
+- February and March 2023: ranks 7 and 11 of the eligible universe,
+  bought. July to September 2023: ranks 6, 7 and 19, bought.
+- November and December 2023: BE series again, outside the universe.
+
+So the signal found it once it traded enough; the Rs 2 crore floor cost
+the early run. One remembered winner says nothing about the many look-alikes
+that failed, hence the audit below, on dev only.
+
+### Step 1: the miss audit (dev only, descriptive, adopts nothing)
+
+`research/misses.py`, numpy and pandas, reading the store through
+`panel.load` from 2012 so the first scores have a year of history.
+
+- **Dates:** month-ends from January 2013 to December 2018, so a 24-month
+  window ends inside dev (December 2020). Nothing after 2020-12-31 is read.
+- **A multibagger:** a company share (ISIN starting INE) whose
+  split-adjusted close at a month-end t + 24 months is at least 3 times
+  its close at month-end t. A stock counts once, with its earliest
+  qualifying t (its window). Stocks with a failed corporate action check
+  in the window are listed apart, not counted.
+- **Caught:** in the top 20 of `momentum_quality` within the strategy's
+  universe (`strategies.json`: min price Rs 20, Rs 2 crore median value
+  over 60 sessions, 250 sessions of history, EQ series) at any month-end
+  inside the window. Also reported: in the top tenth of the eligible
+  ranking (the trade finder's candidates).
+- **For each multibagger:** caught or not; months from window start to
+  first catch; the share of the window's log return earned in the months
+  it was held (top 20, held one month from each month-end); and, for each
+  month-end in the window it was not held, the first filter that blocked
+  it in this order: not EQ, price under Rs 20, history under 250
+  sessions, failed corporate action check, median value under Rs 2 crore,
+  ranked below the top 20.
+- **Totals:** counts of multibaggers, caught and missed; misses by
+  blocking filter; all of these split by price at window start (under Rs
+  20, 20 to 100, over 100) and median traded value at window start (under
+  Rs 50 lakh, 50 lakh to 2 crore, over 2 crore).
+- **The other side (look-alikes):** at each month-end, stocks that are
+  blocked only by the Rs 2 crore value floor, have at least Rs 50 lakh,
+  and would rank in the top 20 if eligible. Their next 1-month and
+  12-month returns against the actual top 20's and the equal-weight
+  universe's: mean, median, share that tripled within 24 months, share
+  that halved, share that later hit a circuit lock or moved to BE.
+
+This is a description, not a strategy test: it adopts nothing, ranks
+nothing, and is not a variant in the attempt count. It is logged once in
+`research/runs.jsonl` with kind `audit` and a note, so the record exists.
+Its results must not be used to pick the floor in step 2, which is fixed
+here first.
+
+### Step 2: a wider net, `momentum_quality_wide_top20` (a new idea)
+
+Exactly `momentum_quality_top20` with one change: the universe's median
+traded value floor is **Rs 50 lakh** over 60 sessions instead of Rs 2
+crore. Every other setting is unchanged, including the per-order limit
+of 1% of the stock's 60-session median value, which already caps the
+order size at each capital level (at Rs 50 lakh that is Rs 50,000 a
+stock). The floor is fixed now, before step 1 runs, and is never tuned.
+
+- Tested through the engine's harness (`research/harness.py`, once
+  `second-agent/engine-p1-p2` is merged) on dev: walk-forward, Rs 20,000
+  and Rs 10 lakh, real charges, after-tax. Logged in `runs.jsonl`, one
+  attempt.
+- **It passes dev only if**, at both capital levels on the same test, its
+  after-tax Sharpe is above `momentum_quality_top20`'s and its worst
+  drawdown is no more than 5 percentage points deeper. The option B bar
+  (IC t above 3) is reported but is not the test here: the current
+  strategy's own dev IC t is 2.50, and the question is whether the wider
+  universe beats it.
+- If it passes dev: one validation look, the same rule. Only then may it
+  replace or join `momentum_quality_top20` in `strategies.json`.
+
+### Step 3: a radar in the app (untested context, after step 1)
+
+A list on the Today page of stocks that would rank in the top tenth of
+the tested signal but fail a universe filter, each with the filter that
+blocks it (for example "median traded value Rs 1.2 crore, under Rs 2
+crore", "BE series"). Labelled untested, never sized, never in the pick
+list or order sheet. Built as a `jobs.py` task first, as every engine
+feature is. BE stays a hard filter everywhere: it is NSE's
+trade-for-trade surveillance series, not a choice of ours.
