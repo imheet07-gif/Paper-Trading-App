@@ -93,6 +93,89 @@ table, `CLAUDE.md` layout list, `research/signals.py` (`SIGNALS`,
 `DESCRIPTIONS`), `app/server.py` (`SIGNALS`), `research/FINDINGS.md`,
 `research/runs.jsonl`, `tests/test_repo.py` (root layout list).
 
+## Direction (owner, 2026-11-03): one predictive engine, retail limits built in
+
+This supersedes the narrower trade-finder framing below (its honesty rules
+carry over). The goal: a single engine that, on any day, lists the trades
+with the best tested expected return after costs and tax, across
+strategies and asset classes, within what a retail investor can do. Plan
+agreed in chat; nothing below is built yet.
+
+**What "winning" means.** Picks with a positive expected return after
+costs and tax, with their win rate and worst case shown. Not trades that
+always win: momentum lost in about a third of its months and still made
+26% a year on dev.
+
+**Hard rules for every idea:**
+
+- **Capital-agnostic, never capital-dependent.** The engine sizes to the
+  capital typed that day (Rs 20,000 today, Rs 10 lakh later). Whole
+  shares, fixed charges (the DP charge per scrip sold) and the number of
+  positions are worked out at that amount; every idea is tested at Rs
+  20,000 and Rs 10 lakh, and one that fails at the low end is flagged with
+  its minimum and never shown to a smaller account.
+- **No leverage, no short selling, no idea needing large margin** (index
+  futures, lots of several lakh). Options only as small, capped-risk
+  structures, later, with their own case.
+- **Real frictions:** charges, slippage, STT, stamp duty, tax (`core/tax.py`;
+  holding under a year at the short-term rate), price bands, liquidity
+  (the order a small share of daily traded value), T+1.
+- **Holding period is the idea's own**, from days to months; every result
+  is judged after costs and tax, so short holds need larger edges.
+- **The owner's time:** picks after the close, entered by hand the next
+  morning; intraday refreshes are for monitoring, not untested decisions.
+
+**Assets (all already stored, no downloads):** NSE stocks, ETFs (index,
+sector, gold, silver, international), Sovereign Gold Bonds, index funds
+(NAVs) as benchmark and "do nothing" choice. Futures and options, intraday
+history and commodity futures are out until a written idea justifies the
+data.
+
+**Phases:**
+
+1. **Rules:** one config of capital, limits, costs and tax; the minimum
+   capital check per idea; an inventory of tradable instruments in the
+   store.
+2. **One testing machine** for every idea: entry and exit as a retail
+   investor can, costs and tax, both capital levels, walk-forward testing
+   (train on the past, test the next unseen stretch, roll), every attempt
+   counted, the IC t above 3 bar. The holdout (2024 onward) stays sealed.
+3. **The idea library**, written in FINDINGS.md before any run, from
+   stored daily data:
+   - chart rules defined exactly, never by eye: trend (moving averages,
+     200-day), breakouts (52-week and 20-day highs, range squeezes, gaps
+     that hold), oscillators (RSI, MACD, Bollinger), volume and delivery,
+     candlesticks;
+   - short-term reversal, low volatility, sector rotation, calendar effects
+     (month-end, budget day, Muhurat);
+   - ETF trend and rotation, gold and silver included;
+   - exchange filings with history (buybacks, large orders, dividend
+     changes), where the stored history allows;
+   - `momentum_quality`, as a full member and the benchmark.
+4. **The engine:** survivors blended into one expected return per
+   instrument (transparent weights, no black box), then sized to the day's
+   capital. A blend is used only if it beats `momentum_quality` alone on
+   the same test. Output per pick: instrument, amount, holding period,
+   expected edge, win rate, worst case, the ideas that agree.
+5. **Live layer (owner's Kite API, read-only):** quotes every few minutes
+   in market hours to refresh limit prices and warn (gaps, price bands,
+   sharp falls); a few snapshots a day recorded for the watchlist, so an
+   intraday history without survivorship builds up for later ideas.
+6. **Forward record:** every pick tracked in the paper ledger; ideas that
+   fade live are retired.
+
+**News:** exchange filings with stored history are tested as signals;
+media news has no dated archive, so it is card context, labelled
+untested; a Claude reading of each day's filings and headlines is
+recorded from now on and tested once months of record exist. Upcoming
+results, trading windows and pledge changes are shown as risk warnings.
+
+**Known limits to say plainly:** many ideas tested means many lucky
+passes, hence the attempt count and the higher bar; the results XBRL
+starts in December 2017; intraday from Kite carries survivorship bias
+(PR #43 parked); validation 2021 to 2023 has been looked at often, so
+walk-forward and the sealed holdout carry the weight.
+
 ## Direction (owner, 2026-10-28): the trade finder
 
 The product is no longer a monthly strategy list. It answers two questions:
