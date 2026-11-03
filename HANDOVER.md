@@ -170,6 +170,31 @@ untested; a Claude reading of each day's filings and headlines is
 recorded from now on and tested once months of record exist. Upcoming
 results, trading windows and pledge changes are shown as risk warnings.
 
+**Interface (owner, 2026-11-03): app first, runnable without Claude.**
+
+- Every engine feature is first a command-line tool, then a task the local
+  app runs (`research/jobs.py`, arguments checked against fixed lists).
+  Claude skills only call those same commands and hold no logic.
+- The app is the main interface: Today (the pick list, live prices in
+  market hours), Ask (a form: amount and options), Portfolio (paper and
+  real against the index), Ideas (each idea's tested and live record),
+  Lab.
+- The evening update and briefing are scheduled by macOS (`launchd`), not
+  by Claude. Notifications: macOS notifications by default (local); a
+  phone channel (email, Telegram or ntfy) only if the owner picks one, and
+  then with minimal text, no amounts or holdings.
+- The live watch is a background job the app starts after a Kite login
+  from an app button; read-only, alerts only.
+- Phone access to the app stays off (it answers on 127.0.0.1 only) until
+  the owner chooses a safe way (a password on the home network, or a
+  private network tool).
+- **No Claude at run time (owner, 2026-11-03), to save the owner's Claude
+  usage.** News runs on stored filings and keyword rules; any AI reading of
+  news uses a local model on the Mac or is skipped, never the Claude API.
+  Claude sessions are for building only: short briefs, fresh sessions
+  that start from this file and FINDINGS.md, a lighter model for routine
+  work.
+
 **Known limits to say plainly:** many ideas tested means many lucky
 passes, hence the attempt count and the higher bar; the results XBRL
 starts in December 2017; intraday from Kite carries survivorship bias
