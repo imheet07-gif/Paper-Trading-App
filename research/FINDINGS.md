@@ -1146,3 +1146,98 @@ it: the top 5 run started at Rs 10 lakh, grew past Rs 13.2 lakh within a
 few years, and so passed over 20% of its own picks over the whole run (the
 selection count above). The engine sizes to the capital typed on the day,
 so the check applies to that day's amount.
+
+
+## 2026-11-04: multibagger miss audit, step 2 results: `momentum_quality_wide_top20` on dev (owner's machine; owner's agent)
+
+Step 2 of the section "2026-11-04: multibagger misses, settings fixed before
+any run", run once as written. `momentum_quality_wide_top20` is exactly
+`momentum_quality_top20` with the universe's median traded value floor at
+Rs 50 lakh (5,000,000) over 60 sessions instead of Rs 2 crore; price floor
+Rs 20, 250 sessions of history, EQ series, top 20, monthly, the signal, the
+1% liquidity limit and every other setting unchanged. It is defined in code
+(`research/harness.py` VARIANTS, `python3 research/harness.py --strategy
+...`); `research/strategies.json` is not edited. The floor was not tuned and
+step 1's results played no part in it.
+
+Run through `research/harness.py` on dev only (2013-01-01 to 2020-12-31;
+the panel is loaded to 2020-12-31 and no later; validation and the holdout
+were not opened), walk-forward, at Rs 20,000 and Rs 10 lakh, real
+Zerodha charges, whole shares, after gains tax. `momentum_quality_top20`
+went through the same harness at the same settings as the comparison (it is
+the Phase 2 check's idea under its strategies.json name and a fresh log
+entry). Batch `mb-wide`, two logged attempts, ids 20261104-091647-0d02
+(current) and 20261104-091752-c0d5 (wide).
+
+**What retail rules version 2 changes here.** Nothing about how the two
+capital levels work: both are still Rs 20,000 and Rs 10 lakh, both always
+run, whatever the flags. Version 2 only adds a maximum-capital flag and the
+share of the idea's own picks each level bought; both are reported below.
+
+**What had to be added to the harness first** (the verdict rule needs an
+after-tax Sharpe and drawdown, which it did not report): the after-tax
+simulation's value series now has the last point replaced by the value after
+the final sale, its charges and the last year's tax, and its Sharpe and worst
+drawdown are reported for each level, each walk-forward year and the pooled
+test years. The idea may carry its own universe (the base case uses the
+panel's defaults, so older results are unchanged); the equal-weight universe
+and the fractional reference follow the idea's own universe. The 464 earlier
+tests still pass; 6 new offline tests cover the variant. The walk-forward
+years, as before, do not credit dividends; the full-dev runs do.
+
+**Which numbers are the verdict.** The walk-forward pooled test years
+(2016 to 2020, each year from fresh capital, signal trained and read only on
+earlier years), after tax, because the run was asked for walk-forward. The
+full-dev run is shown beside it. They disagree at Rs 20,000, which is why
+this is stated: the walk-forward is the verdict and was chosen before
+either run was looked at.
+
+| | current (Rs 2 crore) | wide (Rs 50 lakh) |
+|---|---|---|
+| **Walk-forward, pooled 2016 to 2020, after tax** | | |
+| Rs 20,000: CAGR, Sharpe, worst drawdown | 1.6%, -0.16, -47.4% | 0.3%, -0.22, -53.1% |
+| Rs 10 lakh: CAGR, Sharpe, worst drawdown | 10.3%, 0.26, -32.5% | 13.9%, 0.41, -31.2% |
+| Walk-forward pooled, before tax: Rs 20,000 / Rs 10 lakh Sharpe | 0.03 / 0.40 | -0.04 / 0.55 |
+| Equal-weight universe (own universe), Sharpe | 0.09 | 0.07 |
+| **Full dev 2013 to 2020, after tax** | | |
+| Rs 20,000: CAGR, Sharpe, worst drawdown | 12.2%, 0.37, -42.6% | 17.6%, 0.61, -36.2% |
+| Rs 10 lakh: CAGR, Sharpe, worst drawdown | 19.6%, 0.66, -32.4% | 21.0%, 0.72, -32.3% |
+| Full dev, before tax: Rs 20,000 / Rs 10 lakh Sharpe | 0.54 / 0.77 | 0.76 / 0.88 |
+| **Ranking** | | |
+| IC (t), full dev, 95 months | 0.045 (2.50) | 0.050 (3.01) |
+| IC (t), walk-forward pooled test years, 59 months | 0.032 (1.56) | 0.039 (2.04) |
+| Deciles monotonic | 0.92 | 0.98 |
+| **Capital (retail rules version 2)** | | |
+| Minimum capital (90% of dates) | Rs 3.18 lakh, flagged at Rs 20,000 | Rs 2.72 lakh, flagged at Rs 20,000 |
+| Maximum capital | Rs 55.1 lakh, no flag | Rs 17.8 lakh, no flag |
+| Own picks bought, Rs 20,000 / Rs 10 lakh | 82% / 100% | 89% / 85% |
+
+Test years, before tax, Sharpe (Rs 20,000 / Rs 10 lakh): current 2016
+-1.19 / -1.05, 2017 2.66 / 2.69, 2018 -1.54 / -0.87, 2019 -0.65 / 0.35, 2020
+1.26 / 1.58; wide 2016 -0.60 / -0.40, 2017 2.04 / 2.57, 2018 -1.75 / -0.67,
+2019 -0.98 / 0.17, 2020 1.52 / 1.68.
+
+**The rule** (FINDINGS.md step 2): at both capital levels, after-tax Sharpe
+above the current strategy's and worst drawdown no more than 5 points deeper.
+
+- Rs 10 lakh: Sharpe 0.41 against 0.26 (above); drawdown -31.2% against
+  -32.5% (not deeper). Passes.
+- Rs 20,000: Sharpe -0.22 against -0.16 (not above); drawdown -53.1%
+  against -47.4% (5.7 points deeper, over the 5 allowed). **Fails, on both
+  counts.**
+
+**Verdict: it does not pass dev.** The rule needs both levels. No validation
+look is made, `strategies.json` stays as it is, and the wide strategy is not
+adopted. (The option B bar, reported but not the test: IC t 3.01 on full dev
+passes, 2.04 on the walk-forward years does not.)
+
+**Reading.** On the whole of dev the wider net looks better at both levels,
+and would pass the rule; the gain is larger at Rs 20,000. In the
+walk-forward years, which are fewer (five) and read the signal only from the
+past, it is better at Rs 10 lakh and slightly worse at Rs 20,000, where both
+strategies lost money after tax over 2016 to 2020, the Rs 20,000 account
+holding whole shares of a thinner set of stocks. The difference at Rs 20,000
+is small against the noise of five test years and was not tested for
+significance. Nothing here is tuned: the floor stays Rs 50 lakh and a failed
+step 2 is not retried at another floor on these results. A new floor would be
+a new idea with its own attempt.
