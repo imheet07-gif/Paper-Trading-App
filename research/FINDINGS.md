@@ -1318,3 +1318,75 @@ check.
 
 Rows per stock and start are written to `data/labels/dev.csv.gz` (local,
 never committed) for Phase 4.
+
+## 2026-11-04: Phase 1 results, labels and base rates on dev (owner's machine; owner's agent)
+
+`research/labels.py`, run once as fixed above, logged in `runs.jsonl` with
+kind `audit`. Starts 2013-01 to 2019-12 (84 month-ends), prices read to
+2022-12-30 and no later, series EQ, BE, BZ, SM, ST and SZ. Tested offline
+first on a made-up panel (`tests/test_labels.py`). `panel.load` gained a
+`series` argument; its default (EQ, BE, BZ) is unchanged, so earlier runs
+are unaffected.
+
+**Totals.** 136,212 stock-months from 2,156 stocks; 36 stock-months (3
+stocks) listed apart for a failed corporate action check. **13.0% of
+stock-months tripled within 36 months**; 5.1% made 5x, 1.2% 10x; 23.0%
+halved; median multiple 1.10; 9.2% delisted by the window's end (valued at
+half their last close). 1,235 distinct stocks tripled from at least one
+start. 21.1% touched 3x at some month-end in the window, so about two in five
+of the stocks that reached 3x gave it back by the end.
+
+| start year | stock-months | 3x | 5x | halved | median multiple | touched 3x |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2013 | 18,157 | 26.0% | 11.3% | 12.0% | 1.70 | 37.6% |
+| 2014 | 18,380 | 20.6% | 8.1% | 13.4% | 1.55 | 27.7% |
+| 2015 | 18,120 | 11.7% | 4.2% | 18.7% | 1.18 | 22.5% |
+| 2016 | 18,739 | 4.0% | 1.0% | 31.6% | 0.79 | 15.3% |
+| 2017 | 19,807 | 1.5% | 0.3% | 49.6% | 0.51 | 5.2% |
+| 2018 | 21,315 | 7.6% | 2.6% | 25.2% | 0.93 | 9.6% |
+| 2019 | 21,694 | 20.6% | 8.6% | 10.3% | 1.60 | 31.5% |
+
+| bucket at start | stock-months | stocks | 3x | halved | delisted |
+| --- | --- | --- | --- | --- | --- |
+| main board EQ | 119,415 | 1,946 | 12.8% | 21.3% | 6.8% |
+| main board BE/BZ | 11,825 | 1,075 | 14.8% | 39.0% | 31.0% |
+| SME | 4,972 | 209 | 13.5% | 27.1% | 14.9% |
+| under Rs 20 | 30,663 | 922 | 16.1% | 36.1% | 23.7% |
+| Rs 20 to 100 | 42,031 | 1,351 | 16.3% | 24.6% | 7.3% |
+| Rs 100 to 500 | 41,678 | 1,248 | 10.7% | 18.5% | 3.8% |
+| Rs 500 and over | 21,840 | 613 | 7.0% | 10.3% | 3.0% |
+| traded value under Rs 10 lakh a day | 42,133 | 1,436 | 20.1% | 24.9% | 18.8% |
+| Rs 10 to 50 lakh | 23,495 | 1,462 | 14.7% | 23.6% | 7.5% |
+| Rs 50 lakh to 2 crore | 25,178 | 1,370 | 11.1% | 24.1% | 5.2% |
+| Rs 2 to 10 crore | 24,061 | 1,132 | 8.6% | 23.8% | 4.0% |
+| Rs 10 crore and over | 21,345 | 717 | 4.6% | 16.4% | 2.9% |
+| listed under a year | 7,204 | 671 | 10.6% | 29.0% | 7.5% |
+| listed a year or more | 129,008 | 2,074 | 13.2% | 22.7% | 9.3% |
+
+**Reading.**
+
+- **The market decides most of it.** The base rate runs from 1.5% (2017
+  starts, windows ending in the 2020 crash) to 26% (2013 starts). Pooled
+  rates mix regimes, so every model result must be judged against the base
+  rate of its own start date (lift), and per start year, never pooled alone.
+  Seven start years is a small sample of regimes.
+- **Smaller, cheaper and thinner trade triples more often, and fails more
+  often.** Under Rs 10 lakh a day: 20.1% tripled, 18.8% delisted, and an
+  order of even Rs 20,000 would be days of volume. Rs 10 crore and over:
+  4.6%. The gain from going small comes with more halving and delisting.
+- **SME** tripled about as often as the main board (13.5%) but delisted
+  twice as often and halved more; only 209 stocks, nearly all from 2017.
+  Thin evidence.
+- **BE/BZ** show the highest delisting (31%, which includes stocks
+  suspended for over 20 sessions at the window's end).
+- **Touched is not held.** 21.1% reached 3x, 13.0% were still there at 36
+  months: the sell rule will matter as much as the pick (Phase 5).
+- **Data caution.** The largest multiples include stocks under Rs 1 trading
+  a few hundred rupees a day (DUCON 235x from Rs 0.25, ESSENTIA 112x,
+  SCAPDVR 66x), which may be missed consolidations rather than real moves;
+  not checked against the corporate action files yet. Well-known runs look
+  right (ADANIGREEN 72x from April 2019, TANLA 62x and DEEPAKNTR 11x from
+  December 2018). Phase 2 checks the top multiples against NSE's corporate
+  action files. Few such rows exist, so the base rates barely move.
+
+Nothing here chooses a floor: floors are fixed in Phase 3 on tradability.

@@ -77,8 +77,10 @@ docs/RUNBOOK.md is how the owner runs it day to day.
   morning. Kite lists only stocks listed today: intraday research carries
   survivorship bias and must say so.
 - `research/` the research engine (numpy and pandas). `panel.py` loads the
-  market store; `misses.py` the multibagger miss audit of the old strategy
-  (it becomes the label generator); `fundamentals.py` point-in-time
+  market store (`series=EQUITY_SERIES` adds SME; the default is the main
+  board); `labels.py` the multibagger labels and base rates (3x in 36
+  months per stock and month-end, dev starts only; rows to
+  `data/labels/`); `misses.py` the miss audit of the old strategy; `fundamentals.py` point-in-time
   fundamentals from the `financials` table; `event_signals.py`. The
   momentum machinery stays as the benchmark any new model must beat:
   `signals.py`, `backtest.py`, `evaluate.py`, `regimes.py`, `profiles.py`,

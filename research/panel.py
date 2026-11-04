@@ -22,6 +22,9 @@ import bhavcopy  # noqa: E402
 import corporate_actions as ca  # noqa: E402
 
 SERIES = ("EQ", "BE", "BZ")
+# Every series a company share trades in: main board (EQ, BE, BZ) and SME (SM, ST, SZ).
+EQUITY_SERIES = ("EQ", "BE", "BZ", "SM", "ST", "SZ")
+SERIES_CODE = {s: k for k, s in enumerate(EQUITY_SERIES)}  # p.series_code holds these numbers
 FIELDS = ("open", "high", "low", "close", "volume", "value", "deliv")
 ISSUE_DAYS = 252  # trading days a failed corporate action check keeps a security out
 
@@ -58,7 +61,13 @@ def multipliers(factor_rows, dates, ids):
     return f.iloc[::-1].cumprod().iloc[::-1].shift(-1).fillna(1.0)
 
 
-def load(db_path=bhavcopy.DEFAULT_DB, start=None, end=None):
+def load(db_path=bhavcopy.DEFAULT_DB, start=None, end=None, series=SERIES):
+    """series: which series to read (default the main board's EQ, BE and BZ, as every
+    earlier run; EQUITY_SERIES adds SME). p.series_code holds each day's series as
+    SERIES_CODE numbers, NaN where the security did not trade."""
+    bad = [x for x in series if x not in SERIES_CODE]
+    if bad:
+        raise ValueError("not an equity series: %s" % ", ".join(bad))
     db = sqlite3.connect(db_path)
     link_map = ca.links(db)
     final = {}
@@ -69,8 +78,8 @@ def load(db_path=bhavcopy.DEFAULT_DB, start=None, end=None):
         return final[isin]
 
     q = ("SELECT date, isin, symbol, series, open, high, low, close, volume, value, deliv_bp FROM prices "
-         "WHERE series IN ('EQ','BE','BZ')")
-    args = []
+         "WHERE series IN (%s)" % ",".join("?" * len(series)))
+    args = list(series)
     if start:
         q += " AND date >= ?"
         args.append(start)
@@ -91,13 +100,15 @@ def load(db_path=bhavcopy.DEFAULT_DB, start=None, end=None):
 
     wide = {c: df.pivot(index="date", columns="sid", values=c).astype("float64") for c in FIELDS}
     eq = df.pivot(index="date", columns="sid", values="is_eq").fillna(False).astype(bool)
+    df["code"] = df["series"].map(SERIES_CODE).astype("float64")
+    code = df.pivot(index="date", columns="sid", values="code").astype("float64")
     dates, ids = wide["close"].index, wide["close"].columns
 
     rows = [(sid(i), d, float(f)) for i, d, f in db.execute(
         "SELECT isin, ex_date, factor FROM corporate_actions WHERE isin IS NOT NULL AND factor IS NOT NULL")
         if float(f) != 1.0]
     m = multipliers(rows, dates, ids)
-    frames = {"raw_close": wide["close"].copy()}
+    frames = {"raw_close": wide["close"].copy(), "series_code": code}
     for c in ("open", "high", "low", "close"):
         frames[c] = wide[c] * m
     frames["volume"] = wide["volume"] / m

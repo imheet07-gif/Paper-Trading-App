@@ -5,7 +5,7 @@ stocks by how likely they are, on tested evidence, to return **3x or more
 within 3 years**. It runs on your own computer from public exchange data,
 needs no Claude and no AI service to run, and never places an order.
 
-**Status (2026-11-04): Phase 0 done, the clean slate.** The data store and
+**Status (2026-11-04): Phases 0 and 1 done.** The data store and
 the testing machinery are kept; other asset classes and the old trading
 skills are removed. Nothing predicts multibaggers yet. The plan and phases
 are in [HANDOVER.md](HANDOVER.md); every experiment, failures included, is
@@ -26,8 +26,8 @@ scored as it matures, so the tool keeps its own honest track record.
 | # | phase | status |
 | --- | --- | --- |
 | 0 | Clean slate: equities only, no AI at run time, runbook | done |
-| 1 | Labels and base rates: 3x in 36 months for every stock and month-end, SME included | next |
-| 2 | Data checks: fundamentals coverage per year, SME price history | |
+| 1 | Labels and base rates: 3x in 36 months for every stock and month-end, SME included | done: 13.0% of dev stock-months tripled, 1.5% to 26% by start year |
+| 2 | Data checks: fundamentals coverage per year, SME price history | next |
 | 3 | Pre-register features and the pass bar in FINDINGS.md | |
 | 4 | Models: transparent scorecard, then logistic, then gradient boosting | |
 | 5 | Basket simulation with real costs, tax and capacity | |

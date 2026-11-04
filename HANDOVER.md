@@ -55,8 +55,8 @@ trade finder, risk levels, options, metals, funds, themes, the twelve
 | # | phase | output | pass condition | status |
 | --- | --- | --- | --- | --- |
 | 0 | Clean slate | other assets and skills removed, no-AI and no-order tests, runbook | tests green, known run reproduces | done 2026-11-04 |
-| 1 | Labels and base rates | `research/labels.py`: 3x in 36 months per stock and month-end, SME included; base rates by size, price, liquidity and series, dev only | table in FINDINGS.md | next |
-| 2 | Data checks | fundamentals coverage per year and series; how far SME history goes | coverage report | |
+| 1 | Labels and base rates | `research/labels.py`: 3x in 36 months per stock and month-end, SME included; base rates by size, price, liquidity and series, dev only | table in FINDINGS.md | done 2026-11-04: 13.0% of dev stock-months tripled; 1.5% to 26% by start year |
+| 2 | Data checks | fundamentals coverage per year and series; how far SME history goes | coverage report | next |
 | 3 | Pre-registration | feature list, universe floors (set on tradability, never on which bucket tripled), pass bar | committed to FINDINGS.md before any model run | |
 | 4 | Models | scorecard, then logistic, then gradient boosting; one logged attempt each | beats the base rate and plain momentum on precision in the top K, calibrated, in most starting years | |
 | 5 | Basket simulation | 15 to 30 names, long holds, costs, tax, capacity at Rs 20,000 and Rs 10 lakh | after tax, beats the small-cap index | |
@@ -90,8 +90,8 @@ the table below in a small commit before starting.
 
 | task | files | owner | status |
 | --- | --- | --- | --- |
-| Phase 1: labels and base rates | `research/labels.py`, tests | owner's agent | next |
-| Phase 2: data coverage report | `research/coverage.py` | unassigned | open |
+| Phase 1: labels and base rates | `research/labels.py`, `research/panel.py` (`series`), tests | owner's agent | done 2026-11-04 (FINDINGS.md) |
+| Phase 2: data coverage report: fundamentals and shares outstanding per year and series, SME history, the top multiples checked against NSE's corporate action files | `research/coverage.py` | unassigned | next |
 | Older fundamentals from result PDFs (optional, after Phase 4) | `core/` | unassigned | parked |
 | BSE-only companies (BSE's API refuses scripts) | | unassigned | open: a known blind spot, stated on every list |
 
