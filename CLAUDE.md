@@ -83,6 +83,14 @@ broker-neutral holdings, trades and charges.
   date, NAV as published; raw windows cached in `data/funds/`). This cloud
   session cannot reach AMFI: downloads run on the owner's machine, and the
   test samples are made up in AMFI's layout until a real cut replaces them.
+- `core/intraday.py` intraday candles (5-minute by default) for every
+  registry stock from Kite Connect into `data/intraday.db`, keyed on the
+  Kite token with an ISIN table; unadjusted, paise, UTC seconds. It calls
+  only Kite's session and historical-candle addresses (checked in code and
+  tests). The key and secret come from the git-ignored `.env`; the day's
+  session token is kept in `private/` (mode 600) until 06:00 IST the next
+  morning. Kite lists only stocks listed today: intraday research carries
+  survivorship bias and must say so.
 - `research/` the signals engine (numpy and pandas allowed here only):
   `panel.py` loads the market store, `signals.py` holds candidates,
   `backtest.py` simulates and enforces the dev / validation / holdout
