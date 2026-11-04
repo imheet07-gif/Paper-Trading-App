@@ -1241,3 +1241,80 @@ is small against the noise of five test years and was not tested for
 significance. Nothing here is tuned: the floor stays Rs 50 lakh and a failed
 step 2 is not retried at another floor on these results. A new floor would be
 a new idea with its own attempt.
+
+## 2026-11-04: new direction, the multibagger protocol (owner agreed; fixed before any run)
+
+The owner's goal is now to find stocks likely to return 3x or more within 3
+years, equities only, NSE main board and SME, with no AI at run time and free
+data only (HANDOVER.md, Direction 2026-11-04). This entry fixes the protocol
+before any label or model is computed.
+
+**Phase 0 check (not a run, not logged).** After removing the other asset
+classes and the old skills, `momentum_quality` on dev through
+`evaluate.ic_report` and `backtest.run` gave IC 0.045, t 2.50, monotonic
+0.92, top 20 CAGR 26.16%, Sharpe 0.817, worst drawdown -38.5%: the numbers
+of 2026-10-27 to the last digit. Nothing the research layer reads was
+changed.
+
+**Target.** For a stock and a month-end starting point t (the last stored
+session of the month), the multiple is its close adjusted for corporate
+actions at the month-end 36 months later over its adjusted close at t.
+Dividends are not added. A hit is a multiple of at least 3. A stock with no
+close in the 20 sessions up to the window's end is treated as delisted and
+valued at its last close less 50% (the backtest's haircut), so dead stocks
+count against their group.
+
+**Splits by starting point.** Dev: 2013-01 to 2019-12 (windows end by
+2022-12). Validation: 2020-01 to 2021-12 (by 2024-12). Holdout: 2022-01 to
+2023-12, only starts whose window has ended in the store (by 2026-12; the
+store ends 2026-10-30, so the last ten months of 2023 wait). Forward record:
+2024 on. A model tested on starts from date T is trained only on starts
+whose window ends on or before T (purged): validation trains on starts to
+2016-12, the holdout on starts to 2018-12, walk-forward inside dev the same
+way. One validation look per finished model; the holdout is opened once,
+by the owner, in their own words.
+
+**What this retires.** The momentum protocol's calendar holdout (2024 on):
+validation labels here read 2023 and 2024 prices. `momentum_quality`
+keeps its recorded results and stays the benchmark, compared on the new
+splits.
+
+### Phase 1: labels and base rates on dev (descriptive; settings fixed now)
+
+`research/labels.py`. Descriptive: it ranks nothing, adopts nothing, and is
+not a variant in the attempt count; logged once in `runs.jsonl` with kind
+`audit`. Dev only: the store is read to 2022-12-31 and no further, and the
+script refuses later starts.
+
+- **Population at each t:** company equity shares (ISIN starting INE with
+  security code 01 in characters 8 and 9; this drops rights entitlements,
+  warrants and fund units), with a close in the 20 sessions up to t, last
+  printed in series EQ, BE, BZ, SM, ST or SZ (SG, state government
+  securities, and GB, gold bonds, are not equities). No liquidity or price
+  floor: floors are a Phase 3 choice, made on tradability (order size
+  against traded value), never on which bucket tripled most.
+- **Listed apart, not counted:** a failed corporate action check at any
+  session from t to the window's end (adjusted prices not trusted there).
+- **Buckets at t:** series of the last print (main board EQ; main board BE
+  or BZ; SME SM, ST or SZ); unadjusted close (under Rs 20, 20 to 100, 100 to
+  500, 500 and over); traded value, the total over the 60 sessions to t over
+  60, days without a trade counting as zero (under Rs 10 lakh, 10 to 50 lakh,
+  50 lakh to 2 crore, 2 to 10 crore, 10 crore and over); listing age (first
+  print in the store within 365 days before t, and after January 2012,
+  against older); start year.
+- **Reported per bucket:** stock-months, distinct stocks, share with a
+  multiple of 3 or more (the base rate), 5 or more, 10 or more, 0.5 or less
+  (halved), the median multiple, the share delisted, and the share whose
+  adjusted close at some month-end in the window reached 3 times the start
+  (touched, a secondary measure).
+- **Caveat fixed now:** windows that start in neighbouring months overlap
+  almost entirely, so stock-months are not independent. The real sample is
+  about seven starting years, which is why the per-year table is shown and
+  read first.
+
+Market capitalisation is not a bucket here: shares outstanding are only in
+the store from 2018 (results XBRL) and 2021 (shareholding). It is a Phase 2
+check.
+
+Rows per stock and start are written to `data/labels/dev.csv.gz` (local,
+never committed) for Phase 4.

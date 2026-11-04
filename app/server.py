@@ -9,7 +9,7 @@ computer can reach it, refuses requests whose Host header is not this
 computer (DNS rebinding), and needs a token minted at startup for anything
 that runs a task. The only tasks it can run are the fixed commands in
 research/jobs.py (update, scan, backtest on dev or validation, save a
-candidate strategy, ask the trade finder), started as subprocesses with
+candidate strategy, the harness), started as subprocesses with
 checked arguments, one at a time. It cannot open the holdout and it cannot place an order.
 """
 
@@ -37,7 +37,6 @@ STRATEGIES = os.path.join(ROOT, "research", "strategies.json")
 RUNS = os.path.join(ROOT, "research", "runs.jsonl")
 RESULTS = os.path.join(ROOT, "data", "app", "backtests")
 SCAN_DIR = os.path.join(ROOT, "private", "scan")
-ADVICE = os.path.join(ROOT, "private", "advice", "latest.json")
 STATIC = os.path.join(HERE, "static")
 JOBS_PY = os.path.join(ROOT, "research", "jobs.py")
 
@@ -48,8 +47,6 @@ REGIMES = ["none", "trend200_cash", "trend200_half", "breadth40_half"]
 NAME = re.compile(r"^[A-Za-z0-9_]{1,40}$")
 RESULT_ID = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-SYMBOL = re.compile(r"^[A-Z0-9][A-Z0-9&\-]{0,19}$")
-RISKS = ("low", "medium", "high")
 MAX_LOG = 400  # lines kept per job
 
 
@@ -147,23 +144,6 @@ def build_args(kind, params):
         if note:
             args += ["--note", note]
         return args
-    if kind == "advise":
-        try:
-            amount = float(p.get("amount"))
-        except (TypeError, ValueError):
-            raise ValueError("the amount must be a number of rupees")
-        if not 1000 <= amount <= 1e10:
-            raise ValueError("an amount between Rs 1,000 and Rs 1,000 crore")
-        risk = p.get("risk", "medium")
-        if risk not in RISKS:
-            raise ValueError("risk is low, medium or high")
-        args = ["--amount", str(int(amount)), "--risk", risk]
-        stock = str(p.get("stock") or "").strip().upper()
-        if stock:
-            if not SYMBOL.match(stock):
-                raise ValueError("an NSE symbol: letters, digits, & and -")
-            args += ["--stock", stock]
-        return args
     if kind == "save-strategy":
         rid, name = str(p.get("result_id", "")), str(p.get("name", ""))
         if not RESULT_ID.match(rid) or not NAME.match(name):
@@ -208,7 +188,6 @@ def state():
                          for k, v in strategies.items() if not k.startswith("_")]
     out["signals"], out["regimes"], out["event_signals"] = SIGNALS, REGIMES, EVENT_SIGNALS
     out["has_scan"] = os.path.exists(os.path.join(SCAN_DIR, "latest.json"))
-    out["has_dashboard"] = os.path.exists(os.path.join(ROOT, "private", "dashboard.html"))
     return out
 
 
@@ -309,8 +288,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, state())
         if path == "/api/scan":
             return self._send(200, read_json(os.path.join(SCAN_DIR, "latest.json"), {}))
-        if path == "/api/advice":
-            return self._send(200, read_json(ADVICE, {}))
         if path == "/api/backtests":
             return self._send(200, backtest_list())
         m = re.match(r"^/api/backtests/([0-9a-f\-]+)$", path)
@@ -329,8 +306,6 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             ctype = "text/html; charset=utf-8" if m.group(2) == ".html" else "text/csv; charset=utf-8"
             return self._file(os.path.join(SCAN_DIR, m.group(1) + m.group(2)), ctype)
-        if path == "/files/dashboard.html":
-            return self._file(os.path.join(ROOT, "private", "dashboard.html"), "text/html; charset=utf-8")
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):

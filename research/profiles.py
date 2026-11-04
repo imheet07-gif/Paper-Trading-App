@@ -477,7 +477,7 @@ def main(argv=None, runs_log=backtest.RUNS_LOG):
     ap.add_argument("--note", default="")
     a = ap.parse_args(argv)
     if a.vol_levels and not a.fund:
-        ap.error("--vol-levels needs --fund: the AMFI scheme code chosen with core/funds.py find")
+        ap.error("--vol-levels needs --fund: an AMFI scheme code whose NAVs are in the store's fund_nav table (core/funds.py was removed 2026-11-04)")
     if a.exit_test:
         missing = [lvl for _, lvl in EXIT_RUNS if not logged(a.period, "risk:" + lvl, runs_log)]
         if missing:
@@ -502,7 +502,7 @@ def main(argv=None, runs_log=backtest.RUNS_LOG):
         ix = ix.reindex(p.dates, method="ffill")
         period = ix.loc[start:end]
         if period.isna().any() or period.empty:
-            print("error: scheme %s has no NAV for part of %s to %s (core/funds.py fetch stores it); the index part "
+            print("error: scheme %s has no NAV for part of %s to %s (the fund_nav table; core/funds.py was removed 2026-11-04); the index part "
                   "never falls back to the price index" % (a.fund, start, end), file=sys.stderr)
             return 2
         index = ix.values

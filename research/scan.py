@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "core"))
-sys.path.insert(0, os.path.join(ROOT, "dashboard"))
+
 import backtest  # noqa: E402
 import bhavcopy  # noqa: E402
 import corporate_actions as ca  # noqa: E402
@@ -393,7 +393,7 @@ def write_outputs(res, out_dir):
 
 
 def render(res):
-    import build as dash  # dashboard/build.py: the same look and the same no-network rule
+    import report_style as dash  # the same look and the same no-network rule
     s, led = res["strat"], res["ledger"]
     start = D(led["capital"])
     nav = res["nav"]

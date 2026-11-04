@@ -20,7 +20,6 @@ ca = load("core", "corporate_actions")
 if HAVE_PANDAS:
     sys.path.insert(0, os.path.join(ROOT, "research"))
     import pandas as pd  # noqa: E402
-    import advise  # noqa: E402
     import backtest  # noqa: E402
     import harness  # noqa: E402
     import jobs  # noqa: E402
@@ -161,8 +160,8 @@ class Harness(unittest.TestCase):
         self.assertIsNotNone(wf["pooled"]["levels"]["1000000"]["cagr"])
 
     def test_rules_and_the_simulator_must_agree(self):
-        self.assertEqual(self.rules["liquidity"]["max_share_of_median_value"], advise.MAX_SHARE_OF_VALUE)
-        self.assertEqual(self.rules["orders"]["limit_band"], float(advise.LIMIT_BAND))
+        self.assertEqual(self.rules["liquidity"]["max_share_of_median_value"], profiles.MAX_SHARE_OF_VALUE)
+        self.assertEqual(self.rules["orders"]["limit_band"], profiles.LIMIT_BAND)
         self.assertEqual(self.rules["candidates"]["share_of_ranking"], profiles.CANDIDATE_SHARE)
         self.assertEqual(float(retail.dp_charge(self.rules)), backtest.Config().dp_charge)
         bad = json.loads(json.dumps(self.rules))

@@ -157,7 +157,7 @@ KINDS = [
     # (kind, series, ISIN prefix or None, label): labels only as far as the repo already states them
     ("equity", "EQ", "INE", "company shares, EQ series (the research universe's series)"),
     ("etf", "EQ", "INF", "ETFs and fund units trading in the EQ series (INF ISIN; panel.universe leaves them out)"),
-    ("sgb", "GB", None, "Sovereign Gold Bonds, series GB (core/metals.py)"),
+    ("sgb", "GB", None, "Sovereign Gold Bonds, series GB (not researched: equities only)"),
     ("equity_t2t", "BE", "INE", "company shares, BE series (trade-for-trade; not bought by research)"),
     ("equity_bz", "BZ", "INE", "company shares, BZ series (not bought by research)"),
 ]

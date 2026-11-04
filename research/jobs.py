@@ -7,7 +7,6 @@ these as subprocesses and never anything else.
   python3 research/jobs.py backtest --signal momentum_quality --period dev
   python3 research/jobs.py backtest --composite momentum_quality=1,low_volatility=1 --top 20
   python3 research/jobs.py save-strategy RESULT_ID --name my_blend
-  python3 research/jobs.py advise --amount 50000 --risk medium [--stock TCS]
   python3 research/jobs.py harness --signal momentum_quality --hold monthly --positions 20 --period dev
   python3 research/jobs.py inventory
   python3 research/jobs.py min-capital --prices 812.5 1490 --positions 20
@@ -16,10 +15,6 @@ The harness (research/harness.py) tests one idea under the retail rules in
 research/retail.json and writes its full result to data/app/harness/ID.json;
 like every run it is logged in research/runs.jsonl. inventory and min-capital
 are research/retail.py's read-only commands.
-
-The trade finder's answer (research/advise.py) is written to
-private/advice/latest.json for the app's Ask tab: an order sheet to read,
-never an order.
 
 A backtest writes its full result (equity curve, benchmark, drawdown,
 yearly returns, information coefficient, trial count, deflated Sharpe) to
@@ -71,7 +66,6 @@ def price_arg(text):
     if 0 < x < 1e7:
         return text
     raise argparse.ArgumentTypeError("a price is a positive number of rupees")
-ADVICE = os.path.join(ROOT, "private", "advice")  # names from deals can appear: private, never committed
 
 
 def parse_composite(text):
@@ -184,10 +178,6 @@ def main(argv=None):
     b.add_argument("--slippage-bps", type=float, default=15.0)
     b.add_argument("--period", default="dev", choices=["dev", "dev_2016", "validation"])
     b.add_argument("--note", default="")
-    ad = sub.add_parser("advise")
-    ad.add_argument("--amount", required=True)
-    ad.add_argument("--risk", choices=["low", "medium", "high"], default="medium")
-    ad.add_argument("--stock")
     h = sub.add_parser("harness")
     h.add_argument("--signal", required=True)
     h.add_argument("--hold", type=hold_arg, default="monthly")
@@ -218,20 +208,6 @@ def main(argv=None):
         print("result %s: %s on %s, CAGR %.1f%%, Sharpe %.2f, max drawdown %.1f%%, %d runs tried" % (
             r["id"], r["label"], r["period"], m["cagr"] * 100, m["sharpe"], m["max_drawdown"] * 100, r["trials"]))
         print("RESULT_ID=" + r["id"])
-    elif a.cmd == "advise":
-        import advise
-        import scan
-        try:
-            res = advise.advise(a.amount, a.risk, a.stock)
-        except (advise.AdviseError, scan.Stale) as e:
-            print("the trade finder could not answer: %s" % e)
-            return 1
-        os.makedirs(ADVICE, exist_ok=True)
-        tmp = os.path.join(ADVICE, "latest.json.tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(advise._jsonable(res), fh, ensure_ascii=False)
-        os.replace(tmp, os.path.join(ADVICE, "latest.json"))
-        print(advise.report(res))
     elif a.cmd == "harness":
         import harness
         import signals as signals_mod

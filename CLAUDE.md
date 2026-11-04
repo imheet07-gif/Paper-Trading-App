@@ -1,30 +1,23 @@
 # CLAUDE.md
 
-India edition of trader-skill: Claude skills for NSE/BSE equities. The plan
-and phase status are in README.md. Two agents share the work: read
-HANDOVER.md for the task split and how to coordinate before starting. Personal use for now, but built to ship
-later as a Claude plugin anyone can install: nothing may assume one user or
-one broker. Brokers plug in through importers that produce the same
-broker-neutral holdings, trades and charges.
+A multibagger finder for Indian equities (NSE main board and SME). It ranks
+stocks by how likely they are, on tested evidence, to return 3x or more
+within 3 years, and says plainly that most picks will not. Equities only:
+funds, metals, ETFs, F&O and commodities were dropped on 2026-11-04. It must
+run with no Claude and no AI service at run time; Claude sessions are for
+building only. Read HANDOVER.md (direction, phases, tasks) and
+research/FINDINGS.md (every experiment, failures included) before starting.
+docs/RUNBOOK.md is how the owner runs it day to day.
 
 ## Layout
 
-- `trader-*/` the twelve skills, each a `SKILL.md` plus one stdlib CLI
-  (`trader-advisor`, the trade finder's chat front, runs
-  `research/advise.py` instead).
-  `trader-budget`, `trader-risk`, `trader-rebalance`, `trader-screener`,
-  `trader-alerts`, `trader-news`, `trader-advisor`, `trader-broker` (a paper trader only:
-  no broker connection, no live mode), `trader-copycat` (named holders
-  from shareholding filings, and bulk and block deals) and `trader-pelosi`
-  (insider, promoter SAST and bulk and block deal disclosures, from the
-  store; `insiders.py`) and `trader-analyst` (quarterly results from the
-  store's `financials` table; `results.py`) are ported to India (rupees, whole
-  shares, an order sheet for manual entry; gaps in HANDOVER.md). The rest
-  are still the US originals until
-  Phase 2 ports them; do not assume their data sources (SEC, NYSE, Alpaca,
-  US tax) apply to India.
-- `core/` shared India modules. Skills import them with
-  `sys.path.insert(0, <repo>/core)`, the way `core/charges.py` imports `money`.
+- `core/` data ingest and accounting, standard library. Modules import one
+  another with `sys.path.insert(0, <repo>/core)`, the way `core/charges.py`
+  imports `money`. `bhavcopy.py` (NSE daily prices and delivery from 2012,
+  every series, delisted stocks included), `corporate_actions.py` (factors,
+  checked against the price move), `instruments.py` (ISIN registry joined
+  with Kite tokens), `nse_calendar.py`, `money.py`, `charges.py`,
+  `zerodha_console.py` and `lots.py` (the owner's Zerodha exports), and:
 - `core/events.py` company events from NSE into the store, keyed on
   publication time (raw months cached in `data/events_raw/`): insider
   trades (feed empty after May 2026), results (results feed to February
@@ -40,7 +33,7 @@ broker-neutral holdings, trades and charges.
   FII (FPI I and II), domestic institutions, mutual funds, insurance,
   retail, total shares and NSE's yes/no promoter pledge answers.
   `shareholding_holders` keeps each filing's named
-  holders (promoters, public holders above 1%) for trader-copycat; names
+  holders (promoters, public holders above 1%); names
   include private individuals and stay in the local store only. Pledged
   quantities are not read yet (no sample with pledges seen).
 - `core/financials.py` quarterly results from the XBRL linked in NSE's
@@ -52,7 +45,7 @@ broker-neutral holdings, trades and charges.
   its own time; readers take the latest published by their day. A March
   file with no quarter context gives the quarter only when the year
   confirms it (half-year less December, no EPS, or a quarter dated as the
-  half-year), flagged in `derived`. The scan's evening update fetches new
+  half-year), flagged in `derived`. The nightly update fetches new
   filings. Since F3 it also reads the expense lines, finance costs,
   depreciation, exceptional items, face value, paid-up capital and, from
   the year's column of March files, reserves; each cached file keeps every
@@ -75,14 +68,6 @@ broker-neutral holdings, trades and charges.
   left out. `research/aftertax.py` runs a strategy with each year's tax
   paid from the portfolio (a hook in `backtest.run`) against an index
   fund, dev_2016 and validation only.
-- `core/metals.py` gold and silver: Sovereign Gold Bonds (series GB) from
-  the store, gold and silver ETFs picked from NSE's ETF list file, and the
-  owner's physical metal ledger (`trader/metals.json`), valued only at
-  rates the owner records with a date and source (`trader/metal_rates.json`).
-- `core/funds.py` AMFI mutual fund NAVs (`fund_nav` table: scheme code,
-  date, NAV as published; raw windows cached in `data/funds/`). This cloud
-  session cannot reach AMFI: downloads run on the owner's machine, and the
-  test samples are made up in AMFI's layout until a real cut replaces them.
 - `core/intraday.py` intraday candles (5-minute by default) for every
   registry stock from Kite Connect into `data/intraday.db`, keyed on the
   Kite token with an ISIN table; unadjusted, paise, UTC seconds. It calls
@@ -91,60 +76,66 @@ broker-neutral holdings, trades and charges.
   session token is kept in `private/` (mode 600) until 06:00 IST the next
   morning. Kite lists only stocks listed today: intraday research carries
   survivorship bias and must say so.
-- `research/` the signals engine (numpy and pandas allowed here only):
-  `panel.py` loads the market store, `signals.py` holds candidates,
-  `backtest.py` simulates and enforces the dev / validation / holdout
-  protocol, `scan.py` is the daily scan and `paper.py` its paper ledger
-  (`trader/paper.json`), `exits.py` stops, targets and sizing,
-  `advise.py` the trade finder (only the top tenth of the tested ranking, hard filters,
-  evidence cards), `profiles.py` its concentration and risk-level backtests
-  (dev and validation only), `fundamentals.py` the F6 batch of 20
-  fundamentals signals (`f_*` in `signals.py`, point in time from the
-  `financials` table), and the engine's Phases 1 and 2 (HANDOVER.md,
-  Direction 2026-11-03): `retail.json` the retail rules every idea is
-  tested under (capital levels Rs 20,000 and Rs 10 lakh, no leverage or
-  shorts, 1% liquidity, circuits, T+1, charges and tax read from `core/`),
-  each value with its source; `retail.py` (standard library) loads them,
-  checks an idea's minimum and maximum capital and lists what the store holds
-  (`inventory`, read-only); `harness.py` tests any score frame with its
-  holding period and positions at both capital levels (IC and deciles,
-  `profiles.simulate` with whole shares and limit buys, after-tax through
-  `core/tax.py`, minimum capital, the option B bar), walk-forward on dev,
-  one validation look per idea, never the holdout, every attempt counted
-  per batch in `runs.jsonl`. The app runs it through `jobs.py harness`. The scan runs only strategies in
-  `research/strategies.json` and selects with `backtest.select_top`, so it
-  trades exactly what was validated; changing a strategy means validating
-  the new version first. Never open the holdout without the user asking; every run is
-  logged to `research/runs.jsonl`, which is committed so the count of
-  variants tried survives.
-- `app/` the local app (`server.py`, standard library; `static/` page,
-  styles and charts in plain JavaScript, nothing loaded from outside). It
-  runs only `research/jobs.py` tasks with arguments checked against fixed
-  lists (its Ask tab runs the trade finder, writing to `private/advice/`);
-  never add a task that places orders or opens the holdout.
-- `dashboard/` the personal dashboard: `build.py` writes one self-contained
-  HTML file (no external scripts, fonts or requests) to `private/`.
-- `docs/solutions/` documented solutions to past problems (bugs, best
-  practices, workflow patterns), organized by category with YAML
-  frontmatter (`module`, `tags`, `problem_type`); relevant when
-  implementing or debugging in documented areas.
-- `CONCEPTS.md` shared domain vocabulary (securities, ISIN chains,
-  corporate actions and factors); relevant when orienting to the codebase
-  or discussing domain concepts.
+- `research/` the research engine (numpy and pandas). `panel.py` loads the
+  market store; `misses.py` the multibagger miss audit of the old strategy
+  (it becomes the label generator); `fundamentals.py` point-in-time
+  fundamentals from the `financials` table; `event_signals.py`. The
+  momentum machinery stays as the benchmark any new model must beat:
+  `signals.py`, `backtest.py`, `evaluate.py`, `regimes.py`, `profiles.py`,
+  `exits.py`, `aftertax.py`, `retail.json` / `retail.py` (the retail rules:
+  capital levels, liquidity, charges, tax, minimum and maximum capital),
+  `harness.py` (one testing machine: whole shares, real charges, after-tax,
+  both capital levels, walk-forward, attempts counted), `scan.py` (its
+  `update` is the nightly data update) and `paper.py`. `strategies.json`
+  lists what the scan may run; changing a strategy means validating the new
+  version first. Every run is logged to `research/runs.jsonl`, which is
+  committed so the count of variants tried survives.
+- `app/` the local app (`server.py`, standard library; `static/` in plain
+  JavaScript, nothing loaded from outside). It runs only `research/jobs.py`
+  tasks with arguments checked against fixed lists; never add a task that
+  places orders or opens the holdout. Rebuilt around the watchlist in Phase 6.
+- `docs/RUNBOOK.md` setup, the nightly and monthly jobs, and what to do when
+  a source breaks, written for a person with no Claude session.
+- `docs/solutions/` documented solutions to past problems, with YAML
+  frontmatter (`module`, `tags`, `problem_type`).
+- `CONCEPTS.md` shared domain vocabulary (ISIN chains, corporate actions).
 - `tests/` unittest, offline only. `tests/_load.py` loads a script by folder.
   Fixtures under `tests/fixtures/`, cut from real published files; each
   fixture folder's README names its sources and date.
 
 ```bash
+pip install -r requirements.txt
 python3 -m unittest discover -s tests
 ```
 
+## The multibagger protocol (owner, 2026-11-04)
+
+- **Target:** a stock's return (close adjusted for splits, bonuses and other
+  corporate actions; dividends not added) over the 36 months from a month-end starting point is at least
+  3x. Base rates by size, price and series are shown beside every result.
+- **Universe:** INE company shares in EQ, BE and the SME series (SM, ST),
+  with liquidity floors fixed in FINDINGS.md before any model run.
+- **Splits by starting point** (a label needs 36 months of later prices):
+  dev starts 2013 to 2019, validation starts 2020 and 2021, holdout starts
+  2022 and 2023 (only those whose window has ended in the store), and
+  everything after is the forward record. A model is trained only on
+  starting points whose 36-month window ends on or before the first test
+  starting point (purged). Validation gets one look per finished model; the
+  holdout is opened once, only by the owner, in their own words.
+- This replaces the old momentum protocol's calendar holdout (2024 onward):
+  validation labels read 2023 and 2024 prices. The momentum strategy keeps
+  its recorded results but its holdout is retired.
+- Pre-register (features, settings, pass bar) in FINDINGS.md before a run;
+  never tune on validation; every attempt is logged.
+
 ## Rules
 
-- Standard library only in `core/` and the skills, with one exception:
-  `core/cas.py` imports casparser (MIT, offline) lazily, only when a PDF is
-  read. numpy/pandas are allowed only in `research/`. Any new dependency
-  needs the same justification.
+- No AI at run time: no Claude API, no other LLM API, no AI SDK import in
+  `core/`, `research/` or `app/` (a repo test checks). Every feature is a
+  command first, then an app task, then scheduled by macOS `launchd`.
+- `core/` stays standard library. `research/` may use numpy, pandas and
+  libraries pinned in `requirements.txt` that run offline on the owner's Mac;
+  a new one needs a line of justification in its commit.
 - Personal details in imported statements (name, PAN, email, address,
   phone, owners) are dropped at read time; account and folio numbers are
   masked. Passwords come from a prompt or an environment variable, never

@@ -1,9 +1,0 @@
-{
-  "rules": [
-    {"id": "opening-bell", "type": "opening_bell"},
-    {"id": "tcs-above-3200", "symbol": "TCS", "type": "above", "price": "3200"},
-    {"id": "itc-stop-380", "symbol": "ITC", "type": "stop", "price": "380", "note": "my stop"},
-    {"id": "infy-move-3", "symbol": "INFY", "type": "pct_move", "pct": "3"},
-    {"id": "hdfcbank-dip-900", "symbol": "HDFCBANK", "type": "below", "price": "900", "rearm": true}
-  ]
-}
