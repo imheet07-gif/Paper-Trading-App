@@ -1598,3 +1598,63 @@ Choices the Phase 3 entry left open, and one slip in it. Fixed now; no model has
 - **Dependency.** scikit-learn 1.9.1 installed in the project's `.venv`; `requirements.txt` states `scikit-learn>=1.5`.
 - **Dev walk-forward, once per model.** The runner logs one `mb_model` entry per model per stage in `runs.jsonl`.
   If a bug is found after a run, the fix is a new attempt and both runs stay logged.
+
+## 2026-11-04: Phase 4 results, the registered candidates (owner's machine; owner's agent)
+
+`research/mbrun.py`, one dev walk-forward run and one validation look, exactly as registered in "Phase 3" and its
+implementation notes; nothing was changed after seeing a result. Logged in `runs.jsonl` as kind `mb_model`, batch
+`mb-phase4` (dev: M1 to M4; validation: M1 as reference, M2, M3). Tests: `tests/test_mbmodels.py`.
+
+**Dev walk-forward** (78,075 rows, 84 starts, median universe 935; test starts 2017, 2018, 2019, each trained only
+on starts whose windows had ended: to 2014-01, 2015-01, 2016-01). The universe's 3x rate on the pooled test years
+is 7.4% (37,590 rows); K = 1,897 picks.
+
+| model | lift 2017 | 2018 | 2019 | pooled lift | top K 3x rate | halved, top vs universe | dev bar |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| M1 momentum_quality (reference) | 0.00 | 1.24 | 1.03 | 1.02 | 7.5% | 26.6% vs 26.5% | not a candidate |
+| M2 scorecard | 1.44 | 1.33 | 1.07 | 1.18 | 8.7% | 16.2% vs 26.5% | pass |
+| M3 logistic | 1.16 | 1.22 | 1.54 | 1.41 | 10.4% | 28.9% vs 26.5% | pass |
+| M4 gradient boosting | 0.77 | 0.81 | 0.88 | 0.85 | 6.3% | 25.0% vs 26.5% | **fail**, no validation look |
+
+The dev bar (lift above 1.0 in two of three years) is a low screen: M2 and M3 passed it with pooled lifts of 1.18
+and 1.41.
+
+**Validation, one look each** (starts 2020-01 to 2021-12, 24 starts, 27,013 rows, median universe 959; trained on
+starts 2013-01 to 2016-12, 40,485 rows). The universe's 3x rate is **27.4%**; K = 1,365 picks.
+
+| model | lift 2020 | 2021 | pooled | top K 3x rate | 90% interval (stocks resampled) | halved, top vs universe (4.5%) | delisted, top vs universe (3.6%) | overlap with M1 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| M1 | 0.56 | 0.81 | 0.69 | 18.9% | 0.56 to 0.80 | 7.7% | 2.2% | |
+| M2 | 0.84 | 1.07 | 0.96 | 26.3% | 0.84 to 1.08 | 6.9% | 5.1% | 22.6% |
+| M3 | 1.06 | 0.72 | 0.88 | 24.2% | 0.73 to 1.04 | 10.3% | 8.1% | 9.8% |
+
+The bar, on validation (all must hold): pooled lift at least 1.5 (M2 0.96, M3 0.88: fail); above 1.0 in each of 2020
+and 2021 (M2 0.84 in 2020, M3 0.72 in 2021: fail); above M1's (both pass); share halved within 5 points of the
+universe's (M2 pass; M3 10.3% against 4.5% plus 5: fail).
+
+**Verdict by the registered rule: no model passes. None is called predictive.** The product shows base rates and
+the scorecard only as a description, labelled "no validated edge"; the forward record decides.
+
+**What the numbers say, without tuning anything.**
+
+- **The regime dominates.** The universe's 3x rate is 7.4% on the dev test starts and 27.4% on the validation
+  starts (the 2020 to 2021 small-cap boom). Every lift is a ratio inside one regime.
+- **Momentum did worse than chance in validation.** M1's lift is 0.69 with an interval of 0.56 to 0.80: stocks that
+  were already strong in 2020 and 2021 tripled less often than the average stock, as the rally broadened to
+  laggards and low-priced stocks. It sat at 1.02 on dev. Momentum is a regime-dependent screen here, not a
+  constant.
+- **M2 and M3 did about as well as nothing** (intervals 0.84 to 1.08 and 0.73 to 1.04 straddle 1.0), and M3's
+  picks halved and delisted more than the universe.
+- **M3's calibration.** Predicted probabilities run 0.3% to 6.8% by decile; realised rates run 20% to 37%. The
+  level is far off because training started in lower-rate years (2013 to 2016 starts); that is the regime shift
+  again. The order is informative in the middle (rank correlation across deciles 0.90) but the **top decile
+  realised 30.5%, below the 9th (34.9%) and the 8th (37.4%)**: the stocks the model liked most did not do best.
+  This is a description of one look, not something to tune on.
+- **Small samples.** SME picks were 26 (M2) and 11 (M3) in validation; no conclusion by series.
+
+**What this does to the evidence base.** The 2020 to 2021 starts have now been looked at three times (M1, M2, M3).
+They can no longer serve as a clean test for new models in this feature family: any new candidate is a new attempt,
+and its validation would be weaker evidence. The sealed holdout (2022 to 2023 starts) is untouched and belongs to
+the owner. With 13 years of data there are about four independent 3-year regimes, so this design can rule out strong
+edges but cannot confirm a moderate one; the forward record (Phase 7) is the test that is not limited this way, but
+it takes years.

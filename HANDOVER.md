@@ -58,8 +58,8 @@ trade finder, risk levels, options, metals, funds, themes, the twelve
 | 1 | Labels and base rates | `research/labels.py`: 3x in 36 months per stock and month-end, SME included; base rates by size, price, liquidity and series, dev only | table in FINDINGS.md | done 2026-11-04: 13.0% of dev stock-months tripled; 1.5% to 26% by start year |
 | 2 | Data checks | fundamentals coverage per year and series; how far SME history goes | coverage report | done 2026-11-04: see FINDINGS.md; fundamentals from 2018 (main board only), ownership from late 2021, SME has none |
 | 3 | Pre-registration | feature list, universe floors (set on tradability, never on which bucket tripled), pass bar | committed to FINDINGS.md before any model run | done 2026-11-04: Option A (price, volume, delivery, size, age model; fundamentals and ownership forward-only), Rs 25 lakh floor |
-| 4 | Models | scorecard, then logistic, then gradient boosting; one logged attempt each | beats the base rate and plain momentum on precision in the top K, calibrated, in most starting years (the bar is fixed in FINDINGS.md 2026-11-04) | next |
-| 5 | Basket simulation | 15 to 30 names, long holds, costs, tax, capacity at Rs 20,000 and Rs 10 lakh | after tax, beats the small-cap index | |
+| 4 | Models | scorecard, then logistic, then gradient boosting; one logged attempt each | beats the base rate and plain momentum on precision in the top K, calibrated, in most starting years (the bar is fixed in FINDINGS.md 2026-11-04) | done 2026-11-04: no model passed validation (M2 lift 0.96, M3 0.88, M1 0.69 against 1.0); M4 failed dev |
+| 5 | Basket simulation (on hold: no model passed Phase 4; owner to decide) | 15 to 30 names, long holds, costs, tax, capacity at Rs 20,000 and Rs 10 lakh | after tax, beats the small-cap index | |
 | 6 | App and Kite | watchlist, stock page, track record, live quotes, holdings sync, nightly health check and notification | read-only, runs with no Claude | |
 | 7 | Forward record | each month's list frozen, scored at 12, 24 and 36 months | runs 12 months or more before real money relies on it | |
 
@@ -93,7 +93,7 @@ the table below in a small commit before starting.
 | Phase 1: labels and base rates | `research/labels.py`, `research/panel.py` (`series`), tests | owner's agent | done 2026-11-04 (FINDINGS.md) |
 | Phase 2: data coverage report | `research/coverage.py`, tests | owner's agent | done 2026-11-04 (FINDINGS.md) |
 | Find and collect SME results (half-yearly, a different NSE feed) | `core/events.py` or `core/financials.py` | unassigned | open: SME has no fundamentals today |
-| Phase 4: features, the four candidates, the folds, as registered in FINDINGS.md 2026-11-04 | `research/features.py`, `research/models.py`, tests, `requirements.txt` (scikit-learn) | owner's agent | next |
+| Phase 4: features, the four candidates, the folds, as registered in FINDINGS.md 2026-11-04 | `research/features.py`, `research/models.py`, `research/mbrun.py`, tests, `requirements.txt` (scikit-learn) | owner's agent | done 2026-11-04 (FINDINGS.md): none passed; owner to choose what next |
 | Older fundamentals from result PDFs (optional, after Phase 4) | `core/` | unassigned | parked |
 | BSE-only companies (BSE's API refuses scripts) | | unassigned | open: a known blind spot, stated on every list |
 

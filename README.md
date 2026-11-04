@@ -5,7 +5,9 @@ stocks by how likely they are, on tested evidence, to return **3x or more
 within 3 years**. It runs on your own computer from public exchange data,
 needs no Claude and no AI service to run, and never places an order.
 
-**Status (2026-11-04): Phases 0 to 3 done.** The data store and
+**Status (2026-11-04): Phases 0 to 4 done. No model has passed validation:** the scorecard, logistic and boosting
+candidates registered in Phase 3 did no better than chance on 2020 to 2021 starts (FINDINGS.md), so any list this tool
+shows is labelled "no validated edge" until the forward record says otherwise. The data store and
 the testing machinery are kept; other asset classes and the old trading
 skills are removed. Nothing predicts multibaggers yet. The plan and phases
 are in [HANDOVER.md](HANDOVER.md); every experiment, failures included, is
@@ -29,7 +31,7 @@ scored as it matures, so the tool keeps its own honest track record.
 | 1 | Labels and base rates: 3x in 36 months for every stock and month-end, SME included | done: 13.0% of dev stock-months tripled, 1.5% to 26% by start year |
 | 2 | Data checks: fundamentals coverage per year, SME price history | done: fundamentals from 2018 (main board), ownership from late 2021, SME prices only |
 | 3 | Pre-register features and the pass bar in FINDINGS.md | done: price, volume and delivery model first; fundamentals and ownership tested forward |
-| 4 | Models: transparent scorecard, then logistic, then gradient boosting | next |
+| 4 | Models: transparent scorecard, then logistic, then gradient boosting | done: none passed validation (lift 0.88 to 0.96 against 1.0) |
 | 5 | Basket simulation with real costs, tax and capacity | |
 | 6 | App and Kite: watchlist, stock pages, live quotes, holdings sync (read-only) | |
 | 7 | Forward record: frozen monthly lists, scored as they mature | |
