@@ -1574,3 +1574,27 @@ over stocks, lift by series group and by price bucket, the top K's overlap with 
 **What the evidence can and cannot be.** Validation has 24 starts in two start years whose windows overlap almost
 entirely, so about two independent regimes. A lift of 1.5 can arise by chance. Passing licenses forward tracking
 and nothing more; the frozen monthly lists (Phase 7) are the test that cannot be fooled.
+
+## 2026-11-04: Phase 4 implementation notes, written before the first model run (owner's agent)
+
+Choices the Phase 3 entry left open, and one slip in it. Fixed now; no model has been run.
+
+- **Slip: the feature count.** The entry's text says 22 features, its table lists **23** (5 momentum, 4 trend, 4
+  risk, 3 size and liquidity, 2 delivery, 5 age and series). The table is the definition; M3 and M4 use all 23.
+- **Company shares only.** The universe applies the Phase 1 rule (ISIN INE, security code 01): ETFs and fund units
+  (INF), which trade in EQ, are out. The first draft of `features.py` missed this; a test found it before any run.
+- **Windows.** Returns and rolling statistics use the adjusted close carried forward at most 20 sessions (as the
+  labels do), so a stock that did not trade on a day has a zero return that day. A rolling window needs at least
+  80% of its sessions (252: 200; 200: 160; 63: 50; 60: 10 for delivery, 50 of 250 for its mean; 50: 40); below
+  that the feature is missing and becomes 0.5. "At least 252 sessions of history" counts sessions with a close.
+  "A trade on 40 of the last 60 sessions" counts sessions with a close.
+- **Ranks** are percentile ranks with ties averaged, within each start's universe; `age_months` is ranked, the two
+  flags are not.
+- **Dropped rows.** A (start, stock) whose 36-month window holds a failed corporate action check is dropped from
+  training and test tables (Phase 1's "listed apart"). A stock without a momentum_quality score is last in M1.
+- **Ties** in a score are broken by security id. K is the top 5% rounded up per start.
+- **Prices read.** Dev reads to 2022-12-31 (the last session is 2022-12-30); validation to 2024-12-31. The runner
+  refuses a panel past those dates and refuses validation for a model that has not passed dev or has had its look.
+- **Dependency.** scikit-learn 1.9.1 installed in the project's `.venv`; `requirements.txt` states `scikit-learn>=1.5`.
+- **Dev walk-forward, once per model.** The runner logs one `mb_model` entry per model per stage in `runs.jsonl`.
+  If a bug is found after a run, the fix is a new attempt and both runs stay logged.
