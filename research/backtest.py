@@ -155,7 +155,7 @@ def select_top(scores, elig, i, top):
     return list(row.sort_values(ascending=False).index[:top])
 
 
-def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None, on_day=None):
+def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None, on_day=None, elig=None):
     """Simulate. exposure: Series of the share of capital to invest, read at
     each rebalance date (default fully invested); the rest stays in cash.
     on_day(i, date, units, trades): called after each session's close is
@@ -167,7 +167,7 @@ def run(p, scores, start, end, cfg=None, rebalance_dates=None, exposure=None, on
     dates = p.dates
     lo, hi = dates.searchsorted(pd.Timestamp(start)), (dates.searchsorted(pd.Timestamp(end), "right") if end else len(dates))
     rebal = set(rebalance_dates if rebalance_dates is not None else panel_mod.month_ends(dates[lo:hi]))
-    elig = panel_mod.universe(p)
+    elig = panel_mod.universe(p) if elig is None else elig  # an idea may pass its own universe
     close, open_ = p.close, p.open
     col = {s: k for k, s in enumerate(close.columns)}
     C, O, H, L = close.values, open_.values, p.high.values, p.low.values

@@ -72,7 +72,7 @@ class Idea:
     of sessions; positions: how many to hold; fit(p, train_start, train_end), optional, gives
     the score frame for a walk-forward window from its training years only."""
 
-    def __init__(self, name, scores, hold="monthly", positions=20, fit=None):
+    def __init__(self, name, scores, hold="monthly", positions=20, fit=None, universe=None):
         if isinstance(scores, str):
             if scores not in signals_mod.SIGNALS:
                 raise KeyError("unknown signal %r" % scores)
@@ -84,13 +84,41 @@ class Idea:
         if not isinstance(positions, int) or positions < 1:
             raise ValueError("positions must be a whole number of at least 1")
         self.name, self.score_fn, self.hold, self.positions, self.fit = name, scores, hold, positions, fit
+        self.universe = dict(universe) if universe else None  # panel.universe arguments; None: its defaults
+
+    def eligible(self, p):
+        return panel_mod.universe(p, **self.universe) if self.universe else panel_mod.universe(p)
 
     def horizon(self):
         return MONTH_SESSIONS if self.hold == "monthly" else self.hold
 
     def as_dict(self):
         return {"name": self.name, "signal": self.signal, "hold": self.hold, "positions": self.positions,
-                "fit": self.fit is not None}
+                "fit": self.fit is not None, "universe": self.universe}
+
+
+# ---------------------------------------------------------------- named strategies
+
+# A variant is a strategy in research/strategies.json with named changes; strategies.json itself is
+# never edited here. FINDINGS.md 2026-11-04 (multibagger misses, step 2): the Rs 50 lakh floor is fixed.
+VARIANTS = {
+    "momentum_quality_wide_top20": {"base": "momentum_quality_top20", "universe": {"min_value": 5000000.0}},
+}
+
+
+def strategy_idea(name, strategies=None):
+    """The Idea for a strategy in strategies.json (or a VARIANTS entry on one): its signal, top N,
+    monthly rebalance and universe exactly as written there."""
+    if strategies is None:
+        with open(os.path.join(HERE, "strategies.json"), encoding="utf-8") as fh:
+            strategies = json.load(fh)
+    change = VARIANTS.get(name)
+    s = strategies[change["base"] if change else name]
+    u = dict(s["universe"])
+    u.update(change["universe"] if change else {})
+    return Idea(name, s["signal"], "monthly", int(s["top"]), universe={
+        "min_price": float(u["min_price"]), "min_value": float(u["min_value"]),
+        "value_days": int(u["value_days"]), "min_history": int(u["min_history"])})
 
 
 # ---------------------------------------------------------------- rules
@@ -226,7 +254,10 @@ def simulate(p, scores, elig, idea, start, end, capital, rules, tax=False, divid
     sold, after = liquidate(res, hook, capital, rules["orders"]["slippage_bps"], rules["charges"]["broker"])
     nav = res["nav"] * capital
     a, b = nav.index[0], nav.index[-1]
-    return {"nav": nav, "metrics": backtest.metrics(res["nav"]), "stats": res["stats"], "value_sold": sold,
+    nav_after = nav.copy()
+    nav_after.iloc[-1] = after  # sold at the last close, charges and the last year's tax paid
+    return {"nav": nav, "nav_after_tax": nav_after, "metrics": backtest.metrics(res["nav"]),
+            "metrics_after_tax": backtest.metrics(nav_after / capital), "stats": res["stats"], "value_sold": sold,
             "value_after_tax": after, "tax_paid": dict(hook.paid) if hook else {},
             "cagr_sold": aftertax.cagr(capital, sold, a, b), "cagr_after_tax": aftertax.cagr(capital, after, a, b),
             "trades": len(res["trades"])}
@@ -279,7 +310,7 @@ def _slice_metrics(nav, a, b):
     return backtest.metrics(s / s.iloc[0]) if len(s) > 1 else {}
 
 
-def walk_forward(p, scores, elig, fwd, bench_nav, idea, start, end, rules):
+def walk_forward(p, scores, elig, fwd, bench_nav, idea, start, end, rules, fmv=None):
     """Train on years first..k, test on year k+1, roll. Each window: IC on the training years
     (forward returns that end inside them) and on the test year; the test year simulated at each
     capital level from its own fresh capital. Then every test month and day pooled."""
@@ -291,6 +322,7 @@ def walk_forward(p, scores, elig, fwd, bench_nav, idea, start, end, rules):
     levels = [float(x) for x in retail.capital_levels(rules)]
     windows, pooled_dates, pooled_r = [], [], {lv: [] for lv in levels}
     pooled_bench = []
+    pooled_tax = {lv: [] for lv in levels}
     ty = y0 + k
     while ty + step - 1 <= y1:
         tr_a, tr_b = "%d-01-01" % y0, "%d-12-31" % (ty - 1)
@@ -315,6 +347,11 @@ def walk_forward(p, scores, elig, fwd, bench_nav, idea, start, end, rules):
                                          "max_drawdown": m.get("max_drawdown"), "unfilled": r["stats"]["unfilled"],
                                          "short_months": r["stats"]["short_months"]}
             pooled_r[lv].append(r["nav"].pct_change().dropna())
+            rt = simulate(p, sc, elig, idea, te_a, te_b, lv, rules, tax=True, fmv=fmv)  # same run, tax paid
+            mt = rt["metrics_after_tax"]
+            w["levels"][str(int(lv))].update({"cagr_after_tax": mt.get("cagr"), "sharpe_after_tax": mt.get("sharpe"),
+                                              "max_drawdown_after_tax": mt.get("max_drawdown")})
+            pooled_tax[lv].append(rt["nav_after_tax"].pct_change().dropna())
         windows.append(w)
         ty += step
     if not windows:
@@ -333,8 +370,11 @@ def walk_forward(p, scores, elig, fwd, bench_nav, idea, start, end, rules):
     for lv in levels:
         r = pd.concat(pooled_r[lv])
         m = backtest.metrics((1 + r).cumprod())
+        mt = backtest.metrics((1 + pd.concat(pooled_tax[lv])).cumprod())
         pooled["levels"][str(int(lv))] = {"cagr": m.get("cagr"), "sharpe": m.get("sharpe"),
                                           "max_drawdown": m.get("max_drawdown"),
+                                          "cagr_after_tax": mt.get("cagr"), "sharpe_after_tax": mt.get("sharpe"),
+                                          "max_drawdown_after_tax": mt.get("max_drawdown"),
                                           "windows_beating_universe": sum(
                                               1 for w in windows if (w["levels"][str(int(lv))]["cagr"] or -1) >
                                               (w["bench"]["cagr"] if w["bench"]["cagr"] is not None else math.inf))}
@@ -346,13 +386,13 @@ def run(p, idea, period, rules, walk=True, dividends=None):
     if period not in PERIODS:
         raise ValueError("the harness runs dev and validation only")
     start, end = PERIODS[period]
-    elig = panel_mod.universe(p)
+    elig = idea.eligible(p)
     scores = idea.score_fn(p)
     rebal, first = rebalance_dates(p.dates, start, end, idea.hold)
     fwd = evaluate.forward_returns(p, idea.horizon())
     ic = evaluate.ic_report(scores, fwd, elig, ic_dates(p.dates, rebal, start, end, idea.horizon(), data_end=end))
     ref = backtest.run(p, scores, first.date().isoformat(), end, backtest.Config(top=idea.positions),
-                       rebalance_dates=rebal)
+                       rebalance_dates=rebal, elig=elig)
     bench = backtest.metrics(ref["bench"])
     fractional = backtest.metrics(ref["nav"])
     fmv = aftertax.fmv_2018(p)
@@ -372,13 +412,15 @@ def run(p, idea, period, rules, walk=True, dividends=None):
             "worst_month": ms["worst_month"], "months_losing": ms["months_losing"], "yearly": m.get("yearly"),
             "days": m.get("days"), "skew": m.get("skew"), "kurtosis": m.get("kurtosis"),
             "cagr_sold": pre["cagr_sold"], "cagr_after_tax": post["cagr_after_tax"],
-            "value_after_tax": post["value_after_tax"], "tax_paid": post["tax_paid"],
+            "value_after_tax": post["value_after_tax"],
+            "sharpe_after_tax": post["metrics_after_tax"].get("sharpe"),
+            "max_drawdown_after_tax": post["metrics_after_tax"].get("max_drawdown"), "tax_paid": post["tax_paid"],
             "stats": {k: v for k, v in pre["stats"].items() if k not in ("exposure_avg", "index_avg")},
             "own_picks_bought": pre["stats"]["own_picks"] / pre["stats"]["picks_wanted"]
             if pre["stats"]["picks_wanted"] else None,
             "bar": bar(ic, m, bench, rules)}
     if walk and period in rules["walk_forward"]["periods"]:
-        out["walk_forward"] = walk_forward(p, scores, elig, fwd, ref["bench"], idea, start, end, rules)
+        out["walk_forward"] = walk_forward(p, scores, elig, fwd, ref["bench"], idea, start, end, rules, fmv=fmv)
     return out
 
 
@@ -438,7 +480,7 @@ def log_entry(res, batch, note, rules):
         "at": dt.datetime.now().isoformat(timespec="seconds"), "signal": res["idea"]["signal"],
         "idea": res["idea"]["name"], "batch": batch, "period": res["period"], "profile": "harness",
         "config": {"engine": ENGINE, "hold": res["idea"]["hold"], "positions": res["idea"]["positions"],
-                   "fit": res["idea"]["fit"], "retail_version": rules.get("version"),
+                   "fit": res["idea"]["fit"], "universe": res["idea"].get("universe"), "retail_version": rules.get("version"),
                    "capital_levels": rules["capital_levels"]["value"]},
         # the top level's pre-tax Sharpe is the one the deflated Sharpe counts
         "sharpe": top["sharpe"], "cagr": top["cagr"], "max_drawdown": top["max_drawdown"],
@@ -482,6 +524,8 @@ def report(res, batch_n, total_n, batch, dsr=None):
                    "  costs %s" % ("", _pct(x["cagr_sold"]), _pct(x["cagr_after_tax"]),
                                    inr(sum(x["tax_paid"].values()), 0), s["unfilled"], s["short_months"],
                                    s["rebalances"], inr(s["costs"], 0)))
+        out.append("  %12s after tax: Sharpe %s  worst drawdown %s  (sold at the end, tax paid)" % (
+            "", _f(x.get("sharpe_after_tax")), _pct(x.get("max_drawdown_after_tax"))))
         out.append("  %12s bought %s of the idea's own picks" % ("", _pct(x.get("own_picks_bought"))))
         bb = x["bar"]
         out.append("  %12s bar: IC t>3 %s, monotonic>0.5 %s, Sharpe>universe %s: %s" % (
@@ -526,6 +570,10 @@ def report(res, batch_n, total_n, batch, dsr=None):
             _f(po["bench"]["sharpe"]), "  ".join("Rs %s %s/%s, beat the universe in %d of %d years" % (
                 inr(float(k), 0, ""), _pct(v["cagr"]), _f(v["sharpe"]), v["windows_beating_universe"], len(wf["windows"]))
                 for k, v in po["levels"].items())))
+        for k, v in po["levels"].items():
+            out.append("    pooled after tax  Rs %s  CAGR %s  Sharpe %s  worst drawdown %s (before tax %s)" % (
+                inr(float(k), 0, ""), _pct(v.get("cagr_after_tax")), _f(v.get("sharpe_after_tax")),
+                _pct(v.get("max_drawdown_after_tax")), _pct(v["max_drawdown"])))
     out.append("  attempts  %d in batch %r, %d harness runs logged in all%s" % (
         batch_n, batch, total_n, "" if dsr is None or np.isnan(dsr) else
         "; deflated Sharpe probability %.2f over every logged %s run" % (dsr, res["period"])))
@@ -535,7 +583,9 @@ def report(res, batch_n, total_n, batch, dsr=None):
 def main(argv=None, runs_log=backtest.RUNS_LOG):
     ap = argparse.ArgumentParser(description="Test one idea under the retail rules (dev and validation only).")
     ap.add_argument("--period", required=True, choices=sorted(PERIODS))
-    ap.add_argument("--signal", required=True, choices=sorted(signals_mod.SIGNALS))
+    ap.add_argument("--signal", choices=sorted(signals_mod.SIGNALS))
+    ap.add_argument("--strategy", help="a strategy in strategies.json, or a variant of one (%s): its signal, top N and "
+                    "universe as written there" % ", ".join(sorted(VARIANTS)))
     ap.add_argument("--hold", default="monthly", help="'monthly' or a number of sessions")
     ap.add_argument("--positions", type=int, default=20)
     ap.add_argument("--idea", help="the idea's name in the log (default: signal, positions and hold)")
@@ -548,7 +598,12 @@ def main(argv=None, runs_log=backtest.RUNS_LOG):
     hold = a.hold if a.hold == "monthly" else int(a.hold) if a.hold.isdigit() else None
     if hold is None:
         ap.error("--hold is 'monthly' or a whole number of sessions")
-    idea = Idea(a.idea or "%s_top%d_%s" % (a.signal, a.positions, hold), a.signal, hold, a.positions)
+    if a.strategy:
+        idea = strategy_idea(a.strategy)
+    elif a.signal:
+        idea = Idea(a.idea or "%s_top%d_%s" % (a.signal, a.positions, hold), a.signal, hold, a.positions)
+    else:
+        ap.error("give --signal or --strategy")
     rules = check_rules(retail.load())
     if a.period == "validation":
         if not a.note.strip():
