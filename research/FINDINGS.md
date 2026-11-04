@@ -1390,3 +1390,98 @@ of the stocks that reached 3x gave it back by the end.
   action files. Few such rows exist, so the base rates barely move.
 
 Nothing here chooses a floor: floors are fixed in Phase 3 on tradability.
+
+## 2026-11-04: Phase 2 data checks, settings fixed before the run (owner's agent)
+
+`research/coverage.py`. Descriptive: adopts nothing, ranks nothing, not a
+variant; logged once with kind `audit`.
+
+1. **Coverage** at each year-end session from 2013 and at the latest
+   session: of company shares (ISIN INE, code 01) with a close in the 20
+   sessions to the snapshot, by series group and by traded value (as Phase
+   1), the share that had by then (filings broadcast before the snapshot
+   day only) a results filing whose quarter ended within 400 days, a share
+   count in it (paid-up capital over face value, both above zero), and a
+   shareholding detail row with total shares for a quarter ended within 400
+   days. No returns are read.
+2. **SME history:** SME (SM, ST, SZ) securities trading per year, and how
+   many have any results filing in the store.
+3. **Extreme multiples:** a stock is flagged when its adjusted close moves
+   by more than +50% or less than -33% (a ratio above 1.5 or below 1/3) in
+   one session inside a window of its dev starts. NSE price bands are at
+   most 20% for nearly every stock, so this points to a missed
+   consolidation or split, an IPO or relisting day, or a real
+   discontinuity. Reported: how many stocks are flagged, the 25 largest
+   multiples with their flag, and the base rate without flagged stocks, as a
+   sensitivity. The Phase 1 definition is not changed by it.
+   Dev only: prices to 2022-12-30.
+
+Decision rule fixed now: if the flagged stocks move the 3x base rate by
+more than 1 percentage point, a corporate action cleaning step comes before
+Phase 3. If not, Phase 1 stands.
+
+## 2026-11-04: Phase 2 results, data checks (owner's machine; owner's agent)
+
+`research/coverage.py`, three logged audit runs (the count is stated so none is hidden). Run 1 had a wrong SME
+table (it counted a filing of any year, so an SME stock that later moved to the main board looked covered). Run 2
+corrected that and added the promoter stake table and a trading-gap check. Run 3 changed the jump check to compare
+each close with the previous close at any distance: runs 1 and 2 skipped gaps over 20 sessions, a hole between that
+limit and the 60-session gap check. The note logged with run 3 says this "hid DUCON's chain switch"; that is wrong,
+DUCON is not a chain switch (below). The code change stands; the note does not. Tests: `tests/test_coverage.py`.
+Coverage is read from the store only, outcomes only for the multiples check (dev, prices to 2022-12-30).
+
+**1. Fundamentals coverage** (company shares with a close in the 20 sessions to the snapshot; a results filing
+broadcast before that day, quarter ended within 400 days; share count = paid-up capital over face value):
+
+| year-end | all | main board EQ | main board BE/BZ | SME | promoter and public stake |
+| --- | --- | --- | --- | --- | --- |
+| 2013 to 2017 | 0% | 0% | 0% | 0% | 0% |
+| 2018 | 84% | 95% | 81% | 0% | 0% |
+| 2019 | 86% | 95% | 90% | 0% | 0% |
+| 2020 | 89% | 96% | 90% | 0% | 0% |
+| 2021 | 88% | 94% | 91% | 0% | 0% |
+| 2022 | 89% | 96% | 87% | 3% | 73% |
+| 2023 | 86% | 98% | 94% | 0% | 73% |
+| 2024 | 81% | 98% | 96% | 0% | 70% |
+| 2025 | 79% | 99% | 87% | 1% | 70% |
+| 2026-10-30 | 73% | 91% | 75% | 0% | 65% |
+
+- The share count is present wherever a filing is (within a point). Detailed holdings (FII, mutual funds,
+  pledges) exist only for the latest quarter (56% of stocks on 2026-10-30, 0% before).
+- The latest snapshot is lower because the September 2026 results season is not complete, and because the
+  population now includes 571 SME stocks.
+- By traded value on 2026-10-30, filing coverage is 41% (under Rs 10 lakh a day), 55%, 67%, 87% and 98% (Rs 10
+  crore and over): the thinnest stocks, where most multibaggers start, have the least fundamentals.
+- **Stake history.** NSE's shareholding feed stamps every filing before 2022-01-06 with a broadcast time on or
+  after that day. So by broadcast time the promoter and public stake is usable from the end of 2022 (73%).
+  `submitted_on` holds the original filing day and would date them from late 2021 (1,661 rows for the September
+  2021 quarter; 63 and 84 for the March and June 2021 quarters), at the cost of trusting that field.
+  Either way nothing before late 2021.
+
+**2. SME.** 2 to 608 SME securities traded per year (109 in 2017, 284 in 2023, 608 in 2026). The store holds
+results filings in the same year for 0 to 27 of them a year (16 in 2019, 22 in 2020, 27 in 2022, 3 in 2024). **SME
+fundamentals are effectively absent**: SME companies file half-yearly in a different NSE feed that is not
+collected. For SME stocks the model has prices, volume, delivery and age only, until that feed is found.
+
+**3. The largest multiples.**
+
+- Flag: an adjusted close above 1.5 or below one third of the previous close (at any distance). 57 of 2,156 stocks
+  are flagged in their windows; the 3x base rate is 13.0% as fixed and 13.1% without them (1,205 of 1,235
+  multibaggers remain). **Under the 1 point rule fixed before the run: Phase 1 stands, no cleaning step.**
+- Trading gaps over 60 sessions inside a window: 3,207 stock-months from 162 stocks, with a 3x rate of 7.7%
+  against 13.2% without them (sensitivity only, not adopted).
+- **Correction to the Phase 1 entry.** It said the largest multiples (DUCON, ESSENTIA, SCAPDVR) "may be missed
+  consolidations". DUCON was checked: one ISIN since 2012 (INE741L01018, formerly DYNATECH), Rs 0.25 in February
+  2014, Rs 15.8 by September 2015, Rs 56 by December 2016. A real penny-stock run with turnover of about Rs 500
+  a day, not a data error. The other very large multiples are the same kind: prices under Rs 1 (a Rs 0.05 tick
+  is 20%) and turnover of hundreds to tens of thousands of rupees a day. Only one of the top 25 (ICIL) is flagged.
+  Ordinary-price large winners (TANLA 62x, ADANIGREEN 72x, BCG 84x, TTML 55x) are not.
+- Lesson for Phase 3: these multiples are real in the data and unobtainable in practice. They are handled by a
+  tradability floor, not by cleaning.
+
+**What this means for the plan (decisions in HANDOVER.md).** Dev starts 2013 to 2019 carry price, volume,
+delivery, size and age features for every stock. Results fundamentals exist from 2018 starts and ownership from
+late 2021. Under the purge rule (training windows must end before the first test start) a model cannot be trained
+on fundamentals and then validated on a later regime: starts from 2018 resolve in 2021 or later, which is the
+validation period. So fundamentals and ownership can be tested only forward, or on one regime with two training
+start years.

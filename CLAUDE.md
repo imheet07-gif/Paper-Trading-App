@@ -80,7 +80,8 @@ docs/RUNBOOK.md is how the owner runs it day to day.
   market store (`series=EQUITY_SERIES` adds SME; the default is the main
   board); `labels.py` the multibagger labels and base rates (3x in 36
   months per stock and month-end, dev starts only; rows to
-  `data/labels/`); `misses.py` the miss audit of the old strategy; `fundamentals.py` point-in-time
+  `data/labels/`); `coverage.py` the Phase 2 data checks (fundamentals, share
+  count and stake coverage per year-end, SME history, the largest multiples); `misses.py` the miss audit of the old strategy; `fundamentals.py` point-in-time
   fundamentals from the `financials` table; `event_signals.py`. The
   momentum machinery stays as the benchmark any new model must beat:
   `signals.py`, `backtest.py`, `evaluate.py`, `regimes.py`, `profiles.py`,
