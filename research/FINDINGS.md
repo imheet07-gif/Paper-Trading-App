@@ -1485,3 +1485,92 @@ late 2021. Under the purge rule (training windows must end before the first test
 on fundamentals and then validated on a later regime: starts from 2018 resolve in 2021 or later, which is the
 validation period. So fundamentals and ownership can be tested only forward, or on one regime with two training
 start years.
+
+## 2026-11-04: Phase 3, the multibagger model pre-registration (owner chose Option A, a Rs 25 lakh floor; fixed before any model run)
+
+Nothing below has been run. Every setting is fixed now; a change after seeing any result is a new attempt, logged
+as one. Phase 4 implements exactly this.
+
+**Design (owner, Option A).** The validated core model uses only price, volume, delivery, size and age features,
+which exist for every stock from 2013. Fundamentals (from 2018, main board only) and ownership (from late 2021)
+cannot be trained and validated under the purge rule (Phase 2), so they are shown on stock pages as untested
+context and scored on the forward record only, to be promoted by the rule of the themes layer (at least 12 months
+and 30 scored lists, then a weight fixed in advance). SME results are not collected; SME stocks are scored on
+price features alone.
+
+**Universe at a start t** (point in time, to t's close):
+
+- company equity share (ISIN INE, code 01), series EQ, BE, BZ, SM, ST or SZ at t;
+- mean traded value over the 60 sessions to t of at least **Rs 25 lakh** (days without a trade count as zero),
+  and a trade on at least 40 of those 60 sessions (so a few spike days cannot lift a thin stock over the floor);
+- at least 252 sessions of history (the features need a year);
+- no failed corporate action check in the past year.
+
+No price floor: the value floor handles penny stocks (owner). On dev starts the floor leaves a median of 969
+stocks a month (563 in 2013 to 1,360), of which 516 stock-months are SME (98 stocks) and 1,494 are BE or BZ; the
+floor keeps 81,606 of the 136,212 stock-months that Phase 1 counted (60%; 10% of the SME ones), counts only, no outcomes. Phase 5 sizing: SME
+shares trade in exchange-set market lots, and the Rs 20,000 account may not afford one; lot sizes come from the
+Kite instruments file and are checked then.
+
+**Features** (22; adjusted close unless stated; a year is 252 sessions; all to t's close; a stock short of any
+window is outside the universe):
+
+| group | features |
+| --- | --- |
+| momentum | `ret_1m` (21 sessions), `ret_3m` (63), `ret_6m` (126), `ret_12m` (252), `mom_12_1` (close 21 sessions ago over close 252 ago, less 1) |
+| trend | `prox_52w_high` (close over its 252-session maximum), `prox_52w_low` (over its minimum), `ma200_ratio` (close over its 200-session mean), `ma50_over_ma200` |
+| risk | `vol_1y` and `vol_3m` (standard deviation of daily returns over 252 and 63 sessions), `downside_vol_1y` (root mean square of negative daily returns), `max_drawdown_1y` |
+| size and liquidity | `log_value_60` (log of mean daily traded value, 60 sessions), `value_trend` (60-session mean over the 250-session mean), `log_price` (unadjusted close) |
+| delivery | `delivery_60` (mean delivery share, 60 sessions, days without it ignored), `delivery_trend` (over the 250-session mean) |
+| age and series | `age_months` (months since the first close in the store, capped at 120), `pre_store` (1 when the first close is the store's first session), `lock_days_60` (sessions in the last 60 locked at a circuit: high equal to low after a move of 2% or more), `be_share_252` (share of the last 252 sessions in BE or BZ), `is_sme` (1 for SM, ST, SZ) |
+
+Each feature except the two flags is replaced by its percentile rank among the universe on that start (0 to 1),
+so regimes are normalised and no market-level feature enters (seven start years cannot support one). A missing
+value becomes 0.5.
+
+**Target.** The Phase 1 label: adjusted multiple at the month-end 36 months later, 3x or more; delisting valued at
+half the last close. Starts and splits as in CLAUDE.md: dev 2013-01 to 2019-12, validation 2020-01 to 2021-12,
+holdout sealed. Training starts must satisfy start + 36 months <= the first test start (purged).
+
+**Candidates** (each one attempt, batch `mb-phase4`; hyperparameters fixed, no search):
+
+| id | model |
+| --- | --- |
+| M1 | reference only: `momentum_quality` score through the same machinery |
+| M2 | scorecard: mean of the percentile ranks of `mom_12_1` (+), `prox_52w_high` (+), `ma200_ratio` (+), `delivery_60` (+), `vol_1y` (-), `log_value_60` (-), equal weights, no training. The signs come from priors and from the Phase 1 base rates by size; the size sign is the one informed by data already seen |
+| M3 | logistic regression, all 22 features, L2, C = 1.0, lbfgs, max_iter 1000 (scikit-learn) |
+| M4 | gradient boosting (scikit-learn `HistGradientBoostingClassifier`): max_depth 3, learning_rate 0.05, max_iter 200, min_samples_leaf 500, l2_regularization 1.0, early stopping off, random_state 0 |
+
+scikit-learn is added to `requirements.txt` in Phase 4 (BSD licence, runs offline on the owner's Mac).
+
+**Scoring one start.** Rank the universe by the model's score (M3 and M4: predicted probability of 3x). Take the
+top K, K = 5% of the universe rounded up (about 30 to 70). The measures: the top K's 3x rate against the
+universe's 3x rate on the same start (the lift), plus their median multiple, share halved and share delisted.
+Pooled over a period: sum of top-K hits over sum of top-K picks, over the universe's rate over the same starts.
+K is a measuring cut for comparing models; it is not a basket size (Phase 5).
+
+**Folds.**
+
+- Dev walk-forward, trained only on starts whose windows end before the test year: test 2017 starts (train 2013-01
+  to 2014-01), test 2018 (to 2015-01), test 2019 (to 2016-01). Each model runs once per fold.
+- Validation: test starts 2020-01 to 2021-12, trained on starts 2013-01 to 2016-12. One look per finished model.
+- Holdout: sealed. The model published for live use is trained on every start whose window has ended.
+
+**Pass bar.** A candidate passes only if all hold:
+
+1. on dev walk-forward, its lift is above 1.0 in at least two of the three test years (a model that fails gets no
+   validation look);
+2. on validation, its pooled lift is at least 1.5 and above 1.0 in each of 2020 and 2021;
+3. its pooled validation lift is above M1's on the same starts (otherwise momentum alone does the job);
+4. its top K's share halved is not more than 5 percentage points above the universe's, on validation.
+
+If several pass, the simplest is kept (M2, then M3, then M4), not the best, to limit selection among three tries.
+If none passes, no model is called predictive: the product shows base rates and the scorecard only as a
+description, labelled "no validated edge", and the forward record decides.
+
+Reported, not part of the bar: calibration by decile of predicted probability (M3, M4), a bootstrap 90% interval
+over stocks, lift by series group and by price bucket, the top K's overlap with M1.
+
+**What the evidence can and cannot be.** Validation has 24 starts in two start years whose windows overlap almost
+entirely, so about two independent regimes. A lift of 1.5 can arise by chance. Passing licenses forward tracking
+and nothing more; the frozen monthly lists (Phase 7) are the test that cannot be fooled.
