@@ -1041,3 +1041,108 @@ Rs 50,000 an order). Multibaggers are also chosen with hindsight, so a high
 miss count does not by itself say the filters are wrong. Nothing here picks
 or changes the Rs 50 lakh floor of step 2, which was fixed before the run
 and is tested on its own through the harness.
+## 2026-11-04: the Phase 2 harness checked on momentum_quality, dev (second agent; owner's store)
+
+A check of the new machine, not a new idea: `research/harness.py` on
+`momentum_quality`, monthly, top 20, 5 and 3, dev 2013 to 2020, under the
+rules in `research/retail.json` (version 1). Three runs logged in batch
+`phase2-check`. Different from the earlier engines on purpose: the
+portfolio is invested from the first session (the decision is the close
+before 1 January 2013), cash dividends are credited, and each capital level
+starts from its own amount.
+
+| run | IC (t) | fractional reference | Rs 20,000: CAGR, Sharpe, worst DD | Rs 10 lakh: CAGR, Sharpe, worst DD | after gains tax, 20k / 10 lakh | recorded earlier |
+| --- | --- | --- | --- | --- | --- | --- |
+| top 20 | 0.045 (2.50) | 26.1%, 0.82, -38.5% | 16.0%, 0.54, -36.5% | 22.8%, 0.77, -28.9% | 12.2% / 19.6% | 26.2%, 0.82 (backtest.py); 20.8%, 0.71 (profiles.py, Rs 1 lakh) |
+| top 5 | same | 33.0%, 0.85, -56.0% | 26.4%, 0.78, -35.9% | 17.8%, 0.50, -39.7% | 23.0% / 15.9% | 26.9%, 0.77, -35.9% (Rs 1 lakh) |
+| top 3 | same | 34.8%, 0.81, -81.6% | 26.9%, 0.71, -61.0% | 27.8%, 0.73, -46.9% | 22.6% / 23.5% | 27.3%, 0.71, -61.6% (Rs 1 lakh) |
+
+The equal-weight universe made 8.8% (Sharpe 0.20). The IC, the deciles
+(monotonic 0.92) and the fractional reference reproduce the recorded
+numbers exactly, so the harness reads the same data and dates as before.
+
+**Why the whole-share numbers move with capital.** A selection count on
+the same rebalance dates (which stocks each run buys; no returns
+computed, so not a new trial):
+
+| run | the idea's own picks bought | passed over: liquidity (1% of median value) | passed over: one share costs more than the slot |
+| --- | --- | --- | --- |
+| top 20, Rs 20,000 | 84% | 0% | 15% |
+| top 20, Rs 10 lakh | 99% | 0% | 0% |
+| top 5, Rs 20,000 | 98% | 0% | 0% |
+| top 5, Rs 10 lakh | 79% | 20% | 0% |
+| top 3, Rs 20,000 | 98% | 0% | 0% |
+| top 3, Rs 10 lakh | 48% | 51% | 0% |
+
+- Top 20 at Rs 20,000 (Rs 1,000 a stock) cannot buy 15% of its picks, and
+  the DP charge of Rs 15.34 is 1.5% of each sale: 16.0% against 22.8% at
+  Rs 10 lakh. Unfilled limit buys (270 at Rs 10 lakh, 247 recorded at Rs 1
+  lakh) take the rest of the gap to the fractional 26.1%, as recorded on
+  2026-10-28.
+- Top 5 and top 3 at Rs 10 lakh hold Rs 2 to 3 lakh a stock, more than 1%
+  of the median traded value of many top-ranked stocks, so they buy more
+  liquid substitutes from further down the top tenth. With so few stocks,
+  which substitutes they get decides the result: top 3 came out about where
+  it was recorded, top 5 nine points lower. This is the liquidity rule
+  working, not a fault, and it says plainly that concentrated momentum has
+  little capacity at Rs 10 lakh.
+
+**Minimum capital (rule in retail.json: whole shares, DP charge at most
+0.5% of a position, 90% of decision dates).** Top 20 needs Rs 3.18 lakh to
+hold every one of its own picks (median Rs 1.04 lakh, at most Rs 13.8 lakh,
+when one pick costs tens of thousands a share), top 5 Rs 28,559, top 3
+Rs 16,454. Top 20 and top 5 are flagged at Rs 20,000. The simulator
+instead passes over what does not fit, as the trade finder does, so its Rs
+20,000 rows show what a small account actually got; the flag says the idea
+as ranked cannot be followed there.
+
+**Walk-forward (train 2013 to k, test k+1, 2016 to 2020).** The test-year IC
+was negative in 2016 and 2020 and positive in 2017 to 2019; pooled over
+the 59 test months it is 0.032 (t 1.56). Pooled test-year CAGR at Rs 10
+lakh: top 20 13.8% (Sharpe 0.40), top 3 24.8% (0.63), against the
+universe's 6.5%; top 20 beat the universe in 4 of 5 test years.
+
+**Against the bar (option B).** All three fail it on dev, as
+`momentum_quality` always has: the IC t is 2.50, below 3. Deciles and
+Sharpe pass. `momentum_quality` stays the benchmark under the rule it was
+validated by (t above 2); the higher bar applies to new batches from Phase 3.
+No setting was changed after these runs.
+
+## 2026-11-04: retail rules version 2, a maximum capital (owner chose 10%; settings fixed before any run)
+
+The owner kept the minimum-capital rule of version 1 as it is: the DP
+charge at most 0.5% of a position, 90% of decision dates covered, and the
+minimum measured on the idea's own picks. Two additions, fixed now, before
+any run:
+
+- **Maximum capital.** The liquidity limit (an order at most 1% of the
+  stock's 60-session median traded value) caps how much money an idea
+  can take. With equal money per position, a pick is passed over when
+  capital / positions is above 1% of its median traded value. An idea's
+  maximum is the largest capital at which at most **10%** of its own picks,
+  counted over all its decision dates, would be passed over for liquidity
+  (owner, 2026-11-04). A capital level above it is flagged. Rupees at the
+  time of each decision, not adjusted for growth.
+- **The small account's own result beside the flag.** Each capital level
+  reports the share of the idea's own picks its simulation actually bought,
+  so a flagged level still shows what following the skip rule got, and
+  how far it strayed from the tested ranking.
+
+`research/retail.json` becomes version 2 with `max_capital.max_skipped_share`
+0.10. Nothing else changes.
+
+**Maximum capital of momentum_quality on dev, under version 2.** Selection
+only, on the same decision dates as the 2026-11-04 check (no returns
+computed, so no new trial):
+
+| run | maximum capital | own picks passed over at Rs 20,000 / Rs 10 lakh | flagged |
+| --- | --- | --- | --- |
+| top 20 | Rs 55.1 lakh | 0% / 0% | no |
+| top 5 | Rs 13.2 lakh | 0% / 0% | no |
+| top 3 | Rs 7.3 lakh | 0% / 22.6% | at Rs 10 lakh |
+
+The maximum is counted at a fixed capital. A compounding account crosses
+it: the top 5 run started at Rs 10 lakh, grew past Rs 13.2 lakh within a
+few years, and so passed over 20% of its own picks over the whole run (the
+selection count above). The engine sizes to the capital typed on the day,
+so the check applies to that day's amount.

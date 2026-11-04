@@ -92,7 +92,18 @@ broker-neutral holdings, trades and charges.
   evidence cards), `profiles.py` its concentration and risk-level backtests
   (dev and validation only), `fundamentals.py` the F6 batch of 20
   fundamentals signals (`f_*` in `signals.py`, point in time from the
-  `financials` table). The scan runs only strategies in
+  `financials` table), and the engine's Phases 1 and 2 (HANDOVER.md,
+  Direction 2026-11-03): `retail.json` the retail rules every idea is
+  tested under (capital levels Rs 20,000 and Rs 10 lakh, no leverage or
+  shorts, 1% liquidity, circuits, T+1, charges and tax read from `core/`),
+  each value with its source; `retail.py` (standard library) loads them,
+  checks an idea's minimum and maximum capital and lists what the store holds
+  (`inventory`, read-only); `harness.py` tests any score frame with its
+  holding period and positions at both capital levels (IC and deciles,
+  `profiles.simulate` with whole shares and limit buys, after-tax through
+  `core/tax.py`, minimum capital, the option B bar), walk-forward on dev,
+  one validation look per idea, never the holdout, every attempt counted
+  per batch in `runs.jsonl`. The app runs it through `jobs.py harness`. The scan runs only strategies in
   `research/strategies.json` and selects with `backtest.select_top`, so it
   trades exactly what was validated; changing a strategy means validating
   the new version first. Never open the holdout without the user asking; every run is

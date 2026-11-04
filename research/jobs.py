@@ -8,6 +8,14 @@ these as subprocesses and never anything else.
   python3 research/jobs.py backtest --composite momentum_quality=1,low_volatility=1 --top 20
   python3 research/jobs.py save-strategy RESULT_ID --name my_blend
   python3 research/jobs.py advise --amount 50000 --risk medium [--stock TCS]
+  python3 research/jobs.py harness --signal momentum_quality --hold monthly --positions 20 --period dev
+  python3 research/jobs.py inventory
+  python3 research/jobs.py min-capital --prices 812.5 1490 --positions 20
+
+The harness (research/harness.py) tests one idea under the retail rules in
+research/retail.json and writes its full result to data/app/harness/ID.json;
+like every run it is logged in research/runs.jsonl. inventory and min-capital
+are research/retail.py's read-only commands.
 
 The trade finder's answer (research/advise.py) is written to
 private/advice/latest.json for the app's Ask tab: an order sheet to read,
@@ -31,6 +39,38 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 RESULTS = os.path.join(ROOT, "data", "app", "backtests")
+HARNESS_RESULTS = os.path.join(ROOT, "data", "app", "harness")
+HARNESS_PERIODS = ("dev", "validation")  # never the holdout
+MAX_HOLD, MAX_POSITIONS = 252, 50
+
+
+def hold_arg(text):
+    """'monthly' or a whole number of sessions from 1 to MAX_HOLD."""
+    if text == "monthly" or (text.isdigit() and 1 <= int(text) <= MAX_HOLD):
+        return text
+    raise argparse.ArgumentTypeError("hold is 'monthly' or 1 to %d sessions" % MAX_HOLD)
+
+
+def positions_arg(text):
+    if text.isdigit() and 1 <= int(text) <= MAX_POSITIONS:
+        return int(text)
+    raise argparse.ArgumentTypeError("positions is 1 to %d" % MAX_POSITIONS)
+
+
+def name_arg(text):
+    if text and len(text) <= 64 and text.replace("_", "").replace("-", "").isalnum():
+        return text
+    raise argparse.ArgumentTypeError("names are letters, digits, '-' and '_', at most 64")
+
+
+def price_arg(text):
+    try:
+        x = float(text)
+    except ValueError:
+        x = -1
+    if 0 < x < 1e7:
+        return text
+    raise argparse.ArgumentTypeError("a price is a positive number of rupees")
 ADVICE = os.path.join(ROOT, "private", "advice")  # names from deals can appear: private, never committed
 
 
@@ -148,6 +188,18 @@ def main(argv=None):
     ad.add_argument("--amount", required=True)
     ad.add_argument("--risk", choices=["low", "medium", "high"], default="medium")
     ad.add_argument("--stock")
+    h = sub.add_parser("harness")
+    h.add_argument("--signal", required=True)
+    h.add_argument("--hold", type=hold_arg, default="monthly")
+    h.add_argument("--positions", type=positions_arg, default=20)
+    h.add_argument("--period", default="dev", choices=HARNESS_PERIODS)
+    h.add_argument("--idea", type=name_arg)
+    h.add_argument("--batch", type=name_arg, default="unbatched")
+    h.add_argument("--note", default="")
+    sub.add_parser("inventory")
+    mc = sub.add_parser("min-capital")
+    mc.add_argument("--prices", nargs="+", type=price_arg, required=True)
+    mc.add_argument("--positions", type=positions_arg)
     v = sub.add_parser("save-strategy")
     v.add_argument("result_id")
     v.add_argument("--name", required=True)
@@ -180,6 +232,22 @@ def main(argv=None):
             json.dump(advise._jsonable(res), fh, ensure_ascii=False)
         os.replace(tmp, os.path.join(ADVICE, "latest.json"))
         print(advise.report(res))
+    elif a.cmd == "harness":
+        import harness
+        import signals as signals_mod
+        if a.signal not in signals_mod.SIGNALS:
+            print("unknown signal %r" % a.signal)
+            return 2
+        args = ["--signal", a.signal, "--hold", a.hold, "--positions", str(a.positions), "--period", a.period,
+                "--batch", a.batch, "--note", a.note, "--out", HARNESS_RESULTS]
+        return harness.main(args + (["--idea", a.idea] if a.idea else []))
+    elif a.cmd == "inventory":
+        import retail
+        return retail.main(["inventory"])
+    elif a.cmd == "min-capital":
+        import retail
+        return retail.main(["min-capital", "--prices"] + a.prices +
+                           (["--positions", str(a.positions)] if a.positions else []))
     elif a.cmd == "save-strategy":
         save_strategy(a.result_id, a.name)
         print("saved %s as a candidate" % a.name)
