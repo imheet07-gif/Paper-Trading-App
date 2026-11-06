@@ -61,6 +61,13 @@ broker-neutral holdings, trades and charges.
   the scan's evening update. NSE publishes only the latest session, so a
   missed evening is lost; raw files cached in `data/deals_raw/`. Client
   names include private individuals: they stay in the local store only.
+- `core/watchlist_export.py` a name-free JSON summary of the store for an
+  outside watchlist tracker's stocks (last session's close and delivery,
+  latest results against a year earlier, two quarters of shareholding,
+  deal, insider and SAST totals, each with its NSE source link), read
+  only, over each stock's ISIN chain. The evening update writes it when
+  `trader/watchlist_export.json` names the tracker's watchlist and an
+  output folder. Totals and promoter yes/no only, never a name.
 - `core/tax.py` income tax per financial year on listed equity gains
   and dividends for a resident individual: sells matched oldest first by
   `core/lots.py`, sections 111A and 112A rates by transfer date, the 1
