@@ -36,7 +36,9 @@ broker-neutral holdings, trades and charges.
   per quarter, keyed on broadcast time; raw answers cached in
   `data/shareholding_raw/`). A revised filing replaces the original in
   NSE's list: `submitted_on` keeps the original filing day, the numbers are
-  the revised ones. `shareholding_detail` adds, from each filing's XBRL,
+  the revised ones. NSE's list names a wrong ISIN or none for some
+  companies (INFY, BPCL, RELIANCE): rebuild stores the ISIN traded under the
+  symbol on the broadcast day (`isin_listed` keeps NSE's). `shareholding_detail` adds, from each filing's XBRL,
   FII (FPI I and II), domestic institutions, mutual funds, insurance,
   retail, total shares and NSE's yes/no promoter pledge answers.
   `shareholding_holders` keeps each filing's named

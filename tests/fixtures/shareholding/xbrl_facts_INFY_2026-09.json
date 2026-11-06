@@ -1,0 +1,177 @@
+{
+ "version": 2,
+ "symbol": "INFY",
+ "isin": "INE009A01021",
+ "date": "2026-09-30",
+ "flags": {
+  "WhetherAnySharesHeldByPromotersAreEncumberedUnderPledged": "false",
+  "WhetherAnySharesHeldByPromotersAreEncumberedUnderNonDisposalUndertaking": "false",
+  "WhetherAnySharesHeldByPromotersAreEncumberedOtherThanByWayOfPledgeOrNDU": "false"
+ },
+ "categories": {
+  "IndividualsOrHinduUndividedFamilyMember": {
+   "NumberOfShareholders": "24",
+   "NumberOfShares": "516677914",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.139"
+  },
+  "IndianMember": {
+   "NumberOfShareholders": "24",
+   "NumberOfShares": "516677914",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.139"
+  },
+  "ShareholdingOfPromoterAndPromoterGroupMember": {
+   "NumberOfShareholders": "24",
+   "NumberOfShares": "516677914",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.139"
+  },
+  "MutualFundsOrUTIMember": {
+   "NumberOfShareholders": "44",
+   "NumberOfShares": "853161465",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.2296"
+  },
+  "AlternativeInvestmentFundsMember": {
+   "NumberOfShareholders": "62",
+   "NumberOfShares": "10999095",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.003"
+  },
+  "BanksMember": {
+   "NumberOfShareholders": "8",
+   "NumberOfShares": "99480",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0"
+  },
+  "InsuranceCompaniesMember": {
+   "NumberOfShareholders": "50",
+   "NumberOfShares": "595321887",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.1602"
+  },
+  "ProvidentFundsOrPensionFundsMember": {
+   "NumberOfShareholders": "1",
+   "NumberOfShares": "125705046",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0338"
+  },
+  "SovereignWealthFundsDomesticMember": {
+   "NumberOfShareholders": "2",
+   "NumberOfShares": "6772820",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0018"
+  },
+  "NBFCsRegisteredWithRBIMember": {
+   "NumberOfShareholders": "23",
+   "NumberOfShares": "126347",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0"
+  },
+  "InstitutionsDomesticMember": {
+   "NumberOfShareholders": "190",
+   "NumberOfShares": "1592186140",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.4285"
+  },
+  "InstitutionsForeignPortfolioInvestorCategoryOneMember": {
+   "NumberOfShareholders": "1256",
+   "NumberOfShares": "982231385",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.2643"
+  },
+  "InstitutionsForeignPortfolioInvestorCategoryTwoMember": {
+   "NumberOfShareholders": "96",
+   "NumberOfShares": "37394720",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0101"
+  },
+  "InstitutionsForeignMember": {
+   "NumberOfShareholders": "1352",
+   "NumberOfShares": "1019626105",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.2744"
+  },
+  "ShareholdingByCompaniesOrBodiesCorporateWhereCentralOrStateGovernmentIsPromoterMember": {
+   "NumberOfShareholders": "8",
+   "NumberOfShares": "865208",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0002"
+  },
+  "GovernmentsMember": {
+   "NumberOfShareholders": "8",
+   "NumberOfShares": "865208",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0002"
+  },
+  "DirectorsAndDirectorsRelativesMember": {
+   "NumberOfShareholders": "1",
+   "NumberOfShares": "1580865",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0004"
+  },
+  "KeyManagerialPersonnelMember": {
+   "NumberOfShareholders": "3",
+   "NumberOfShares": "434254",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0001"
+  },
+  "RelativesOfPromotersOtherThanPromoterGroupMember": {
+   "NumberOfShareholders": "4",
+   "NumberOfShares": "318963",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0001"
+  },
+  "InvestorEducationAndProtectionFundMember": {
+   "NumberOfShareholders": "1",
+   "NumberOfShares": "1420484",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0004"
+  },
+  "ResidentIndividualShareholdersHoldingNominalShareCapitalUpToRsTwoLakhMember": {
+   "NumberOfShareholders": "2835134",
+   "NumberOfShares": "314659359",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0847"
+  },
+  "ResidentIndividualShareholdersHoldingNominalShareCapitalInExcessOfRsTwoLakhMember": {
+   "NumberOfShareholders": "1153",
+   "NumberOfShares": "173727944",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0468"
+  },
+  "NonResidentIndiansMember": {
+   "NumberOfShareholders": "68612",
+   "NumberOfShares": "45949951",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0124"
+  },
+  "ForeignNationalsMember": {
+   "NumberOfShareholders": "8",
+   "NumberOfShares": "7675",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0"
+  },
+  "ForeignCompaniesMember": {
+   "NumberOfShareholders": "3",
+   "NumberOfShares": "1439754",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0004"
+  },
+  "BodiesCorporateMember": {
+   "NumberOfShareholders": "5800",
+   "NumberOfShares": "20042593",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0054"
+  },
+  "OtherNonInstitutionsMember": {
+   "NumberOfShareholders": "35780",
+   "NumberOfShares": "19188802",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0052"
+  },
+  "NonInstitutionsMember": {
+   "NumberOfShareholders": "2946499",
+   "NumberOfShares": "578770644",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.1557"
+  },
+  "PublicShareholdingMember": {
+   "NumberOfShareholders": "2948049",
+   "NumberOfShares": "3191448097",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.8588"
+  },
+  "CustodianOrDRHolderMember": {
+   "NumberOfShareholders": "1",
+   "NumberOfShares": "342234972"
+  },
+  "EmployeeBenefitsTrustsMember": {
+   "NumberOfShareholders": "1",
+   "NumberOfShares": "7915595",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "0.0021"
+  },
+  "SharesHeldByNonPromoterNonPublicShareholdersMember": {
+   "NumberOfShareholders": "2",
+   "NumberOfShares": "350150567"
+  },
+  "ShareholdingPatternMember": {
+   "NumberOfShareholders": "2948075",
+   "NumberOfShares": "4058276578",
+   "ShareholdingAsAPercentageOfTotalNumberOfShares": "1"
+  }
+ },
+ "holders": []
+}

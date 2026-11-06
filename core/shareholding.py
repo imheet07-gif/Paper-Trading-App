@@ -54,6 +54,23 @@ For a revised row the numbers are the revised ones, which were not public
 on `submitted_on`; signals that care must use `broadcast_at` for revised
 rows, or accept that small look-ahead and say so.
 
+The ISIN: NSE's list names, for some companies, an ISIN that never traded
+on NSE (INFY's filings carry IN9009A01011, BPCL's INE028201015, HINDPETRO's
+IN9094A01013), the ISIN a split retired (HDFCBANK's INE040A01018), or none
+at all (RELIANCE, TATASTEEL); the companies' own XBRL files name the traded
+one. So rebuild keeps the listed ISIN only when it traded in an equity
+series around the broadcast day, as core/events.py does for results, and
+otherwise takes the ISIN traded under the symbol that day from the prices
+table, then the XBRL file's ISIN if that traded. With no price for either,
+the listed ISIN stays; so does a listed ISIN that trades under the symbol
+only later (filed before a listing or relisting). `isin_listed` keeps what
+NSE's list said. Checked on the owner's store (2026-11-06): of 1,140 cached
+XBRL files whose own ISIN differed from the list's, the ISIN read from the
+prices matched the file in 1,113; 24 files type an ISIN that never traded
+(letter O for zero, INR for INE) and 3 name another traded one (the ISIN
+before a relisting, or another company's). A file's detail is kept when
+its ISIN is the stored or the listed one, or its Symbol is the row's.
+
 Raw answers are cached under data/shareholding_raw/ so a parser change is
 a rebuild, not a refetch.
 
@@ -77,6 +94,7 @@ from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bhavcopy  # noqa: E402
+import events  # noqa: E402
 from money import D  # noqa: E402
 
 API = "https://www.nseindia.com/api/corporate-share-holdings-master?index=equities"
@@ -85,7 +103,8 @@ SYMBOL = re.compile(r"^[A-Z0-9][A-Z0-9&\-]{0,19}$")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS shareholding (
   record_id TEXT PRIMARY KEY, symbol TEXT, isin TEXT, period_end TEXT, promoter_pct TEXT, public_pct TEXT,
-  employee_trusts_pct TEXT, revised INTEGER, submitted_on TEXT, revised_on TEXT, broadcast_at TEXT, xbrl TEXT);
+  employee_trusts_pct TEXT, revised INTEGER, submitted_on TEXT, revised_on TEXT, broadcast_at TEXT, xbrl TEXT,
+  isin_listed TEXT);
 CREATE INDEX IF NOT EXISTS shareholding_isin ON shareholding (isin, period_end);
 CREATE TABLE IF NOT EXISTS shareholding_holders (
   record_id TEXT NOT NULL, isin TEXT, period_end TEXT, broadcast_at TEXT, holder TEXT NOT NULL, holder_key TEXT NOT NULL,
@@ -118,6 +137,9 @@ FLAGS = {
     "WhetherAnySharesHeldByPromotersAreEncumberedOtherThanByWayOfPledgeOrNDU": "other_encumbrance",
 }
 HUNDRED = Decimal(100)
+# the bhavcopy series that carry a company's equity shares (main board, trade for trade, SME); the
+# prices table also holds its bonds (N0, N1, ...) and preference shares under the same symbol
+EQUITY_SERIES = ("EQ", "BE", "BZ", "SM", "ST", "SZ")
 FACTS_VERSION = 2  # 2: holders added; an older cached JSON is refetched
 SKIP_AXES = ("SignificantBeneficialOwnersAxis",)
 # holder groups that are people rather than entities (for discovery's filter)
@@ -171,6 +193,39 @@ def row(r):
             "employee_trusts_pct": pct(r.get("employeeTrusts")), "revised": int(revised),
             "submitted_on": day(r.get("submissionDate")), "revised_on": day(r.get("revisionDate")) if revised else None,
             "broadcast_at": at, "xbrl": xbrl_link(r.get("xbrl"))}
+
+
+def equity_index(db):
+    """{symbol: [(first date, last date, isin), ...]} of equity shares only, and
+    {isin: (first, last)} over every symbol it traded under."""
+    index, live = {}, {}
+    for sym, isin, a, b in db.execute("SELECT symbol, isin, MIN(date), MAX(date) FROM prices WHERE series IN (%s) "
+                                      "GROUP BY symbol, isin" % ",".join("?" * len(EQUITY_SERIES)), EQUITY_SERIES):
+        index.setdefault(sym, []).append((a, b, isin))
+        lo, hi = live.get(isin, (a, b))
+        live[isin] = (min(lo, a), max(hi, b))
+    for spans in index.values():
+        spans.sort()
+    return index, live
+
+
+def traded_isin(index, live, symbol, listed, on, filed=None):
+    """(isin, how) for a filing broadcast on `on`: the listed ISIN when it traded around
+    that day ('listed'), else the one traded as `symbol` ('symbol'), else the XBRL file's
+    own ISIN when it ever traded ('xbrl'), else the listed one unchecked ('unresolved'). A
+    listed ISIN that trades under the symbol only after `on` is kept: the company filed its
+    new ISIN before trading in it began."""
+    span = live.get(listed)
+    if listed and span and span[0] <= on <= span[1]:
+        return listed, "listed"
+    if listed and span and on < span[0] and any(s[2] == listed for s in index.get(symbol, ())):
+        return listed, "listed"  # the symbol's next ISIN, filed before it traded (a listing or relisting)
+    current = events.isin_for(index, symbol, on)
+    if current:
+        return current, "symbol"
+    if filed and filed in live:
+        return filed, "xbrl"
+    return listed, "unresolved"
 
 
 # ---------------------------------------------------------------- XBRL
@@ -423,22 +478,34 @@ def rebuild(db, raw=RAW, log=print):
                 if not x:
                     counts["skipped"] += 1
                     continue
+                x["isin_listed"] = x["isin"]
                 db.execute("INSERT OR REPLACE INTO shareholding VALUES (:record_id,:symbol,:isin,:period_end,"
                            ":promoter_pct,:public_pct,:employee_trusts_pct,:revised,:submitted_on,:revised_on,"
-                           ":broadcast_at,:xbrl)", x)
+                           ":broadcast_at,:xbrl,:isin_listed)", x)
                 counts["rows"] += 1
-    for record_id, isin, period, at, url in db.execute(
-            "SELECT record_id, isin, period_end, broadcast_at, xbrl FROM shareholding WHERE xbrl IS NOT NULL").fetchall():
-        try:
-            path = raw_path("xbrl", xbrl_name(url), raw)
-        except ValueError:
-            counts["skipped"] += 1
+    index, live = equity_index(db)
+    for how in ("listed", "symbol", "xbrl", "unresolved", "isin_changed"):
+        counts[how] = 0
+    for record_id, sym, listed, period, at, url in db.execute(
+            "SELECT record_id, symbol, isin_listed, period_end, broadcast_at, xbrl FROM shareholding").fetchall():
+        facts, path = None, None
+        if url:
+            try:
+                path = raw_path("xbrl", xbrl_name(url), raw)
+            except ValueError:
+                counts["skipped"] += 1
+        if path and os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                facts = json.load(fh)
+        filed = (facts or {}).get("isin")
+        isin, how = traded_isin(index, live, sym, listed, at[:10], filed)
+        counts[how] += 1
+        if isin != listed:
+            db.execute("UPDATE shareholding SET isin = ? WHERE record_id = ?", (isin, record_id))
+            counts["isin_changed"] += 1
+        if facts is None:
             continue
-        if not os.path.exists(path):
-            continue
-        with open(path, encoding="utf-8") as fh:
-            facts = json.load(fh)
-        if facts.get("isin") and isin and facts["isin"] != isin:
+        if filed and isin and filed not in (isin, listed) and facts.get("symbol") != sym:
             counts["skipped"] += 1  # the filing is for another security: never store it under this one
             continue
         d = detail(facts)
@@ -467,6 +534,8 @@ def rebuild(db, raw=RAW, log=print):
         n = db.execute("SELECT COUNT(*), COUNT(DISTINCT isin), SUM(revised) FROM shareholding").fetchone()
         log("shareholding: %d filings for %d companies (%d revised); %d rows skipped" % (n[0], n[1], n[2] or 0,
                                                                                          counts["skipped"]))
+        log("ISIN: %(listed)d as listed, %(symbol)d from the symbol's traded ISIN, %(xbrl)d from the XBRL file, "
+            "%(unresolved)d unchecked (no price); %(isin_changed)d changed" % counts)
     return counts
 
 

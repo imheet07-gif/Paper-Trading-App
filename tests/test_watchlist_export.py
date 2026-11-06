@@ -93,7 +93,9 @@ def store(path):
     db.executemany("INSERT INTO financials (%s) VALUES (%s)" % (", ".join(cols), ",".join("?" * len(cols))), fins)
     db.execute("INSERT INTO results VALUES ('r1', 'BANKX', ?, '2026-07-01', '2026-09-30', 'Q2', 'Standalone', "
                "'Unaudited', '2026-10-28T17:00:00')", (BANK,))
-    db.executemany("INSERT INTO shareholding VALUES (?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, ?, ?)", [
+    db.executemany("INSERT INTO shareholding (record_id, symbol, isin, period_end, promoter_pct, public_pct, "
+                   "employee_trusts_pct, revised, submitted_on, revised_on, broadcast_at, xbrl) "
+                   "VALUES (?, ?, ?, ?, ?, ?, NULL, 0, NULL, NULL, ?, ?)", [
         ("s1", "ALPHA", OLD, "2026-06-30", "60.00", "40.00", "2026-07-15T12:00:00", "https://x/s1.xml"),
         ("s2", "ALPHA", NEW, "2026-09-30", "58.50", "41.50", "2026-10-15T12:00:00", "https://x/s2.xml"),
         # BANKX's filing carries an ISIN that never traded: matched on symbol
