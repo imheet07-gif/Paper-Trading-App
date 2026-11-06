@@ -236,6 +236,49 @@ class Export(unittest.TestCase):
         self.assertEqual(doc["stocks"][0]["price"]["close"], "100.00")
 
 
+LEDGER = {
+    "strategy": "momentum_top2", "started": "2026-10-01", "capital": "1000000.00", "cash": "500000.00",
+    "positions": {
+        OLD: {"symbol": "ALPHA", "qty": 1000, "cost": "250100.00", "last_price": "262.00"},
+        BANK: {"symbol": "BANKX", "qty": 200, "cost": "249900.00", "last_price": "1229.60"},
+    },
+    "pending": {"date": "2026-10-30", "orders": [
+        {"isin": BANK, "symbol": "BANKX", "side": "sell", "qty": 10, "limit": "1217.30", "ref_price": "1229.60",
+         "reason": "trim to equal weight"}]},
+    "fills": [{"date": "2026-10-02", "isin": OLD, "symbol": "ALPHA", "side": "buy", "qty": 1000, "price": "250.00",
+               "charges": "100.00"}],
+    "unfilled": [{"date": "2026-10-02", "isin": NEW, "symbol": "GAMMA", "side": "buy", "qty": 5, "limit": "10.00",
+                  "reason": "did not trade at or inside the limit"}],
+    "values": [{"date": "2026-10-01", "value": "1000000.00"}, {"date": "2026-10-30", "value": "1007920.00"}],
+}
+
+
+class Portfolio(unittest.TestCase):
+    def test_positions_are_valued_at_the_last_price_against_their_cost(self):
+        doc = wx.portfolio(LEDGER, now="2026-10-30T20:00:00+05:30")
+        self.assertEqual((doc["as_of"], doc["value"], doc["invested"]), ("2026-10-30", "1007920.00", "507920.00"))
+        self.assertEqual((doc["pnl"], doc["pnl_pct"]), ("7920.00", "0.79"))
+        alpha, bank = doc["positions"]  # largest holding first
+        self.assertEqual((bank["symbol"], bank["value"], bank["pnl"], bank["avg_cost"]),
+                         ("BANKX", "245920.00", "-3980.00", "1249.50"))
+        self.assertEqual((alpha["pnl"], alpha["pnl_pct"], alpha["weight_pct"]), ("11900.00", "4.76", "25.99"))
+        self.assertEqual(doc["pending"]["orders"][0]["side"], "sell")
+        self.assertNotIn("isin", doc["pending"]["orders"][0])
+        self.assertEqual(len(doc["fills"]), 1)
+        self.assertEqual(doc["unfilled"][0]["symbol"], "GAMMA")
+
+    def test_an_empty_ledger_is_all_cash(self):
+        led = {"strategy": "s", "started": "2026-10-27", "capital": "1000.00", "cash": "1000.00", "positions": {},
+               "pending": None, "fills": [], "unfilled": [], "values": []}
+        doc = wx.portfolio(led)
+        self.assertEqual((doc["value"], doc["pnl"], doc["as_of"], doc["pending"]), ("1000.00", "0.00", None, None))
+
+    def test_no_ledger_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(wx.export_portfolio(tmp, os.path.join(tmp, "none.json")))
+            self.assertEqual(os.listdir(tmp), [])
+
+
 class Configured(unittest.TestCase):
     def test_nothing_without_a_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -250,11 +293,31 @@ class Configured(unittest.TestCase):
                 fh.write(WATCHLIST)
             cfg = os.path.join(tmp, "cfg.json")
             with open(cfg, "w", encoding="utf-8") as fh:
-                json.dump({"watchlist": wl, "out": os.path.join(tmp, "out")}, fh)
+                json.dump({"watchlist": wl, "out": os.path.join(tmp, "out"),
+                           "ledger": os.path.join(tmp, "no-ledger.json")}, fh)
             logs = []
             path = wx.run_configured(db_path, cfg, log=logs.append)
             self.assertTrue(os.path.exists(path))
             self.assertIn("GHOST", logs[0])
+            self.assertFalse(os.path.exists(os.path.join(tmp, "out", "portfolio.json")))  # no ledger, no file
+
+    def test_the_paper_ledger_is_exported_beside_the_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "market.db")
+            store(db_path)
+            wl, led = os.path.join(tmp, "watchlist.yaml"), os.path.join(tmp, "paper.json")
+            with open(wl, "w", encoding="utf-8") as fh:
+                fh.write(WATCHLIST)
+            with open(led, "w", encoding="utf-8") as fh:
+                json.dump(LEDGER, fh)
+            cfg = os.path.join(tmp, "cfg.json")
+            with open(cfg, "w", encoding="utf-8") as fh:
+                json.dump({"watchlist": wl, "out": os.path.join(tmp, "out"), "ledger": led}, fh)
+            logs = []
+            wx.run_configured(db_path, cfg, log=logs.append)
+            with open(os.path.join(tmp, "out", "portfolio.json"), encoding="utf-8") as fh:
+                self.assertEqual(json.load(fh)["value"], "1007920.00")
+            self.assertIn("paper portfolio", logs[-1])
 
     def test_a_config_missing_a_path_is_an_error(self):
         with tempfile.TemporaryDirectory() as tmp:

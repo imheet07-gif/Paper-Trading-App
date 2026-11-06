@@ -67,7 +67,10 @@ broker-neutral holdings, trades and charges.
   deal, insider and SAST totals, each with its NSE source link), read
   only, over each stock's ISIN chain. The evening update writes it when
   `trader/watchlist_export.json` names the tracker's watchlist and an
-  output folder. Totals and promoter yes/no only, never a name.
+  output folder. Totals and promoter yes/no only, never a name. The
+  same run writes `portfolio.json` there from the paper ledger
+  (`trader/paper.json`, or `ledger` in that file) for the tracker's paper
+  portfolio panel: value, P&L, positions, pending orders, recent fills.
 - `core/tax.py` income tax per financial year on listed equity gains
   and dividends for a resident individual: sells matched oldest first by
   `core/lots.py`, sections 111A and 112A rates by transfer date, the 1
