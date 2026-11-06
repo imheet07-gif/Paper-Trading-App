@@ -9,7 +9,7 @@ SKILLS = ["trader-copycat", "trader-news", "trader-budget", "trader-pelosi", "tr
           "trader-screener", "trader-risk", "trader-broker", "trader-tax", "trader-alerts",
           "trader-rebalance", "trader-advisor"]
 INDIA_ONLY = ["trader-advisor"]  # skills this edition added; the upstream pack never had them
-CORE = ["nse_calendar.py", "nse_holidays.json", "money.py", "charges.py", "charges.json", "instruments.py", "zerodha_console.py", "cas.py", "lots.py", "bhavcopy.py", "corporate_actions.py"]
+CORE = ["nse_calendar.py", "nse_holidays.json", "money.py", "charges.py", "charges.json", "instruments.py", "zerodha_console.py", "cas.py", "lots.py", "bhavcopy.py", "corporate_actions.py", "watchlist_export.py"]
 # skills that can lead to an order carry the safety block
 ORDER_PATH = ["trader-copycat", "trader-budget", "trader-pelosi", "trader-risk", "trader-broker",
               "trader-tax", "trader-alerts", "trader-rebalance", "trader-advisor"]

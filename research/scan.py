@@ -49,6 +49,7 @@ import nse_calendar as cal  # noqa: E402
 import panel as panel_mod  # noqa: E402
 import paper  # noqa: E402
 import signals as signals_mod  # noqa: E402
+import watchlist_export  # noqa: E402
 from money import D, inr, inr_short  # noqa: E402
 
 STRATEGIES = os.path.join(HERE, "strategies.json")
@@ -169,6 +170,12 @@ def update(db_path=bhavcopy.DEFAULT_DB, today=None, log=print):
     ddb = deals_mod.connect(db_path)
     deals_mod.rebuild(ddb, log=log)
     ddb.close()
+    # a name-free summary for an outside watchlist tracker, only when trader/watchlist_export.json asks for one;
+    # a failure there is reported and leaves the update itself done
+    try:
+        watchlist_export.run_configured(db_path, log=log)
+    except (watchlist_export.ExportError, OSError, ValueError) as e:
+        log("watchlist export failed: %s" % e)
 
 
 # ---------------------------------------------------------------- evidence
