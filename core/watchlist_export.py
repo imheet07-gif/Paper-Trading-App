@@ -15,7 +15,8 @@ trader/watchlist_export.json (git-ignored, one per user) holds the paths:
 
 The app's evening update runs this when that file exists. Each run writes
 DIR/<session>.json and DIR/latest.json, where <session> is the store's last
-price date. Per stock:
+price date, and DIR/portfolio.json from the paper ledger (trader/paper.json,
+or "ledger" in the config) when there is one. Per stock:
 
 - price: the NSE bhavcopy close, previous close, change, volume and delivery
   share of the last session, against the 20 sessions before (closes are not
@@ -120,7 +121,10 @@ def load_config(path=CONFIG):
     for k in ("watchlist", "out"):
         if not cfg.get(k):
             raise ExportError("%s needs %r" % (path, k))
-    return {k: os.path.expanduser(cfg[k]) for k in ("watchlist", "out")}
+    out = {k: os.path.expanduser(cfg[k]) for k in ("watchlist", "out")}
+    if cfg.get("ledger"):
+        out["ledger"] = os.path.expanduser(cfg["ledger"])
+    return out
 
 
 # ---------------------------------------------------------------- reading the store
@@ -393,6 +397,73 @@ def feed_ends(db):
     return out
 
 
+# ---------------------------------------------------------------- paper portfolio
+
+LEDGER = os.path.join(ROOT, "trader", "paper.json")
+PORTFOLIO_VERSION = 1
+PORTFOLIO_VALUES = 120   # most recent daily values kept for the tracker's equity line
+PORTFOLIO_EVENTS = 10    # most recent fills and unfilled orders kept
+
+
+def portfolio(ledger, now=None):
+    """The paper ledger (research/paper.py) as the tracker's portfolio.json.
+
+    Positions are valued at the ledger's last price, the same prices behind
+    its last daily value; P&L is against the cost the ledger carries, which
+    includes the buy-side charges. Money in rupees and percentages as
+    decimal strings, like the store export. Symbols only, no names."""
+    capital, cash = _d(ledger["capital"]), _d(ledger["cash"])
+    rows, invested = [], Decimal(0)
+    for isin, p in ledger.get("positions", {}).items():
+        qty, cost = int(p["qty"]), _d(p["cost"])
+        last = _d(p.get("last_price"))
+        val = qty * last if last is not None else None
+        invested += val or 0
+        rows.append({"symbol": p.get("symbol") or isin, "isin": isin, "qty": qty,
+                     "avg_cost": _s(cost / qty, TWO_DP) if qty else None, "cost": _s(cost, TWO_DP),
+                     "last_price": _s(last, TWO_DP), "value": _s(val, TWO_DP),
+                     "pnl": _s(val - cost, TWO_DP) if val is not None else None,
+                     "pnl_pct": _s(_pct_change(val, cost), TWO_DP) if val is not None else None,
+                     "_v": val or Decimal(0)})
+    values = ledger.get("values", [])
+    total = cash + invested
+    for r in rows:
+        r["weight_pct"] = _s(r["_v"] / total * 100, TWO_DP) if total else None
+    rows.sort(key=lambda r: (-r.pop("_v"), r["symbol"]))
+    pend = ledger.get("pending")
+    order_keys = ("symbol", "side", "qty", "limit", "ref_price", "reason")
+    return {"version": PORTFOLIO_VERSION, "kind": "paper",
+            "generated_at": now or dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+            "source": "Paper-Trading-App paper ledger (research/paper.py), exported by core/watchlist_export.py",
+            "strategy": ledger.get("strategy"), "started": ledger.get("started"),
+            "as_of": values[-1]["date"] if values else None,
+            "capital": _s(capital, TWO_DP), "cash": _s(cash, TWO_DP), "invested": _s(invested, TWO_DP),
+            "value": _s(total, TWO_DP), "pnl": _s(total - capital, TWO_DP),
+            "pnl_pct": _s(_pct_change(total, capital), TWO_DP),
+            "positions": rows,
+            "values": [{"date": v["date"], "value": _s(_d(v["value"]), TWO_DP)} for v in values[-PORTFOLIO_VALUES:]],
+            "pending": {"date": pend.get("date"), "orders": [{k: o.get(k) for k in order_keys}
+                                                             for o in pend.get("orders", [])]} if pend else None,
+            "fills": [{k: f.get(k) for k in ("date", "symbol", "side", "qty", "price", "charges")}
+                      for f in ledger.get("fills", [])[-PORTFOLIO_EVENTS:]][::-1],
+            "unfilled": [{k: u.get(k) for k in ("date", "symbol", "side", "qty", "limit", "reason")}
+                         for u in ledger.get("unfilled", [])[-PORTFOLIO_EVENTS:]][::-1],
+            "notes": ["Paper trades only: simulated fills at the next open, with Zerodha charges (core/charges.py).",
+                      "Values use the ledger's last prices (NSE closes, not adjusted for corporate actions)."]}
+
+
+def export_portfolio(out_dir, ledger_path=LEDGER, now=None):
+    """Write out_dir/portfolio.json from the paper ledger; None when there is no ledger."""
+    if not os.path.exists(ledger_path):
+        return None
+    with open(ledger_path, encoding="utf-8") as fh:
+        doc = portfolio(json.load(fh), now)
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, "portfolio.json")
+    _write(path, doc)
+    return path
+
+
 # ---------------------------------------------------------------- export
 
 def build(db, symbols, on=None, now=None):
@@ -467,6 +538,9 @@ def run_configured(db_path=bhavcopy.DEFAULT_DB, config=CONFIG, log=print):
     missing = [s["symbol"] for s in doc["stocks"] if s.get("error")]
     log("watchlist export: %d stocks to %s%s" % (len(doc["stocks"]), path,
                                                  ", not in the NSE store: " + ", ".join(missing) if missing else ""))
+    pf = export_portfolio(cfg["out"], cfg.get("ledger", LEDGER))
+    if pf:
+        log("watchlist export: paper portfolio to %s" % pf)
     return path
 
 
@@ -478,6 +552,7 @@ def main(argv=None):
     ap.add_argument("--out", help="folder for <session>.json and latest.json")
     ap.add_argument("--date", help="export as of this session (YYYY-MM-DD); default the store's last")
     ap.add_argument("--db", default=bhavcopy.DEFAULT_DB)
+    ap.add_argument("--ledger", default=LEDGER, help="paper ledger for portfolio.json (skipped when missing)")
     a = ap.parse_args(argv)
     try:
         if not a.symbols and not a.watchlist:
@@ -496,6 +571,8 @@ def main(argv=None):
         else:
             symbols = a.symbols.split(",")
         path, doc = export(symbols, a.out, a.db, a.date)
+        if not a.date:  # the ledger is as of now, so a backdated export leaves portfolio.json alone
+            export_portfolio(a.out, a.ledger)
     except (ExportError, OSError, ValueError) as e:
         print("watchlist export: %s" % e, file=sys.stderr)
         return 1
