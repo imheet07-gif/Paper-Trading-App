@@ -241,5 +241,80 @@ class FetchAndStore(unittest.TestCase):
         db.close()
 
 
+class TradedIsin(unittest.TestCase):
+    """NSE's list names an ISIN that never traded (INFY), none (RELIANCE), or the right one
+    while the company's own XBRL file mistypes it (GULPOLY: letter O for zero). Rows and
+    XBRL facts are cut from the owner's cache (fixtures README); the prices are made up,
+    only their ISINs, symbols, series and dates matter."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.raw = os.path.join(self.tmp.name, "raw")
+        cut = rows("history_isin_cut.json")
+        for sym in ("INFY", "RELIANCE", "GULPOLY"):
+            sh._save(sh.raw_path("history", sym, self.raw), [r for r in cut if r["symbol"] == sym])
+            sept = [r for r in cut if r["symbol"] == sym and r["date"] == "30-SEP-2026"][0]
+            sh._save(sh.raw_path("xbrl", sh.xbrl_name(sept["xbrl"]), self.raw), rows("xbrl_facts_%s_2026-09.json" % sym))
+        self.db = sh.connect(os.path.join(self.tmp.name, "m.db"))
+
+    def tearDown(self):
+        self.db.close()
+        self.tmp.cleanup()
+
+    def prices(self, *spans):
+        for isin, sym, series, days in spans:
+            for d in days:
+                self.db.execute("INSERT INTO prices (date, isin, symbol, series, close) VALUES (?,?,?,?,100)",
+                                (d, isin, sym, series))
+        self.db.commit()
+
+    def stored(self):
+        return {(s, p): (i, listed) for s, p, i, listed in self.db.execute(
+            "SELECT symbol, period_end, isin, isin_listed FROM shareholding")}
+
+    def test_the_traded_isin_replaces_the_listed_one(self):
+        days = ("2026-07-01", "2026-10-30")
+        self.prices(("INE009A01021", "INFY", "EQ", days), ("INE002A01018", "RELIANCE", "EQ", days),
+                    ("INE255D01024", "GULPOLY", "EQ", days),
+                    ("INE002A08534", "RELIANCE", "N1", ("2026-06-01", "2026-10-21")))  # a bond under the symbol: never taken
+        counts = sh.rebuild(self.db, raw=self.raw, log=None)
+        got = self.stored()
+        self.assertEqual(got[("INFY", "2026-09-30")], ("INE009A01021", "IN9009A01011"))
+        self.assertEqual(got[("INFY", "2026-06-30")], ("INE009A01021", "IN9009A01011"))
+        self.assertEqual(got[("RELIANCE", "2026-09-30")], ("INE002A01018", None))
+        self.assertEqual(got[("GULPOLY", "2026-09-30")], ("INE255D01024", "INE255D01024"))
+        self.assertEqual((counts["listed"], counts["symbol"], counts["isin_changed"]), (2, 4, 4))
+        # the XBRL detail now joins: INFY's file names INE009A01021, GULPOLY's mistyped ISIN is kept by symbol
+        detail = dict(self.db.execute("SELECT isin, mutual_funds FROM shareholding_detail"))
+        self.assertEqual(set(detail), {"INE009A01021", "INE002A01018", "INE255D01024"})
+        self.assertEqual(detail["INE009A01021"], "22.96")
+
+    def test_the_xbrl_isin_when_the_symbol_never_traded_and_the_listed_isin_without_prices(self):
+        self.prices(("INE009A01021", "INFOSYS", "EQ", ("2026-07-01", "2026-10-30")))  # traded under another symbol
+        counts = sh.rebuild(self.db, raw=self.raw, log=None)
+        got = self.stored()
+        self.assertEqual(got[("INFY", "2026-09-30")][0], "INE009A01021")  # from its XBRL file
+        self.assertEqual(got[("INFY", "2026-06-30")][0], "IN9009A01011")  # no file cached, no price: as listed
+        self.assertEqual(got[("RELIANCE", "2026-09-30")][0], None)
+        self.assertEqual(counts["xbrl"], 1)
+
+    def test_a_new_isin_filed_before_it_traded_is_kept(self):
+        # INFY's June filing (broadcast 2026-07-15) names an ISIN that, here, trades from August;
+        # the symbol's older ISIN stopped in 2018 (the DSKULKARNI case in the owner's store)
+        self.prices(("IN9009A01011", "INFY", "BE", ("2026-08-03", "2026-10-29")),
+                    ("INE009A01013", "INFY", "EQ", ("2012-01-02", "2018-03-20")))
+        sh.rebuild(self.db, raw=self.raw, log=None)
+        self.assertEqual(self.stored()[("INFY", "2026-06-30")][0], "IN9009A01011")
+
+    def test_another_securitys_file_is_not_stored(self):
+        self.prices(("INE009A01021", "INFY", "EQ", ("2026-07-01", "2026-10-30")))
+        path = sh.raw_path("xbrl", sh.xbrl_name(rows("history_isin_cut.json")[0]["xbrl"]), self.raw)
+        sh._save(path, dict(rows("xbrl_facts_INFY_2026-09.json"), isin="INE467B01029", symbol="TCS"))
+        counts = sh.rebuild(self.db, raw=self.raw, log=None)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM shareholding_detail WHERE isin = 'INE009A01021'"
+                                         ).fetchone(), (0,))
+        self.assertEqual(counts["skipped"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
