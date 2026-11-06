@@ -80,12 +80,13 @@ def _locked(H, L, C, i, k, direction):
     return backtest.locked(H, L, C, i, k, direction, LOCKED_MOVE)
 
 
-def choose(p, scores, elig, i, amount, stocks, risk, arrays, broker):
+def choose(p, scores, elig, i, amount, stocks, risk, arrays, broker, candidate_share=None):
     """The rebalance at row i: [(sid, raw qty, raw limit, raw stop or None, raw target or None)],
-    the first `stocks` of the top tenth that pass the filters."""
+    the first `stocks` of the top tenth (or `candidate_share`) that pass the filters."""
     C, H, L, R, ATR, MED, col = arrays
     row = scores.iloc[i].where(elig.iloc[i]).dropna().sort_values(ascending=False)
-    n = max(1, int(math.ceil(CANDIDATE_SHARE * len(row))))
+    share = CANDIDATE_SHARE if candidate_share is None else candidate_share
+    n = max(1, int(math.ceil(share * len(row))))
     amount_d = D(str(round(amount, 2)))
     picks = []
     for sid in row.index[:n]:
@@ -136,7 +137,7 @@ def basket_vol(C, i, cols, days=VOL_DAYS):
 
 def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, broker="zerodha",
              slippage_bps=SLIPPAGE_BPS, cash_yield=CASH_YIELD, use_exits=True, target_vol=None, index=None,
-             dividends=None):
+             dividends=None, rebalance_dates=None, candidate_share=None, on_day=None):
     """Run one concentration (risk=None) or risk-level portfolio over [start, end].
     use_exits=False holds a risk level's stocks to the next rebalance (the exit test).
     target_vol scales the stock part to that yearly volatility (risk levels v2); index, an
@@ -144,13 +145,17 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
     the day the stock orders fill. dividends, rupees per share on each ex-date shaped like
     p.close (panel.dividends), are paid in cash on shares held at the close before.
     Positions are held in adjusted units (raw shares / the adjustment multiplier at
-    the rebalance), so splits and bonuses inside a month change nothing."""
+    the rebalance), so splits and bonuses inside a month change nothing.
+    rebalance_dates (default: each month's last session) and candidate_share (default
+    CANDIDATE_SHARE) let research/harness.py run an idea's own holding period and pool.
+    on_day(i, date, units, trades), as in backtest.run, is called after each close is
+    marked; what it returns is added to cash (harness.py pays each year's tax through it)."""
     slip = slippage_bps / 1e4
     fee = charges_fn(broker)
     dates = p.dates
     lo = dates.searchsorted(pd.Timestamp(start))
     hi = dates.searchsorted(pd.Timestamp(end), "right") if end else len(dates)
-    rebal = set(panel_mod.month_ends(dates[lo:hi]))
+    rebal = set(rebalance_dates if rebalance_dates is not None else panel_mod.month_ends(dates[lo:hi]))
     col = {s: k for k, s in enumerate(p.close.columns)}
     C, O, H, L, R = p.close.values, p.open.values, p.high.values, p.low.values, p.raw_close.values
     ATR = exits.atr(p).values
@@ -164,7 +169,7 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
     IX = np.asarray(index, dtype=float) if index is not None else None
     DV = np.asarray(dividends, dtype=float) if dividends is not None else None
     stats = {"rebalances": 0, "short_months": 0, "unfilled": 0, "blocked_sells": 0, "stops": 0, "targets": 0,
-             "delist_exits": 0, "costs": 0.0, "dividends": 0.0}
+             "delist_exits": 0, "costs": 0.0, "dividends": 0.0, "own_picks": 0, "picks_wanted": 0}
 
     def sell(s, q, px, why):
         nonlocal cash
@@ -278,6 +283,8 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
             else:
                 missing[s] = 0
                 last_px[s] = c
+        if on_day is not None:
+            cash += on_day(i, d, units, trades)
         cash *= 1 + daily_cash
         held = sum(u * last_px[s] for s, u in units.items())
         ix = IX[i] if IX is not None else np.nan
@@ -298,15 +305,18 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
         if d in rebal and i + 1 < hi:
             amount = navs[-1]
             if target_vol:
-                first = choose(p, scores, elig, i, navs[-1], stocks, risk, arrays, broker)
+                first = choose(p, scores, elig, i, navs[-1], stocks, risk, arrays, broker, candidate_share)
                 vol = basket_vol(C, i, [col[x[0]] for x in first])
                 w = min(1.0, target_vol / vol) if vol else 1.0
                 exposures.append(w)
                 amount = navs[-1] * w
                 if IX is not None:
                     idx_share, idx_day = 1.0 - w, i + 1
-            picks = choose(p, scores, elig, i, amount, stocks, risk, arrays, broker)
+            picks = choose(p, scores, elig, i, amount, stocks, risk, arrays, broker, candidate_share)
             stats["rebalances"] += 1
+            want = set(backtest.select_top(scores, elig, i, stocks))  # the idea's own picks, before any filter
+            stats["picks_wanted"] += len(want)
+            stats["own_picks"] += len(want & {x[0] for x in picks})
             if len(picks) < stocks:
                 stats["short_months"] += 1
             pending = {}
@@ -324,7 +334,7 @@ def simulate(p, scores, elig, start, end, stocks, risk=None, capital=CAPITAL, br
     stats["invested_avg"] = float(np.mean(invested)) if invested else 0.0
     stats["index_avg"] = float(np.mean(idx_held)) if idx_held else 0.0
     stats["exposure_avg"] = float(np.mean(exposures)) if exposures else None
-    return {"nav": nav, "stats": stats, "trades": trades}
+    return {"nav": nav, "stats": stats, "trades": trades, "units": dict(units), "last_px": dict(last_px)}
 
 
 def month_stats(nav):

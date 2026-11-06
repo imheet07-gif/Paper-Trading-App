@@ -93,6 +93,114 @@ table, `CLAUDE.md` layout list, `research/signals.py` (`SIGNALS`,
 `DESCRIPTIONS`), `app/server.py` (`SIGNALS`), `research/FINDINGS.md`,
 `research/runs.jsonl`, `tests/test_repo.py` (root layout list).
 
+## Direction (owner, 2026-11-03): one predictive engine, retail limits built in
+
+This supersedes the narrower trade-finder framing below (its honesty rules
+carry over). The goal: a single engine that, on any day, lists the trades
+with the best tested expected return after costs and tax, across
+strategies and asset classes, within what a retail investor can do. Plan
+agreed in chat; nothing below is built yet.
+
+**What "winning" means.** Picks with a positive expected return after
+costs and tax, with their win rate and worst case shown. Not trades that
+always win: momentum lost in about a third of its months and still made
+26% a year on dev.
+
+**Hard rules for every idea:**
+
+- **Capital-agnostic, never capital-dependent.** The engine sizes to the
+  capital typed that day (Rs 20,000 today, Rs 10 lakh later). Whole
+  shares, fixed charges (the DP charge per scrip sold) and the number of
+  positions are worked out at that amount; every idea is tested at Rs
+  20,000 and Rs 10 lakh, and one that fails at the low end is flagged with
+  its minimum and never shown to a smaller account.
+- **No leverage, no short selling, no idea needing large margin** (index
+  futures, lots of several lakh). Options only as small, capped-risk
+  structures, later, with their own case.
+- **Real frictions:** charges, slippage, STT, stamp duty, tax (`core/tax.py`;
+  holding under a year at the short-term rate), price bands, liquidity
+  (the order a small share of daily traded value), T+1.
+- **Holding period is the idea's own**, from days to months; every result
+  is judged after costs and tax, so short holds need larger edges.
+- **The owner's time:** picks after the close, entered by hand the next
+  morning; intraday refreshes are for monitoring, not untested decisions.
+
+**Assets (all already stored, no downloads):** NSE stocks, ETFs (index,
+sector, gold, silver, international), Sovereign Gold Bonds, index funds
+(NAVs) as benchmark and "do nothing" choice. Futures and options, intraday
+history and commodity futures are out until a written idea justifies the
+data.
+
+**Phases:**
+
+1. **Rules:** one config of capital, limits, costs and tax; the minimum
+   capital check per idea; an inventory of tradable instruments in the
+   store.
+2. **One testing machine** for every idea: entry and exit as a retail
+   investor can, costs and tax, both capital levels, walk-forward testing
+   (train on the past, test the next unseen stretch, roll), every attempt
+   counted, the IC t above 3 bar. The holdout (2024 onward) stays sealed.
+3. **The idea library**, written in FINDINGS.md before any run, from
+   stored daily data:
+   - chart rules defined exactly, never by eye: trend (moving averages,
+     200-day), breakouts (52-week and 20-day highs, range squeezes, gaps
+     that hold), oscillators (RSI, MACD, Bollinger), volume and delivery,
+     candlesticks;
+   - short-term reversal, low volatility, sector rotation, calendar effects
+     (month-end, budget day, Muhurat);
+   - ETF trend and rotation, gold and silver included;
+   - exchange filings with history (buybacks, large orders, dividend
+     changes), where the stored history allows;
+   - `momentum_quality`, as a full member and the benchmark.
+4. **The engine:** survivors blended into one expected return per
+   instrument (transparent weights, no black box), then sized to the day's
+   capital. A blend is used only if it beats `momentum_quality` alone on
+   the same test. Output per pick: instrument, amount, holding period,
+   expected edge, win rate, worst case, the ideas that agree.
+5. **Live layer (owner's Kite API, read-only):** quotes every few minutes
+   in market hours to refresh limit prices and warn (gaps, price bands,
+   sharp falls); a few snapshots a day recorded for the watchlist, so an
+   intraday history without survivorship builds up for later ideas.
+6. **Forward record:** every pick tracked in the paper ledger; ideas that
+   fade live are retired.
+
+**News:** exchange filings with stored history are tested as signals;
+media news has no dated archive, so it is card context, labelled
+untested; a Claude reading of each day's filings and headlines is
+recorded from now on and tested once months of record exist. Upcoming
+results, trading windows and pledge changes are shown as risk warnings.
+
+**Interface (owner, 2026-11-03): app first, runnable without Claude.**
+
+- Every engine feature is first a command-line tool, then a task the local
+  app runs (`research/jobs.py`, arguments checked against fixed lists).
+  Claude skills only call those same commands and hold no logic.
+- The app is the main interface: Today (the pick list, live prices in
+  market hours), Ask (a form: amount and options), Portfolio (paper and
+  real against the index), Ideas (each idea's tested and live record),
+  Lab.
+- The evening update and briefing are scheduled by macOS (`launchd`), not
+  by Claude. Notifications: macOS notifications by default (local); a
+  phone channel (email, Telegram or ntfy) only if the owner picks one, and
+  then with minimal text, no amounts or holdings.
+- The live watch is a background job the app starts after a Kite login
+  from an app button; read-only, alerts only.
+- Phone access to the app stays off (it answers on 127.0.0.1 only) until
+  the owner chooses a safe way (a password on the home network, or a
+  private network tool).
+- **No Claude at run time (owner, 2026-11-03), to save the owner's Claude
+  usage.** News runs on stored filings and keyword rules; any AI reading of
+  news uses a local model on the Mac or is skipped, never the Claude API.
+  Claude sessions are for building only: short briefs, fresh sessions
+  that start from this file and FINDINGS.md, a lighter model for routine
+  work.
+
+**Known limits to say plainly:** many ideas tested means many lucky
+passes, hence the attempt count and the higher bar; the results XBRL
+starts in December 2017; intraday from Kite carries survivorship bias
+(PR #43 parked); validation 2021 to 2023 has been looked at often, so
+walk-forward and the sealed holdout carry the weight.
+
 ## Direction (owner, 2026-10-28): the trade finder
 
 The product is no longer a monthly strategy list. It answers two questions:
@@ -463,6 +571,7 @@ column freely.
 | Fundamentals F6 (owner approved 2026-10-28): pre-register the metrics catalogue and its three composites in FINDINGS.md exactly as in `docs/PROPOSAL.md` (about 16 dev runs, declared up front), then run dev. Each metric ranks only after dev and one validation look | `research/FINDINGS.md`, `research/signals.py`, `research/fundamentals.py` | second agent | 20 signals pre-registered (FINDINGS.md 2026-10-29, bar B: IC t above 3, deciles orderly, Sharpe above the universe) and built on branch `second-agent/f6-fundamentals`; dev runs wait for the F3 re-fetch on the owner's machine |
 | Broker reports B1 (`docs/PROPOSAL.md` section 7): dated consensus estimates, estimate revisions, ratings and target prices from a data vendor, shown on the card, with an estimate-revisions signal pre-registered separately | none | unassigned | parked by the owner 2026-10-28: needs a free source; none known |
 | Broker reports B2 (owner approved 2026-10-28): broker call log (`trader/broker_calls.jsonl`, local, append-only, no report text) and a forward scorecard per broker at 1, 3 and 12 months against the Nifty 500, shown after 20 scored calls. The owner's logging method is still to be decided | new `core/broker_calls.py`, tests | unassigned | open |
+| Engine Phases 1 and 2 (Direction 2026-11-03): the retail rules in one file with sources (`research/retail.json`), the minimum-capital check and a read-only inventory of the store (`research/retail.py`), and one testing machine for every idea (`research/harness.py`: IC and deciles, whole shares, real charges, limit buys, 1% liquidity, after-tax, both capital levels, walk-forward on dev, attempts counted per batch, holdout refused); `research/profiles.py` gains optional rebalance dates, candidate share and a tax hook (defaults unchanged); `jobs.py` tasks `harness`, `inventory`, `min-capital` with checked arguments | `research/retail.json`, `research/retail.py`, `research/harness.py`, `research/profiles.py`, `research/jobs.py`, tests | second agent | built on branch `second-agent/engine-p1-p2`, PR into `phase0-foundations`; `momentum_quality` checked on dev (FINDINGS.md 2026-11-04). Rules version 2 (owner 2026-11-04): minimum-capital settings kept, a maximum capital at most 10% of own picks passed over for liquidity, and the share of own picks bought shown per level. Next: Phase 3 (the idea library, pre-registered) |
 | Broker reports B3 (owner approved 2026-10-28): links on the card to the latest earnings-call transcript, investor presentation and analyst meet, from NSE announcements (`trader-news` already classifies them) | `research/advise.py` (its owner), `trader-news/` | unassigned | open |
 
 Next for the second agent: the trade finder above, in its stated order.
